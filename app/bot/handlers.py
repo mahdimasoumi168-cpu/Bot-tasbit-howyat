@@ -82,7 +82,7 @@ def valid_name(value: str) -> bool:
     value = " ".join(value.split())
     if not 3 <= len(value) <= 80:
         return False
-    return bool(re.fullmatch(r"[A-Za-zآ-یءئ‌]+(?:[ \-][A-Za-zآ-یءئ‌]+)*", value))
+    return bool(re.fullmatch(r"[A-Za-zآ-یءئ‌]+(?:[ \-][A-Za-zآ-یءئ‌]+)+", value))
 
 
 async def get_or_create_user(message: Message, telegram_id: int | None = None) -> User:
@@ -228,7 +228,7 @@ async def inline_consulate_z(callback: CallbackQuery, state: FSMContext) -> None
     if await state.get_state() != IdentityForm.consulate:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
     await callback.answer(); await state.update_data(consulate="🇦🇫 زاهدان"); await state.set_state(IdentityForm.identity_document)
-    await callback.message.edit_text("۶/۸\n📸 تصویر مدرک شناسایی را ارسال کنید.", reply_markup=cancel_menu())
+    await callback.message.edit_text("۶/۸\n📸 عکس مدرک شناسایی را ارسال کنید.\nمثال: عکس واضح و کامل از کارت/مدرک.\nمحدودیت: فقط عکس، واضح و خوانا.", reply_markup=cancel_menu())
 
 @router.callback_query(F.data == "identity:consulate:m")
 async def inline_consulate_m(callback: CallbackQuery, state: FSMContext) -> None:
@@ -255,14 +255,14 @@ async def inline_doc_amayesh(callback: CallbackQuery, state: FSMContext) -> None
     if await state.get_state() != KhodnevisForm.document_type:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
     await callback.answer(); await state.update_data(document_type="کارت آمایش"); await state.set_state(KhodnevisForm.amayesh)
-    await callback.message.edit_text("۴/۷\n📸 تصویر کارت آمایش را ارسال کنید.", reply_markup=cancel_menu())
+    await callback.message.edit_text("۴/۷\n📸 عکس کارت آمایش را ارسال کنید.\nمثال: عکس واضح از تمام کارت.\nمحدودیت: فقط عکس، واضح و خوانا.", reply_markup=cancel_menu())
 
 @router.callback_query(F.data == "khodnevis:doc:passport")
 async def inline_doc_passport(callback: CallbackQuery, state: FSMContext) -> None:
     if await state.get_state() != KhodnevisForm.document_type:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
     await callback.answer(); await state.update_data(document_type="پاسپورت"); await state.set_state(KhodnevisForm.passport_first)
-    await callback.message.edit_text("۴/۷\n📸 تصویر صفحه اول پاسپورت الزامی است.", reply_markup=cancel_menu())
+    await callback.message.edit_text("۴/۷\n📸 عکس صفحه اول پاسپورت را ارسال کنید.\nمثال: عکس واضح از صفحه مشخصات.\nمحدودیت: فقط عکس، واضح و خوانا؛ این صفحه الزامی است.", reply_markup=cancel_menu())
 
 @router.callback_query(F.data.startswith("khodnevis:optional:"))
 async def inline_optional_document(callback: CallbackQuery, state: FSMContext) -> None:
@@ -304,14 +304,14 @@ async def identity_start(message: Message, state: FSMContext, telegram_id: int |
         order_id=order.id, public_id=order.public_id, service_code=ServiceCode.IDENTITY.value
     )
     await state.set_state(IdentityForm.full_name)
-    await message.answer("۱/۸\nنام و نام خانوادگی را وارد کنید:", reply_markup=cancel_menu())
+    await message.answer("۱/۸\nنام و نام خانوادگی را وارد کنید.\nمثال: احمد محمدی\nمحدودیت: ۳ تا ۸۰ نویسه و حداقل دو بخش.", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.full_name)
 async def identity_name(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     if not valid_name(value):
-        await message.answer("❌ نام باید بین ۳ تا ۸۰ نویسه باشد و فقط شامل حروف و فاصله باشد. مثال: «احمد محمدی».", reply_markup=cancel_menu())
+        await message.answer("❌ نام و نام خانوادگی باید بین ۳ تا ۸۰ نویسه باشد و حداقل شامل دو بخش باشد. مثال: «احمد محمدی».", reply_markup=cancel_menu())
         return
     await state.update_data(full_name=" ".join(value.split()))
     await state.set_state(IdentityForm.mobile)
@@ -366,14 +366,14 @@ async def identity_consulate(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(consulate=message.text)
     await state.set_state(IdentityForm.identity_document)
-    await message.answer("۶/۸\nعکس مدرک شناسایی را ارسال کنید.", reply_markup=cancel_menu())
+    await message.answer("۶/۸\n📸 عکس مدرک شناسایی را ارسال کنید.\nمثال: عکس واضح و کامل از کارت/مدرک.\nمحدودیت: فقط عکس، واضح و خوانا.", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.identity_document, F.photo)
 async def identity_document(message: Message, state: FSMContext) -> None:
     await state.update_data(identity_document=message.photo[-1].file_id)
     await state.set_state(IdentityForm.tazkira)
-    await message.answer("۷/۸\nعکس تذکره را ارسال کنید.", reply_markup=cancel_menu())
+    await message.answer("۷/۸\n📸 عکس تذکره را ارسال کنید.\nمثال: عکس واضح از تمام صفحه تذکره.\nمحدودیت: فقط عکس، واضح و خوانا.", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.tazkira, F.photo)
@@ -387,7 +387,7 @@ async def identity_tazkira(message: Message, state: FSMContext) -> None:
 async def identity_companion_choice(message: Message, state: FSMContext) -> None:
     if message.text == "✅ بله":
         await state.set_state(IdentityForm.companion_name)
-        await message.answer("نام و نام خانوادگی همراه را وارد کنید:", reply_markup=cancel_menu())
+        await message.answer("نام و نام خانوادگی همراه را وارد کنید.\nمثال: محمد احمدی\nمحدودیت: ۳ تا ۸۰ نویسه و حداقل دو بخش.", reply_markup=cancel_menu())
     elif message.text == "❌ خیر":
         await show_identity_summary(message, state)
     else:
@@ -398,7 +398,7 @@ async def identity_companion_choice(message: Message, state: FSMContext) -> None
 async def identity_companion_name(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     if len(value) < 3:
-        await message.answer("❌ نام همراه را کامل وارد کنید.", reply_markup=cancel_menu())
+        await message.answer("❌ نام همراه معتبر نیست. مثال: «محمد احمدی». محدودیت: ۳ تا ۸۰ نویسه و حداقل دو بخش.", reply_markup=cancel_menu())
         return
     await state.update_data(pending_companion_name=value)
     await state.set_state(IdentityForm.companion_mobile)
@@ -471,14 +471,14 @@ async def khodnevis_start(message: Message, state: FSMContext, telegram_id: int 
         order_id=order.id, public_id=order.public_id, service_code=ServiceCode.KHODNEVIS.value
     )
     await state.set_state(KhodnevisForm.full_name)
-    await message.answer("۱/۷\nنام و نام خانوادگی را وارد کنید:", reply_markup=cancel_menu())
+    await message.answer("۱/۷\nنام و نام خانوادگی را وارد کنید.\nمثال: احمد محمدی\nمحدودیت: ۳ تا ۸۰ نویسه و حداقل دو بخش.", reply_markup=cancel_menu())
 
 
 @router.message(KhodnevisForm.full_name)
 async def khodnevis_name(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     if len(value) < 3:
-        await message.answer("❌ نام و نام خانوادگی را کامل وارد کنید.", reply_markup=cancel_menu())
+        await message.answer("❌ نام و نام خانوادگی معتبر نیست. مثال: «احمد محمدی». محدودیت: ۳ تا ۸۰ نویسه و حداقل دو بخش.", reply_markup=cancel_menu())
         return
     await state.update_data(full_name=value)
     await state.set_state(KhodnevisForm.mobile)
@@ -501,11 +501,11 @@ async def khodnevis_document_type(message: Message, state: FSMContext) -> None:
     if message.text == "🪪 کارت آمایش":
         await state.update_data(document_type="کارت آمایش")
         await state.set_state(KhodnevisForm.amayesh)
-        await message.answer("۴/۷\nعکس کارت آمایش را ارسال کنید.", reply_markup=cancel_menu())
+        await message.answer("۴/۷\n📸 عکس کارت آمایش را ارسال کنید.\nمثال: عکس واضح از تمام کارت.\nمحدودیت: فقط عکس، واضح و خوانا.", reply_markup=cancel_menu())
     elif message.text == "🛂 پاسپورت":
         await state.update_data(document_type="پاسپورت")
         await state.set_state(KhodnevisForm.passport_first)
-        await message.answer("۴/۷\nعکس صفحه اول پاسپورت الزامی است.", reply_markup=cancel_menu())
+        await message.answer("۴/۷\n📸 عکس صفحه اول پاسپورت را ارسال کنید.\nمثال: عکس واضح از صفحه مشخصات.\nمحدودیت: فقط عکس، واضح و خوانا؛ این صفحه الزامی است.", reply_markup=cancel_menu())
     else:
         await message.answer("یکی از دو گزینه را انتخاب کنید.", reply_markup=document_type_menu())
 
@@ -531,7 +531,7 @@ async def khodnevis_passport_renewal(message: Message, state: FSMContext) -> Non
         await state.set_state(KhodnevisForm.residence_renewal)
         await message.answer("صفحه تمدید اقامت/ویزا را دارید؟", reply_markup=optional_document_menu())
     elif message.text == "📸 ارسال تصویر":
-        await message.answer("حالا تصویر صفحه تمدید پاسپورت را ارسال کنید.", reply_markup=cancel_menu())
+        await message.answer("📸 تصویر صفحه تمدید پاسپورت را ارسال کنید.\nمثال: عکس واضح از صفحه تمدید.\nمحدودیت: فقط عکس، واضح و خوانا.", reply_markup=cancel_menu())
     else:
         await message.answer("یکی از گزینه‌ها را انتخاب کنید.", reply_markup=optional_document_menu())
 
@@ -550,7 +550,7 @@ async def khodnevis_residence_renewal(message: Message, state: FSMContext) -> No
         await state.set_state(KhodnevisForm.own_mobile)
         await message.answer("شماره موبایل به نام خود شخص را وارد کنید:", reply_markup=cancel_menu())
     elif message.text == "📸 ارسال تصویر":
-        await message.answer("حالا تصویر صفحه تمدید اقامت/ویزا را ارسال کنید.", reply_markup=cancel_menu())
+        await message.answer("📸 تصویر صفحه تمدید اقامت/ویزا را ارسال کنید.\nمثال: عکس واضح از صفحه تمدید.\nمحدودیت: فقط عکس، واضح و خوانا.", reply_markup=cancel_menu())
     else:
         await message.answer("یکی از گزینه‌ها را انتخاب کنید.", reply_markup=optional_document_menu())
 
