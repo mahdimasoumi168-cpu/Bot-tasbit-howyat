@@ -109,7 +109,7 @@ async def apply_wallet_payment(telegram_id: int, order_id: int) -> bool:
     async with SessionLocal() as session:
         row = (await session.execute(
             select(Order, Service, User).join(Service, Order.service_id == Service.id).join(User, Order.user_id == User.id)
-            .where(Order.id == order_id, User.telegram_id == message.from_user.id)
+            .where(Order.id == order_id, User.telegram_id == telegram_id)
         )).one_or_none()
         if not row:
             raise ValueError("درخواست پیدا نشد.")
@@ -129,7 +129,7 @@ async def apply_wallet_payment(telegram_id: int, order_id: int) -> bool:
                 coupon.used_count += 1
         order.status = "payment_approved"
         await session.commit()
-        await audit_payment_event(message.from_user.id, "wallet_payment", order.id, amount)
+        await audit_payment_event(telegram_id, "wallet_payment", order.id, amount)
         return True
 
 
