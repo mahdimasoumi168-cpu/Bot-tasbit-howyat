@@ -37,6 +37,14 @@ def document_type_menu() -> InlineKeyboardMarkup:
     ])
 
 
+def identity_document_type_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🪪 کارت آمایش", callback_data="identity:doc:amayesh"), InlineKeyboardButton(text="🛂 پاسپورت", callback_data="identity:doc:passport")],
+        [InlineKeyboardButton(text="📄 سایر مدارک", callback_data="identity:doc:other"), InlineKeyboardButton(text="⏭️ ندارم", callback_data="identity:doc:none")],
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")],
+    ])
+
+
 def optional_document_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📸 ارسال تصویر", callback_data="khodnevis:optional:send"), InlineKeyboardButton(text="⏭️ ندارم / رد کردن", callback_data="khodnevis:optional:skip")],
