@@ -2,11 +2,12 @@ import json
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardRemove
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy import or_, select
 
 from app.bot.handlers import STATUS_TEXT
 from app.bot.states import AdminForm
+from app.bot.keyboards import admin_cancel_menu
 from app.core.config import get_settings
 from app.db.models import AuditLog, Companion, Document, Order, Operator, Payment, Service, Setting, Ticket, TicketMessage, User
 from app.db.session import SessionLocal
@@ -71,6 +72,21 @@ def order_actions(order_id: int, operator: Operator | None = None) -> InlineKeyb
 def status_header(order: Order, service: Service) -> str:
     return f"{order.public_id} | {STATUS_TEXT.get(order.status, "نامشخص")}\n🪪 خدمت: {service.name}"
 
+
+
+@router.callback_query(F.data == "adm:cancel")
+async def admin_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        operator = await get_operator(callback.from_user.id)
+        if operator is None:
+            await callback.answer("دسترسی ندارید.", show_alert=True)
+            return
+    await state.clear()
+    await callback.answer("عملیات لغو شد.")
+    await callback.message.edit_text(
+        "❌ عملیات جاری لغو شد.\n\nبه پنل مدیریت برگشتید.",
+        reply_markup=admin_menu(),
+    )
 
 
 @router.message(F.text == "👨‍💼 پنل اپراتور")
@@ -240,7 +256,7 @@ async def set_card_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await callback.message.answer(
         "💳 مرحله ۱ از ۲\nشماره کارت ۱۶ رقمی را فقط به صورت عددی ارسال کنید:",
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=admin_cancel_menu(),
     )
 
 
@@ -992,7 +1008,7 @@ async def start_message(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(admin_order_id=order_id)
     await state.set_state(AdminForm.send_message)
     await callback.answer()
-    await callback.message.answer("💬 پیام خود را ارسال کنید. متن، عکس، فایل، ویدیو یا صوت قابل ارسال است.")
+    await callback.message.answer("💬 پیام خود را ارسال کنید. متن، عکس، فایل، ویدیو یا صوت قابل ارسال است.", reply_markup=admin_cancel_menu())
 
 
 @router.message(AdminForm.send_message)
@@ -1093,7 +1109,7 @@ async def operator_add_start(callback: CallbackQuery, state: FSMContext) -> None
     await state.clear()
     await state.set_state(AdminForm.operator_add)
     await callback.answer()
-    await callback.message.answer("👨‍💼 شناسه عددی تلگرام اپراتور را ارسال کنید:")
+    await callback.message.answer("👨‍💼 شناسه عددی تلگرام اپراتور را ارسال کنید:", reply_markup=admin_cancel_menu())
 
 
 @router.message(AdminForm.operator_add)
@@ -1292,7 +1308,7 @@ async def operator_remove_start(callback: CallbackQuery, state: FSMContext) -> N
     await state.clear()
     await state.set_state(AdminForm.operator_remove)
     await callback.answer()
-    await callback.message.answer("🚫 شناسه عددی اپراتور را برای غیرفعال‌سازی ارسال کنید:")
+    await callback.message.answer("🚫 شناسه عددی اپراتور را برای غیرفعال‌سازی ارسال کنید:", reply_markup=admin_cancel_menu())
 
 
 @router.message(AdminForm.operator_remove)
