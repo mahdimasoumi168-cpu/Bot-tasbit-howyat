@@ -511,9 +511,3 @@ async def support(message: Message) -> None:
         reply_markup=main_menu(),
     )
 
-
-@router.message()
-async def unknown_message(message: Message) -> None:
-    if message.from_user.id in get_settings().admin_id_set:
-        return
-    await message.answer("لطفاً یکی از گزینه‌های منو را انتخاب کنید.", reply_markup=main_menu())
