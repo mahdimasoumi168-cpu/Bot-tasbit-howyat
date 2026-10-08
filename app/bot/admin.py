@@ -136,7 +136,7 @@ async def operator_order_detail(callback: CallbackQuery) -> None:
         f"{status_header(order,service)}\n"
         f"👤 {user.first_name or ''} {user.last_name or ''}\n"
         f"🆔 {user.telegram_id}\n"
-        f"💰 مبلغ خدمت: {service.price_toman:,} تومان",
+        f"💰 مبلغ ثبت‌شده: {(order.price_snapshot_toman or service.price_toman):,} تومان",
         reply_markup=order_actions(order.id, operator=operator),
     )
     await callback.answer()
@@ -514,7 +514,7 @@ async def admin_order_detail(callback: CallbackQuery) -> None:
         f"👤 {data.get('full_name') or ((user.first_name or '')+' '+(user.last_name or '')).strip()}\n"
         f"📱 {data.get('mobile','')}\n"
         f"🆔 Telegram: {user.telegram_id}\n"
-        f"💰 قیمت خدمت: {service.price_toman:,} تومان\n"
+        f"💰 قیمت ثبت‌شده: {(order.price_snapshot_toman or service.price_toman):,} تومان\n"
         f"📎 مدارک: {len(docs)}\n"
         f"💳 پرداخت‌ها: {len(payments)}"
     )
