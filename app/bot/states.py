@@ -48,3 +48,13 @@ class RetryReceiptForm(StatesGroup):
 
 class SupportForm(StatesGroup):
     message = State()
+
+
+class PaymentForm(StatesGroup):
+    choice = State()
+    coupon = State()
+
+
+class WalletTopupForm(StatesGroup):
+    amount = State()
+    receipt = State()
