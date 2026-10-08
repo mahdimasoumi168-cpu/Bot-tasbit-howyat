@@ -1,7 +1,7 @@
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 
 
-def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
+def main_menu(is_admin: bool = False, is_operator: bool = False) -> ReplyKeyboardMarkup:
     rows = [
         [KeyboardButton(text="🪪 تثبیت هویت")],
         [KeyboardButton(text="📝 کد رهگیری خودنویس")],
@@ -9,6 +9,8 @@ def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
         [KeyboardButton(text="👤 حساب من"), KeyboardButton(text="📞 پشتیبانی")],
         [KeyboardButton(text="🔄 شروع مجدد")],
     ]
+    if is_operator:
+        rows.insert(-1, [KeyboardButton(text="👨‍💼 پنل اپراتور")])
     if is_admin:
         rows.insert(-1, [KeyboardButton(text="🛠 پنل مدیریت")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
