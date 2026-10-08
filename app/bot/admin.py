@@ -3,7 +3,7 @@ import json
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardRemove
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.bot.handlers import STATUS_TEXT
 from app.bot.states import AdminForm
@@ -330,7 +330,7 @@ async def users_panel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AdminForm.user_search)
     await callback.answer()
     await callback.message.answer(
-        "👥 جستجوی مشترک\n\nشناسه عددی تلگرام مشترک را تک‌تک وارد کنید:",
+        "👥 جستجوی مشترک\n\nنام، نام کاربری، شناسه تلگرام یا شماره درخواست را وارد کنید:",
         reply_markup=ReplyKeyboardRemove(),
     )
 
@@ -340,18 +340,39 @@ async def user_search(message: Message, state: FSMContext) -> None:
     if not is_admin(message):
         return
     raw = (message.text or "").strip()
-    if not raw.isdigit():
-        await message.answer("❌ شناسه تلگرام باید فقط عدد باشد. دوباره وارد کنید:")
+    if not raw:
+        await message.answer("❌ عبارت جستجو را وارد کنید.")
         return
-    telegram_id = int(raw)
     async with SessionLocal() as session:
-        user = (await session.execute(select(User).where(User.telegram_id == telegram_id))).scalar_one_or_none()
+        user = None
+        if raw.isdigit():
+            user = (await session.execute(
+                select(User).where(User.telegram_id == int(raw))
+            )).scalar_one_or_none()
         if user is None:
-            await message.answer("❌ مشترکی با این شناسه پیدا نشد. شناسه دیگری وارد کنید:")
+            normalized = raw.lstrip("#")
+            order_match = (await session.execute(
+                select(Order).where(Order.public_id == f"#{normalized}")
+            )).scalar_one_or_none()
+            if order_match:
+                user = await session.get(User, order_match.user_id)
+        if user is None:
+            pattern = f"%{raw}%"
+            user = (await session.execute(
+                select(User).where(
+                    or_(
+                        User.first_name.ilike(pattern),
+                        User.last_name.ilike(pattern),
+                        User.username.ilike(pattern),
+                    )
+                ).order_by(User.id.desc()).limit(1)
+            )).scalar_one_or_none()
+        if user is None:
+            await message.answer("❌ مشترک پیدا نشد. نام، نام کاربری، شناسه تلگرام یا شماره درخواست را امتحان کنید:")
             return
         orders = (await session.execute(
             select(Order, Service).join(Service, Order.service_id == Service.id)
-            .where(Order.user_id == user.id).order_by(Order.id.desc()).limit(10)
+            .where(Order.user_id == user.id).order_by(Order.id.desc()).limit(30)
         )).all()
     text = (
         "👤 اطلاعات مشترک\n\n"
