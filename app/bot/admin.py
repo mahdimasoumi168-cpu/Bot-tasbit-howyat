@@ -193,6 +193,31 @@ async def operator_pending(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.callback_query(F.data == "menu:admin")
+async def inline_admin_open(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    await state.clear()
+    await callback.answer()
+    await callback.message.edit_text("🛠 پنل مدیریت\n\nبخش موردنظر را انتخاب کنید:", reply_markup=admin_menu())
+
+@router.callback_query(F.data == "menu:operator")
+async def inline_operator_open(callback: CallbackQuery, state: FSMContext) -> None:
+    operator = await get_operator(callback.from_user.id)
+    if operator is None:
+        await callback.answer("شما اپراتور فعال نیستید.", show_alert=True)
+        return
+    await state.clear()
+    await callback.answer()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
+        [InlineKeyboardButton(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
+        [InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="op:back")],
+    ])
+    await callback.message.edit_text("👨‍💼 پنل اپراتور\n\nبخش موردنظر را انتخاب کنید:", reply_markup=keyboard)
+
+
 @router.message(F.text == "/admin")
 async def admin_start(message: Message, state: FSMContext) -> None:
     if not is_admin(message):
