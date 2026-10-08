@@ -245,14 +245,7 @@ async def payment_instructions(order_id: int) -> str:
         ).scalar_one_or_none()
     card_number = number.value if number and number.value else "هنوز توسط مدیریت تنظیم نشده است"
     card_holder = holder.value if holder and holder.value else "هنوز توسط مدیریت تنظیم نشده است"
-    amount_toman = int(order.price_snapshot_toman or service.price_toman)
-    data = json.loads(order.data_json or "{}")
-    discount = 0
-    code = data.get("discount_code")
-    if code:
-        coupon = (await session.execute(select(DiscountCode).where(DiscountCode.code == code))).scalar_one_or_none()
-        discount = calculate_discount(amount_toman, coupon) if coupon else 0
-    amount_toman = max(0, amount_toman - discount)
+    amount_toman, discount, _ = await order_amount_and_coupon(order_id)
     amount_rial = amount_toman * 10
     return (
         "🧾 فاکتور پرداخت\n"
