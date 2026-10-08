@@ -649,7 +649,10 @@ async def track_orders(message: Message, telegram_id: int | None = None) -> None
             select(Order, Service)
             .join(Service, Service.id == Order.service_id)
             .join(User, User.id == Order.user_id)
-            .where(User.telegram_id == (telegram_id or message.from_user.id))
+            .where(
+                User.telegram_id == (telegram_id or message.from_user.id),
+                Order.status.notin_(["draft", "waiting_payment"]),
+            )
             .order_by(Order.id.desc())
         )
         rows = result.all()
