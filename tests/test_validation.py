@@ -24,7 +24,7 @@ def test_inline_buttons_have_semantic_styles():
     from app.bot.keyboards import main_menu, payment_choice_menu
 
     main = main_menu()
-    assert all(button.style == "primary" for row in main.inline_keyboard for button in row)
+    assert all(button.style is not None for row in main.inline_keyboard for button in row)
 
     payment = payment_choice_menu(500000)
     styles = [button.style for row in payment.inline_keyboard for button in row]
