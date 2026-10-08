@@ -16,6 +16,7 @@ from app.bot.keyboards import (
     single_action_menu,
     cancel_menu,
     confirm_menu,
+    support_menu,
 )
 from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm, SupportForm
 from app.core.config import get_settings
@@ -58,11 +59,30 @@ STATUS_TEXT = {
 }
 
 
+def normalize_digits(value: str) -> str:
+    return value.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789"))
+
+
+def normalize_mobile(value: str) -> str:
+    digits = re.sub(r"\D", "", normalize_digits(value.strip()))
+    if digits.startswith("0098"):
+        digits = "98" + digits[4:]
+    if digits.startswith("98") and len(digits) == 12:
+        digits = "0" + digits[2:]
+    elif digits.startswith("9") and len(digits) == 10:
+        digits = "0" + digits
+    return digits
+
+
 def valid_mobile(value: str) -> bool:
-    digits = re.sub(r"[^0-9۰-۹]", "", value.strip()).translate(
-        str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
-    )
-    return bool(re.fullmatch(r"(?:09\d{9}|9\d{9}|989\d{9}|00989\d{9})", digits))
+    return bool(re.fullmatch(r"09\d{9}", normalize_mobile(value)))
+
+
+def valid_name(value: str) -> bool:
+    value = " ".join(value.split())
+    if not 3 <= len(value) <= 80:
+        return False
+    return bool(re.fullmatch(r"[A-Za-zآ-یءئ‌]+(?:[ \-][A-Za-zآ-یءئ‌]+)*", value))
 
 
 async def get_or_create_user(message: Message, telegram_id: int | None = None) -> User:
