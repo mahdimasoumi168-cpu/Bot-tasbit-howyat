@@ -927,7 +927,7 @@ async def support(message: Message, telegram_id: int | None = None) -> None:
         [InlineKeyboardButton(text=f"📞 {order.public_id} | {service.name}", callback_data=f"user:support:{order.id}")]
         for order, service in rows
     ]
-    buttons.append([InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart")])
+    buttons.append([InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")])
     await message.answer("📞 درخواست موردنظر برای پشتیبانی را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
