@@ -2,7 +2,7 @@ import json
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardRemove, ReplyKeyboardRemove
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardRemove
 from sqlalchemy import select
 
 from app.bot.handlers import STATUS_TEXT
@@ -22,9 +22,12 @@ def admin_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🔵 رسیدهای در انتظار بررسی", callback_data="adm:pending")],
-            [InlineKeyboardButton(text="📋 آخرین درخواست‌ها", callback_data="adm:orders")],
-            [InlineKeyboardButton(text="💳 تنظیم کارت", callback_data="adm:setcard")],
-            [InlineKeyboardButton(text="💰 تنظیم قیمت‌ها", callback_data="adm:prices")],
+            [InlineKeyboardButton(text="📋 درخواست‌ها", callback_data="adm:orders")],
+            [InlineKeyboardButton(text="👥 مشترکان", callback_data="adm:users")],
+            [InlineKeyboardButton(text="🧩 خدمات", callback_data="adm:services")],
+            [InlineKeyboardButton(text="💰 قیمت خدمات", callback_data="adm:prices")],
+            [InlineKeyboardButton(text="💳 اطلاعات کارت", callback_data="adm:card")],
+            [InlineKeyboardButton(text="⚙️ تنظیمات", callback_data="adm:settings")],
         ]
     )
 
@@ -61,35 +64,164 @@ async def set_card_start(callback: CallbackQuery, state: FSMContext) -> None:
     if callback.from_user.id not in get_settings().admin_id_set:
         return
     await state.clear()
-    await state.set_state(AdminForm.set_card)
+    await state.set_state(AdminForm.set_card_number)
     await callback.answer()
     await callback.message.answer(
-        "شماره کارت و نام صاحب کارت را در یک پیام و با | جدا کنید.\n"
-        "مثال: 6037991234567890 | نام صاحب کارت",
+        "💳 مرحله ۱ از ۲\nشماره کارت ۱۶ رقمی را فقط به صورت عددی ارسال کنید:",
         reply_markup=ReplyKeyboardRemove(),
     )
 
 
-@router.message(AdminForm.set_card)
-async def set_card_save(message: Message, state: FSMContext) -> None:
+@router.message(AdminForm.set_card_number)
+async def set_card_number_save(message: Message, state: FSMContext) -> None:
     if not is_admin(message):
         return
-    parts = [x.strip() for x in (message.text or "").split("|", 1)]
-    if len(parts) != 2 or not parts[0].isdigit() or len(parts[0]) != 16 or not parts[1]:
-        await message.answer("❌ قالب صحیح نیست. دوباره بفرستید: شماره کارت | نام صاحب کارت")
+    value = (message.text or "").replace(" ", "").replace("-", "").strip()
+    if not value.isdigit() or len(value) != 16:
+        await message.answer("❌ شماره کارت باید دقیقاً ۱۶ رقم باشد. دوباره وارد کنید:")
         return
+    await state.update_data(card_number=value)
+    await state.set_state(AdminForm.set_card_holder)
+    await message.answer("💳 مرحله ۲ از ۲\nنام صاحب کارت را وارد کنید:")
+
+
+@router.message(AdminForm.set_card_holder)
+async def set_card_holder_save(message: Message, state: FSMContext) -> None:
+    if not is_admin(message):
+        return
+    holder = (message.text or "").strip()
+    if len(holder) < 2:
+        await message.answer("❌ نام صاحب کارت معتبر نیست. دوباره وارد کنید:")
+        return
+    data = await state.get_data()
     async with SessionLocal() as session:
-        for key, value in (("card_number", parts[0]), ("card_holder", parts[1])):
-            row = (
-                await session.execute(select(Setting).where(Setting.key == key))
-            ).scalar_one_or_none()
+        for key, value in (("card_number", data["card_number"]), ("card_holder", holder)):
+            row = (await session.execute(select(Setting).where(Setting.key == key))).scalar_one_or_none()
             if row is None:
                 session.add(Setting(key=key, value=value))
             else:
                 row.value = value
         await session.commit()
     await state.clear()
-    await message.answer("✅ اطلاعات کارت ذخیره شد.", reply_markup=admin_menu())
+    await message.answer("✅ اطلاعات کارت با موفقیت ذخیره شد.", reply_markup=admin_menu())
+
+
+@router.callback_query(F.data == "adm:card")
+async def show_card(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    async with SessionLocal() as session:
+        number = (await session.execute(select(Setting).where(Setting.key == "card_number"))).scalar_one_or_none()
+        holder = (await session.execute(select(Setting).where(Setting.key == "card_holder"))).scalar_one_or_none()
+    await callback.message.edit_text(
+        "💳 اطلاعات کارت\n\n"
+        f"شماره کارت: {number.value if number and number.value else 'تنظیم نشده'}\n"
+        f"نام صاحب کارت: {holder.value if holder and holder.value else 'تنظیم نشده'}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✏️ ویرایش اطلاعات کارت", callback_data="adm:setcard")],
+            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:home")],
+        ]),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "adm:settings")
+async def settings_panel(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    await callback.message.edit_text(
+        "⚙️ تنظیمات مدیریت\n\n"
+        "مدیریت اطلاعات حساس و تنظیمات پایه از همین پنل انجام می‌شود.\n"
+        "در این بخش فعلاً اطلاعات کارت و قیمت خدمات قابل مدیریت است.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💳 اطلاعات کارت", callback_data="adm:card")],
+            [InlineKeyboardButton(text="💰 قیمت خدمات", callback_data="adm:prices")],
+            [InlineKeyboardButton(text="🧩 وضعیت خدمات", callback_data="adm:services")],
+            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:home")],
+        ]),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "adm:services")
+async def services_panel(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    async with SessionLocal() as session:
+        rows = (await session.execute(select(Service).order_by(Service.id))).scalars().all()
+    buttons = []
+    for service in rows:
+        state_text = "🟢 فعال" if service.enabled else "🔴 غیرفعال"
+        buttons.append([InlineKeyboardButton(
+            text=f"{state_text} | {service.name}",
+            callback_data=f"adm:toggle:{service.id}"
+        )])
+    buttons.append([InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:home")])
+    text = "🧩 مدیریت خدمات\n\nبرای فعال/غیرفعال کردن هر خدمت، روی همان خدمت بزنید."
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("adm:toggle:"))
+async def toggle_service(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    service_id = int(callback.data.rsplit(":", 1)[1])
+    async with SessionLocal() as session:
+        service = await session.get(Service, service_id)
+        if service is None:
+            await callback.answer("خدمت پیدا نشد.", show_alert=True)
+            return
+        service.enabled = not service.enabled
+        await session.commit()
+        state_text = "فعال" if service.enabled else "غیرفعال"
+    await callback.answer(f"خدمت {state_text} شد.")
+    await services_panel(callback)
+
+
+@router.callback_query(F.data == "adm:users")
+async def users_panel(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    await state.clear()
+    await state.set_state(AdminForm.user_search)
+    await callback.answer()
+    await callback.message.answer(
+        "👥 جستجوی مشترک\n\nشناسه عددی تلگرام مشترک را تک‌تک وارد کنید:",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
+@router.message(AdminForm.user_search)
+async def user_search(message: Message, state: FSMContext) -> None:
+    if not is_admin(message):
+        return
+    raw = (message.text or "").strip()
+    if not raw.isdigit():
+        await message.answer("❌ شناسه تلگرام باید فقط عدد باشد. دوباره وارد کنید:")
+        return
+    telegram_id = int(raw)
+    async with SessionLocal() as session:
+        user = (await session.execute(select(User).where(User.telegram_id == telegram_id))).scalar_one_or_none()
+        if user is None:
+            await message.answer("❌ مشترکی با این شناسه پیدا نشد. شناسه دیگری وارد کنید:")
+            return
+        orders = (await session.execute(
+            select(Order, Service).join(Service, Order.service_id == Service.id)
+            .where(Order.user_id == user.id).order_by(Order.id.desc()).limit(10)
+        )).all()
+    text = (
+        "👤 اطلاعات مشترک\n\n"
+        f"شناسه تلگرام: {user.telegram_id}\n"
+        f"نام: {(user.first_name or '')} {(user.last_name or '')}".strip() +
+        f"\nنام کاربری: @{user.username if user.username else 'ندارد'}\n\n"
+        "📋 آخرین درخواست‌ها:\n"
+    )
+    text += "\n".join(
+        f"{o.public_id} | {STATUS_TEXT.get(o.status, o.status)} | {s.name}" for o, s in orders
+    ) or "درخواستی ندارد."
+    await state.clear()
+    await message.answer(text, reply_markup=admin_menu())
 
 
 @router.callback_query(F.data == "adm:prices")
