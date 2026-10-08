@@ -51,7 +51,7 @@ def support_menu(active_orders: bool = False) -> InlineKeyboardMarkup:
     ]
     if active_orders:
         rows.append([InlineKeyboardButton(text="📋 پشتیبانی درخواست‌های من", callback_data="menu:support_orders")])
-    rows.append([InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="menu:home")])
+    rows.append([InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="flow:cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def cancel_menu() -> InlineKeyboardMarkup:
