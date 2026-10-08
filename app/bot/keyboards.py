@@ -40,3 +40,11 @@ def optional_document_menu() -> ReplyKeyboardMarkup:
         keyboard=[[KeyboardButton(text="📸 ارسال تصویر"), KeyboardButton(text="⏭️ ندارم / رد کردن")]],
         resize_keyboard=True,
     )
+
+
+def single_action_menu(text: str = "🔄 شروع مجدد") -> ReplyKeyboardMarkup:
+    """فقط یک دکمه لازم در مراحل ورود اطلاعات را نمایش می‌دهد."""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=text)]],
+        resize_keyboard=True,
+    )
