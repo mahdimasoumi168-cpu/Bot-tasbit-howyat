@@ -257,11 +257,12 @@ async def inline_confirm(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(F.text == "🪪 تثبیت هویت")
 async def identity_start(message: Message, state: FSMContext, telegram_id: int | None = None) -> None:
+    uid = telegram_id or message.from_user.id
     await state.clear()
     try:
         order = await create_order(message, ServiceCode.IDENTITY, telegram_id=telegram_id)
     except ValueError as exc:
-        await message.answer(f"❌ {exc}", reply_markup=await user_main_menu(message.from_user.id))
+        await message.answer(f"❌ {exc}", reply_markup=await user_main_menu(uid))
         return
     await state.update_data(
         order_id=order.id, public_id=order.public_id, service_code=ServiceCode.IDENTITY.value
@@ -413,11 +414,12 @@ async def identity_receipt(message: Message, state: FSMContext) -> None:
 
 @router.message(F.text == "📝 کد رهگیری خودنویس")
 async def khodnevis_start(message: Message, state: FSMContext, telegram_id: int | None = None) -> None:
+    uid = telegram_id or message.from_user.id
     await state.clear()
     try:
         order = await create_order(message, ServiceCode.KHODNEVIS, telegram_id=telegram_id)
     except ValueError as exc:
-        await message.answer(f"❌ {exc}", reply_markup=await user_main_menu(message.from_user.id))
+        await message.answer(f"❌ {exc}", reply_markup=await user_main_menu(uid))
         return
     await state.update_data(
         order_id=order.id, public_id=order.public_id, service_code=ServiceCode.KHODNEVIS.value
