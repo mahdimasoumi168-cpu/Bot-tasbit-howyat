@@ -587,22 +587,46 @@ async def user_order_detail(callback: CallbackQuery) -> None:
             return
         order, service, user = row
         data = json.loads(order.data_json or "{}")
+        companions = (await session.execute(
+            select(Companion).where(Companion.order_id == order.id).order_by(Companion.id)
+        )).scalars().all()
+        documents = (await session.execute(
+            select(Document).where(Document.order_id == order.id).order_by(Document.id)
+        )).scalars().all()
     text = (
         f"📋 درخواست {order.public_id}\n\n"
         f"🧾 خدمت: {service.name}\n"
         f"📌 وضعیت: {STATUS_TEXT.get(order.status, order.status)}\n"
         f"💰 مبلغ ثبت‌شده: {(order.price_snapshot_toman or service.price_toman):,} تومان\n"
         f"📅 تاریخ ثبت: {order.created_at.strftime('%Y/%m/%d') if order.created_at else '—'}\n"
+        f"👤 نام: {data.get('full_name') or '—'}\n"
+        f"📱 موبایل: {data.get('mobile') or '—'}\n"
     )
-    if data.get("full_name"):
-        text += f"👤 نام: {data['full_name']}\n"
-    if data.get("mobile"):
-        text += f"📱 موبایل: {data['mobile']}\n"
+    for key, label in (
+        ("birth_date_gregorian", "تاریخ تولد"),
+        ("return_date_gregorian", "آخرین بازگشت به افغانستان"),
+        ("consulate", "کنسولگری"),
+        ("document_type", "نوع مدرک"),
+        ("own_mobile", "موبایل به نام شخص"),
+    ):
+        if data.get(key):
+            text += f"{label}: {data[key]}\n"
+    text += "\n👨‍👩‍👧 همراهان:\n" + (
+        "\n".join(f"• {x.full_name} — {x.mobile}" for x in companions) if companions else "ندارد"
+    )
+    text += "\n\n📎 مدارک ثبت‌شده: " + (
+        ", ".join(d.document_type for d in documents) if documents else "ندارد"
+    )
     buttons = []
     if order.status == "rejected":
         buttons.append([InlineKeyboardButton(text="🧾 ارسال مجدد رسید", callback_data=f"retry_receipt:{order.id}")])
     buttons.append([InlineKeyboardButton(text="📞 پشتیبانی", callback_data=f"user:support:{order.id}")])
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    for doc in documents:
+        try:
+            await callback.message.answer_photo(doc.telegram_file_id, caption=f"📎 {doc.document_type} | {order.public_id}")
+        except Exception:
+            await callback.message.answer(f"⚠️ تصویر «{doc.document_type}» قابل نمایش مجدد نیست.")
     await callback.answer()
 
 @router.message(F.text == "👤 حساب من")
