@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.bot.handlers import STATUS_TEXT
 from app.bot.states import AdminForm
 from app.core.config import get_settings
-from app.db.models import Companion, Document, Order, Payment, Service, Setting, Ticket, TicketMessage, User
+from app.db.models import Companion, Document, Order, Operator, Payment, Service, Setting, Ticket, TicketMessage, User
 from app.db.session import SessionLocal
 
 router = Router()
@@ -24,6 +24,7 @@ def admin_menu() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🔵 رسیدهای در انتظار بررسی", callback_data="adm:pending")],
             [InlineKeyboardButton(text="📋 درخواست‌ها", callback_data="adm:orders")],
             [InlineKeyboardButton(text="👥 مشترکان", callback_data="adm:users")],
+            [InlineKeyboardButton(text="👨‍💼 اپراتورها", callback_data="adm:operators")],
             [InlineKeyboardButton(text="🧩 خدمات", callback_data="adm:services")],
             [InlineKeyboardButton(text="💰 قیمت خدمات", callback_data="adm:prices")],
             [InlineKeyboardButton(text="💳 اطلاعات کارت", callback_data="adm:card")],
@@ -32,14 +33,19 @@ def admin_menu() -> InlineKeyboardMarkup:
     )
 
 
-def order_actions(order_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="✅ تأیید پرداخت", callback_data=f"adm:approve:{order_id}")],
-            [InlineKeyboardButton(text="❌ رد پرداخت", callback_data=f"adm:reject:{order_id}")],
-            [InlineKeyboardButton(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order_id}")],
-        ]
-    )
+def order_actions(order_id: int, operator: bool = False) -> InlineKeyboardMarkup:
+    rows = []
+    if not operator:
+        rows.append([InlineKeyboardButton(text="✅ تأیید پرداخت", callback_data=f"adm:approve:{order_id}")])
+        rows.append([InlineKeyboardButton(text="❌ رد پرداخت", callback_data=f"adm:reject:{order_id}")])
+    rows.extend([
+        [InlineKeyboardButton(text="🟡 در حال انجام", callback_data=f"adm:status:{order_id}:in_progress")],
+        [InlineKeyboardButton(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order_id}:waiting_user")],
+        [InlineKeyboardButton(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order_id}:completed")],
+        [InlineKeyboardButton(text="🔴 رد درخواست", callback_data=f"adm:status:{order_id}:rejected")],
+        [InlineKeyboardButton(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order_id}")],
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def status_header(order: Order, service: Service) -> str:
@@ -566,6 +572,198 @@ async def send_message_to_user(message: Message, state: FSMContext) -> None:
     await message.copy_to(user.telegram_id)
     await state.clear()
     await message.answer("✅ پیام ارسال شد.", reply_markup=admin_menu())
+
+
+
+def _operator_permissions(operator: Operator) -> set[str]:
+    try:
+        data = json.loads(operator.permissions_json or "{}")
+        return {k for k, v in data.items() if v}
+    except (TypeError, json.JSONDecodeError):
+        return set()
+
+
+async def get_operator(telegram_id: int) -> Operator | None:
+    async with SessionLocal() as session:
+        return (
+            await session.execute(
+                select(Operator).where(Operator.telegram_id == telegram_id, Operator.active.is_(True))
+            )
+        ).scalar_one_or_none()
+
+
+def can_operator(operator: Operator, permission: str) -> bool:
+    return permission in _operator_permissions(operator)
+
+
+@router.callback_query(F.data == "adm:operators")
+async def operators_panel(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    await state.clear()
+    async with SessionLocal() as session:
+        rows = (await session.execute(select(Operator).order_by(Operator.id))).scalars().all()
+    text = "👨‍💼 مدیریت اپراتورها\n\n"
+    if rows:
+        for op in rows:
+            flags = ", ".join(sorted(_operator_permissions(op))) or "بدون دسترسی"
+            text += f"• {op.display_name or 'بدون نام'} | {op.telegram_id} | {'🟢' if op.active else '🔴'}\n  دسترسی: {flags}\n"
+    else:
+        text += "هنوز اپراتوری ثبت نشده است.\n"
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ افزودن اپراتور", callback_data="adm:operator:add")],
+        [InlineKeyboardButton(text="🔐 تنظیم دسترسی اپراتور", callback_data="adm:operator:perm")],
+        [InlineKeyboardButton(text="🚫 غیرفعال کردن اپراتور", callback_data="adm:operator:remove")],
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:home")],
+    ])
+    await callback.message.edit_text(text, reply_markup=keyboard)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "adm:operator:add")
+async def operator_add_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    await state.clear()
+    await state.set_state(AdminForm.operator_add)
+    await callback.answer()
+    await callback.message.answer("👨‍💼 شناسه عددی تلگرام اپراتور را ارسال کنید:")
+
+
+@router.message(AdminForm.operator_add)
+async def operator_add_save(message: Message, state: FSMContext) -> None:
+    if not is_admin(message):
+        return
+    raw = (message.text or "").strip()
+    if not raw.isdigit():
+        await message.answer("❌ شناسه باید فقط عدد باشد.")
+        return
+    telegram_id = int(raw)
+    async with SessionLocal() as session:
+        op = (await session.execute(select(Operator).where(Operator.telegram_id == telegram_id))).scalar_one_or_none()
+        if op is None:
+            session.add(Operator(
+                telegram_id=telegram_id,
+                display_name=str(telegram_id),
+                role="operator",
+                permissions_json=json.dumps({"view_orders": True, "approve_payment": False, "reject_payment": False, "set_status": True, "message_user": True}, ensure_ascii=False),
+                active=True,
+            ))
+            msg = "✅ اپراتور اضافه شد."
+        else:
+            op.active = True
+            msg = "✅ اپراتور دوباره فعال شد."
+        await session.commit()
+    await state.clear()
+    await message.answer(msg, reply_markup=admin_menu())
+
+
+@router.callback_query(F.data == "adm:operator:perm")
+async def operator_perm_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    await state.clear()
+    await state.set_state(AdminForm.operator_permission)
+    await callback.answer()
+    await callback.message.answer(
+        "🔐 تنظیم دسترسی\nفرمت:\nID | permission1,permission2,...\n\n"
+        "دسترسی‌ها: view_orders, approve_payment, reject_payment, set_status, message_user\n"
+        "مثال: 123456789 | view_orders,set_status,message_user"
+    )
+
+
+@router.message(AdminForm.operator_permission)
+async def operator_perm_save(message: Message, state: FSMContext) -> None:
+    if not is_admin(message):
+        return
+    raw = (message.text or "").strip()
+    if "|" not in raw:
+        await message.answer("❌ فرمت نادرست است.")
+        return
+    left, right = [x.strip() for x in raw.split("|", 1)]
+    if not left.isdigit():
+        await message.answer("❌ شناسه تلگرام نامعتبر است.")
+        return
+    allowed = {"view_orders", "approve_payment", "reject_payment", "set_status", "message_user"}
+    permissions = {x.strip() for x in right.split(",") if x.strip()}
+    if not permissions.issubset(allowed):
+        await message.answer("❌ یکی از دسترسی‌ها نامعتبر است.")
+        return
+    async with SessionLocal() as session:
+        op = (await session.execute(select(Operator).where(Operator.telegram_id == int(left)))).scalar_one_or_none()
+        if op is None:
+            await state.clear()
+            await message.answer("❌ اپراتور پیدا نشد.", reply_markup=admin_menu())
+            return
+        op.permissions_json = json.dumps({k: k in permissions for k in allowed}, ensure_ascii=False)
+        await session.commit()
+    await state.clear()
+    await message.answer("✅ دسترسی اپراتور ذخیره شد.", reply_markup=admin_menu())
+
+
+@router.callback_query(F.data == "adm:operator:remove")
+async def operator_remove_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    await state.clear()
+    await state.set_state(AdminForm.operator_remove)
+    await callback.answer()
+    await callback.message.answer("🚫 شناسه عددی اپراتور را برای غیرفعال‌سازی ارسال کنید:")
+
+
+@router.message(AdminForm.operator_remove)
+async def operator_remove_save(message: Message, state: FSMContext) -> None:
+    if not is_admin(message):
+        return
+    raw = (message.text or "").strip()
+    if not raw.isdigit():
+        await message.answer("❌ شناسه نامعتبر است.")
+        return
+    async with SessionLocal() as session:
+        op = (await session.execute(select(Operator).where(Operator.telegram_id == int(raw))).scalar_one_or_none()
+              if False else None)
+        # Keep this query explicit for SQLAlchemy async compatibility.
+        result = await session.execute(select(Operator).where(Operator.telegram_id == int(raw)))
+        op = result.scalar_one_or_none()
+        if op is None:
+            await state.clear()
+            await message.answer("❌ اپراتور پیدا نشد.", reply_markup=admin_menu())
+            return
+        op.active = False
+        await session.commit()
+    await state.clear()
+    await message.answer("✅ اپراتور غیرفعال شد.", reply_markup=admin_menu())
+
+
+@router.callback_query(F.data.startswith("adm:status:"))
+async def operator_status_change(callback: CallbackQuery) -> None:
+    operator = await get_operator(callback.from_user.id)
+    is_main = callback.from_user.id in get_settings().admin_id_set
+    if not is_main and (operator is None or not can_operator(operator, "set_status")):
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    _, _, order_id_raw, status = callback.data.split(":", 3)
+    try:
+        order_id = int(order_id_raw)
+    except ValueError:
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    allowed_statuses = {"in_progress", "waiting_user", "completed", "rejected"}
+    if status not in allowed_statuses:
+        await callback.answer("وضعیت نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        order = await session.get(Order, order_id)
+        if order is None:
+            await callback.answer("درخواست پیدا نشد.", show_alert=True)
+            return
+        order.status = status
+        user = await session.get(User, order.user_id)
+        await session.commit()
+    labels = {"in_progress":"🟡 در حال انجام","waiting_user":"⏳ منتظر مشترک","completed":"✅ تکمیل شده","rejected":"🔴 رد شده"}
+    await callback.answer("وضعیت تغییر کرد.")
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.bot.send_message(user.telegram_id, f"🔔 وضعیت درخواست {order.public_id} تغییر کرد.\n\nوضعیت جدید: {labels[status]}")
 
 
 @router.message()
