@@ -29,6 +29,19 @@ from app.utils.ids import public_order_id
 
 router = Router()
 
+
+
+async def safe_step_message(
+    callback: CallbackQuery,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
+    """Show the next form question even if editing the previous Telegram message fails."""
+    try:
+        await callback.message.edit_text(text, reply_markup=reply_markup)
+    except Exception:
+        await callback.message.answer(text, reply_markup=reply_markup)
+
 async def is_active_operator(telegram_id: int) -> bool:
     async with SessionLocal() as session:
         row = (
@@ -336,7 +349,7 @@ async def inline_identity_doc_amayesh(callback: CallbackQuery, state: FSMContext
     await callback.answer()
     await state.update_data(identity_document_type="کارت آمایش")
     await state.set_state(IdentityForm.identity_document)
-    await callback.message.edit_text("📸 عکس کارت آمایش را ارسال کنید.\nمثال: عکس واضح و کامل از کارت.", reply_markup=cancel_menu())
+    await safe_step_message(callback, "📸 عکس کارت آمایش را ارسال کنید.\nمثال: عکس واضح و کامل از کارت.", reply_markup=cancel_menu())
 
 
 @router.callback_query(F.data == "identity:doc:passport")
@@ -346,7 +359,7 @@ async def inline_identity_doc_passport(callback: CallbackQuery, state: FSMContex
     await callback.answer()
     await state.update_data(identity_document_type="پاسپورت")
     await state.set_state(IdentityForm.identity_document)
-    await callback.message.edit_text("📸 عکس صفحه اول پاسپورت را ارسال کنید.\nمثال: عکس واضح و کامل از صفحه مشخصات.", reply_markup=cancel_menu())
+    await safe_step_message(callback, "📸 عکس صفحه اول پاسپورت را ارسال کنید.\nمثال: عکس واضح و کامل از صفحه مشخصات.", reply_markup=cancel_menu())
 
 
 @router.callback_query(F.data == "identity:doc:other")
@@ -354,7 +367,7 @@ async def inline_identity_doc_other(callback: CallbackQuery, state: FSMContext) 
     if await state.get_state() != IdentityForm.identity_document_type:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
     await callback.answer()
-    await callback.message.edit_text("✍️ نوع مدرک را وارد کنید.\nمثال: کارت اقامت", reply_markup=cancel_menu())
+    await safe_step_message(callback, "✍️ نوع مدرک را وارد کنید.\nمثال: کارت اقامت", reply_markup=cancel_menu())
 
 
 @router.callback_query(F.data == "identity:doc:none")
@@ -364,7 +377,7 @@ async def inline_identity_doc_none(callback: CallbackQuery, state: FSMContext) -
     await callback.answer()
     await state.update_data(identity_document_type="ندارد", identity_document=None)
     await state.set_state(IdentityForm.tazkira)
-    await callback.message.edit_text("۷/۸\n📸 عکس تذکره را ارسال کنید.\nمثال: عکس واضح از تمام صفحه تذکره.", reply_markup=cancel_menu())
+    await safe_step_message(callback, "۷/۸\n📸 عکس تذکره را ارسال کنید.\nمثال: عکس واضح از تمام صفحه تذکره.", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.identity_document_type)
@@ -383,7 +396,7 @@ async def inline_consulate_z(callback: CallbackQuery, state: FSMContext) -> None
     if await state.get_state() != IdentityForm.consulate:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
     await callback.answer(); await state.update_data(consulate="🇦🇫 زاهدان"); await state.set_state(IdentityForm.identity_document_type)
-    await callback.message.edit_text("۶/۸\nمدرک شناسایی شما چیست؟", reply_markup=identity_document_type_menu())
+    await safe_step_message(callback, "۶/۸\nمدرک شناسایی شما چیست؟", reply_markup=identity_document_type_menu())
 
 @router.callback_query(F.data == "identity:consulate:m")
 async def inline_consulate_m(callback: CallbackQuery, state: FSMContext) -> None:
