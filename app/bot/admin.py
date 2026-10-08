@@ -1242,11 +1242,21 @@ async def send_message_to_user(message: Message, state: FSMContext) -> None:
         ticket = (
             await session.execute(select(Ticket).where(Ticket.order_id == order_id))
         ).scalar_one_or_none()
-        if not row or not ticket:
+        if not row:
             await state.clear()
-            await message.answer("❌ تیکت فعال پیدا نشد.")
+            await message.answer("❌ درخواست پیدا نشد.")
             return
         order, service, user = row
+
+        # پاسخ مدیریت نباید به وجود قبلیِ تیکت وابسته باشد.
+        # اگر تیکت برای درخواست هنوز ساخته نشده یا قبلاً بسته شده، آن را
+        # دوباره فعال می‌کنیم تا پیام مدیریت از بین نرود.
+        if ticket is None:
+            ticket = Ticket(order_id=order.id, status="open")
+            session.add(ticket)
+            await session.flush()
+        elif ticket.status != "open":
+            ticket.status = "open"
         file_id = None
         if message.photo:
             file_id = message.photo[-1].file_id
