@@ -699,10 +699,13 @@ async def user_support_message(message: Message, state: FSMContext) -> None:
     recipients = set(get_settings().admin_id_set)
     async with SessionLocal() as session:
         operators = (await session.execute(select(Operator).where(Operator.active.is_(True)))).scalars().all()
-    recipients.update(
-        op.telegram_id for op in operators
-        if can_operator(op, "view_orders") and can_operator(op, "message_user")
-    )
+    for op in operators:
+        try:
+            permissions = json.loads(op.permissions_json or "{}")
+        except (TypeError, json.JSONDecodeError):
+            permissions = {}
+        if permissions.get("view_orders") and permissions.get("message_user"):
+            recipients.add(op.telegram_id)
     for recipient_id in recipients:
         await message.bot.send_message(recipient_id, f"📞 پشتیبانی | {order.public_id} | {service.name}")
         await message.copy_to(recipient_id)
