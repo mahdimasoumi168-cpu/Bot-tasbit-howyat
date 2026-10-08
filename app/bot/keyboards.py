@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
 
 
 def main_menu(is_admin: bool = False, is_operator: bool = False) -> InlineKeyboardMarkup:
@@ -62,6 +62,14 @@ def support_menu(active_orders: bool = False) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(text="📋 پشتیبانی درخواست‌های من", callback_data="menu:support_orders")])
     rows.append([InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="flow:cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def payment_invoice_menu(card_number: str, amount_rial: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 کپی شماره کارت", copy_text=CopyTextButton(text=card_number))],
+        [InlineKeyboardButton(text="📋 کپی مبلغ ریالی", copy_text=CopyTextButton(text=str(amount_rial)))],
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")],
+    ])
 
 def cancel_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
