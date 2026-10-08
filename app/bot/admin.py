@@ -1078,6 +1078,12 @@ async def approve(callback: CallbackQuery) -> None:
             await callback.answer("این رسید دیگر در انتظار بررسی نیست.", show_alert=True)
             return
         payment.status = "approved"
+        payload = json.loads(order.data_json or "{}")
+        code = payload.get("discount_code")
+        if code:
+            coupon = (await session.execute(select(DiscountCode).where(DiscountCode.code == code))).scalar_one_or_none()
+            if coupon and coupon.active and (coupon.max_uses is None or coupon.used_count < coupon.max_uses):
+                coupon.used_count += 1
         order.status = "payment_approved"
         ticket = (
             await session.execute(select(Ticket).where(Ticket.order_id == order_id))
