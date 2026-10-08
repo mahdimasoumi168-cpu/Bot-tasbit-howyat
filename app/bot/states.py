@@ -7,6 +7,7 @@ class IdentityForm(StatesGroup):
     birth_date = State()
     return_date = State()
     consulate = State()
+    identity_document_type = State()
     identity_document = State()
     tazkira = State()
     companion_choice = State()
