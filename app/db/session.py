@@ -70,6 +70,13 @@ async def init_db() -> None:
                     "(SELECT price_toman FROM services WHERE services.id = orders.service_id) "
                     "WHERE price_snapshot_toman IS NULL"
                 ))
+            wallet_columns = await conn.execute(text("PRAGMA table_info(wallets)"))
+            wallet_names = {row[1] for row in wallet_columns.fetchall()}
+            if not wallet_names:
+                await conn.execute(text("CREATE TABLE IF NOT EXISTS wallets (id INTEGER PRIMARY KEY, user_id INTEGER UNIQUE NOT NULL, balance_toman INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)"))
+            await conn.execute(text("CREATE TABLE IF NOT EXISTS wallet_topups (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, amount_toman INTEGER NOT NULL, receipt_file_id VARCHAR(512), receipt_type VARCHAR(16) DEFAULT 'photo', status VARCHAR(32) DEFAULT 'waiting_receipt_review', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, reviewed_at DATETIME)"))
+            await conn.execute(text("CREATE TABLE IF NOT EXISTS wallet_transactions (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, amount_toman INTEGER NOT NULL, balance_after_toman INTEGER NOT NULL, kind VARCHAR(32) NOT NULL, description VARCHAR(512) NOT NULL, order_id INTEGER, topup_id INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"))
+            await conn.execute(text("CREATE TABLE IF NOT EXISTS discount_codes (id INTEGER PRIMARY KEY, code VARCHAR(64) UNIQUE NOT NULL, kind VARCHAR(16) DEFAULT 'percent', value INTEGER NOT NULL, active BOOLEAN DEFAULT 1, max_uses INTEGER, used_count INTEGER DEFAULT 0, expires_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"))
             payment_columns = await conn.execute(text("PRAGMA table_info(payments)"))
             payment_names = {row[1] for row in payment_columns.fetchall()}
             if "receipt_type" not in payment_names:
