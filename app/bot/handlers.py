@@ -30,6 +30,18 @@ from app.utils.ids import public_order_id
 router = Router()
 
 
+def ui_button(text: str, **kwargs):
+    """Create consistently styled Telegram inline buttons: blue by default, semantic red/green when appropriate."""
+    if "style" not in kwargs:
+        if any(token in text for token in ("❌", "رد", "حذف", "غیرفعال", "انصراف")):
+            kwargs["style"] = "danger"
+        elif any(token in text for token in ("✅", "تأیید", "ذخیره", "انجام", "فعال")):
+            kwargs["style"] = "success"
+        else:
+            kwargs["style"] = "primary"
+    return InlineKeyboardButton(text=text, **kwargs)
+
+
 
 async def safe_step_message(
     callback: CallbackQuery,
@@ -414,7 +426,7 @@ async def inline_companion_yes(callback: CallbackQuery, state: FSMContext) -> No
     if await state.get_state() != IdentityForm.companion_choice:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
     await callback.answer(); await state.set_state(IdentityForm.companion_name)
-    await callback.message.edit_text("✍️ نام و نام خانوادگی همراه را وارد کنید.", reply_markup=cancel_menu())
+    await safe_step_message(callback, "✍️ نام و نام خانوادگی همراه را وارد کنید.", reply_markup=cancel_menu())
 
 @router.callback_query(F.data == "identity:companion:n")
 async def inline_companion_no(callback: CallbackQuery, state: FSMContext) -> None:
@@ -427,14 +439,14 @@ async def inline_doc_amayesh(callback: CallbackQuery, state: FSMContext) -> None
     if await state.get_state() != KhodnevisForm.document_type:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
     await callback.answer(); await state.update_data(document_type="کارت آمایش"); await state.set_state(KhodnevisForm.amayesh)
-    await callback.message.edit_text("۴/۷\n📸 عکس کارت آمایش را ارسال کنید.\nمثال: عکس واضح از تمام کارت.\nمحدودیت: فقط عکس، واضح و خوانا.", reply_markup=cancel_menu())
+    await safe_step_message(callback, "۴/۷\n📸 عکس کارت آمایش را ارسال کنید.\nمثال: عکس واضح از تمام کارت.\nمحدودیت: فقط عکس، واضح و خوانا.", reply_markup=cancel_menu())
 
 @router.callback_query(F.data == "khodnevis:doc:passport")
 async def inline_doc_passport(callback: CallbackQuery, state: FSMContext) -> None:
     if await state.get_state() != KhodnevisForm.document_type:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
     await callback.answer(); await state.update_data(document_type="پاسپورت"); await state.set_state(KhodnevisForm.passport_first)
-    await callback.message.edit_text("۴/۷\n📸 عکس صفحه اول پاسپورت را ارسال کنید.\nمثال: عکس واضح از صفحه مشخصات.\nمحدودیت: فقط عکس، واضح و خوانا؛ این صفحه الزامی است.", reply_markup=cancel_menu())
+    await safe_step_message(callback, "۴/۷\n📸 عکس صفحه اول پاسپورت را ارسال کنید.\nمثال: عکس واضح از صفحه مشخصات.\nمحدودیت: فقط عکس، واضح و خوانا؛ این صفحه الزامی است.", reply_markup=cancel_menu())
 
 @router.callback_query(F.data.startswith("khodnevis:optional:"))
 async def inline_optional_document(callback: CallbackQuery, state: FSMContext) -> None:
@@ -447,10 +459,10 @@ async def inline_optional_document(callback: CallbackQuery, state: FSMContext) -
         await callback.message.edit_text(f"📸 تصویر {target} را ارسال کنید.", reply_markup=cancel_menu()); return
     if current == KhodnevisForm.passport_renewal:
         await state.update_data(passport_renewal=None); await state.set_state(KhodnevisForm.residence_renewal)
-        await callback.message.edit_text("صفحه تمدید اقامت/ویزا را دارید؟", reply_markup=optional_document_menu())
+        await safe_step_message(callback, "صفحه تمدید اقامت/ویزا را دارید؟", reply_markup=optional_document_menu())
     else:
         await state.update_data(residence_renewal=None); await state.set_state(KhodnevisForm.own_mobile)
-        await callback.message.edit_text("📱 شماره موبایل به نام خود شخص را ارسال کنید.", reply_markup=cancel_menu())
+        await safe_step_message(callback, "📱 شماره موبایل به نام خود شخص را ارسال کنید.", reply_markup=cancel_menu())
 
 @router.callback_query(F.data == "order:confirm")
 async def inline_confirm(callback: CallbackQuery, state: FSMContext) -> None:
@@ -948,7 +960,7 @@ async def track_orders(message: Message, telegram_id: int | None = None) -> None
     for order, service in rows:
         text += f"{order.public_id} — {service.name}\nوضعیت: {STATUS_TEXT.get(order.status, order.status)}\n\n"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
+        [ui_button(
             text=f"🔎 {order.public_id} | {STATUS_TEXT.get(order.status, order.status)}",
             callback_data=f"user:order:{order.id}",
         )]
@@ -1011,8 +1023,8 @@ async def user_order_detail(callback: CallbackQuery) -> None:
     )
     buttons = []
     if order.status == "rejected":
-        buttons.append([InlineKeyboardButton(text="🧾 ارسال مجدد رسید", callback_data=f"retry_receipt:{order.id}")])
-    buttons.append([InlineKeyboardButton(text="📞 پشتیبانی", callback_data=f"user:support:{order.id}")])
+        buttons.append([ui_button(text="🧾 ارسال مجدد رسید", callback_data=f"retry_receipt:{order.id}")])
+    buttons.append([ui_button(text="📞 پشتیبانی", callback_data=f"user:support:{order.id}")])
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     for doc in documents:
         try:
@@ -1221,7 +1233,7 @@ async def account(message: Message, telegram_id: int | None = None) -> None:
     await message.answer(
         f"👤 حساب شما\nشناسه تلگرام: {user.telegram_id}\n"
         f"نام: {user.first_name or ''} {user.last_name or ''}".strip(),
-        reply_markup=await user_main_menu(message.from_user.id),
+        reply_markup=await user_main_menu(telegram_id or message.from_user.id),
     )
 
 
@@ -1398,10 +1410,10 @@ async def support(message: Message, telegram_id: int | None = None, show_direct:
             )
             return
         buttons = [
-            [InlineKeyboardButton(text=f"📞 {order.public_id} | {service.name}", callback_data=f"user:support:{order.id}")]
+            [ui_button(text=f"📞 {order.public_id} | {service.name}", callback_data=f"user:support:{order.id}")]
             for order, service in rows
         ]
-        buttons.append([InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")])
+        buttons.append([ui_button(text="❌ انصراف", callback_data="flow:cancel")])
         await message.answer("📞 درخواست موردنظر برای پشتیبانی را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
