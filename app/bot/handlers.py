@@ -277,15 +277,15 @@ async def identity_document_type_text(message: Message, state: FSMContext) -> No
 async def inline_consulate_z(callback: CallbackQuery, state: FSMContext) -> None:
     if await state.get_state() != IdentityForm.consulate:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
-    await callback.answer(); await state.update_data(consulate="🇦🇫 زاهدان"); await state.set_state(IdentityForm.identity_document)
-    await callback.message.edit_text("۶/۸\n📸 عکس مدرک شناسایی را ارسال کنید.\nمثال: عکس واضح و کامل از کارت/مدرک.\nمحدودیت: فقط عکس، واضح و خوانا.", reply_markup=cancel_menu())
+    await callback.answer(); await state.update_data(consulate="🇦🇫 زاهدان"); await state.set_state(IdentityForm.identity_document_type)
+    await callback.message.edit_text("۶/۸\nمدرک شناسایی شما چیست؟", reply_markup=identity_document_type_menu())
 
 @router.callback_query(F.data == "identity:consulate:m")
 async def inline_consulate_m(callback: CallbackQuery, state: FSMContext) -> None:
     if await state.get_state() != IdentityForm.consulate:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
-    await callback.answer(); await state.update_data(consulate="🇦🇫 مشهد"); await state.set_state(IdentityForm.identity_document)
-    await callback.message.edit_text("۶/۸\n📸 تصویر مدرک شناسایی را ارسال کنید.", reply_markup=cancel_menu())
+    await callback.answer(); await state.update_data(consulate="🇦🇫 مشهد"); await state.set_state(IdentityForm.identity_document_type)
+    await callback.message.edit_text("۶/۸\nمدرک شناسایی شما چیست؟", reply_markup=identity_document_type_menu())
 
 @router.callback_query(F.data == "identity:companion:y")
 async def inline_companion_yes(callback: CallbackQuery, state: FSMContext) -> None:
@@ -668,7 +668,7 @@ async def save_order_data(data: dict) -> None:
             for x in data.get("companions", [])
         )
         document_map = {
-            "identity_document": "مدرک شناسایی",
+            "identity_document": f"مدرک شناسایی ({data.get('identity_document_type') or 'سایر'})",
             "tazkira": "تذکره",
             "amayesh": "کارت آمایش",
             "passport_first": "صفحه اول پاسپورت",
