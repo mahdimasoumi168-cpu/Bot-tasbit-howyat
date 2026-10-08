@@ -13,6 +13,7 @@ from app.bot.keyboards import (
     main_menu,
     optional_document_menu,
     yes_no_menu,
+    single_action_menu,
 )
 from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm
 from app.core.config import get_settings
@@ -138,7 +139,7 @@ async def identity_start(message: Message, state: FSMContext) -> None:
         order_id=order.id, public_id=order.public_id, service_code=ServiceCode.IDENTITY.value
     )
     await state.set_state(IdentityForm.full_name)
-    await message.answer("۱/۸\nنام و نام خانوادگی را وارد کنید:", reply_markup=ReplyKeyboardRemove())
+    await message.answer("۱/۸\nنام و نام خانوادگی را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
 
 
 @router.message(IdentityForm.full_name)
@@ -149,7 +150,7 @@ async def identity_name(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(full_name=value)
     await state.set_state(IdentityForm.mobile)
-    await message.answer("۲/۸\nشماره موبایل در دسترس را وارد کنید:")
+    await message.answer("۲/۸\nشماره موبایل در دسترس را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
 
 
 @router.message(IdentityForm.mobile)
@@ -160,7 +161,7 @@ async def identity_mobile(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(mobile=value)
     await state.set_state(IdentityForm.birth_date)
-    await message.answer("۳/۸\nتاریخ تولد را به شمسی وارد کنید. مثال: ۱۴۰۵/۰۱/۱۵")
+    await message.answer("۳/۸\nتاریخ تولد را به شمسی وارد کنید. مثال: ۱۴۰۵/۰۱/۱۵", reply_markup=single_action_menu("🔄 شروع مجدد"))
 
 
 @router.message(IdentityForm.birth_date)
@@ -172,7 +173,7 @@ async def identity_birth(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(birth_date_gregorian=gregorian_display(value))
     await state.set_state(IdentityForm.return_date)
-    await message.answer("۴/۸\nآخرین تاریخ بازگشت به افغانستان را به شمسی وارد کنید:")
+    await message.answer("۴/۸\nآخرین تاریخ بازگشت به افغانستان را به شمسی وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
 
 
 @router.message(IdentityForm.return_date)
@@ -194,14 +195,14 @@ async def identity_consulate(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(consulate=message.text)
     await state.set_state(IdentityForm.identity_document)
-    await message.answer("۶/۸\nعکس مدرک شناسایی را ارسال کنید.")
+    await message.answer("۶/۸\nعکس مدرک شناسایی را ارسال کنید.", reply_markup=single_action_menu("🔄 شروع مجدد"))
 
 
 @router.message(IdentityForm.identity_document, F.photo)
 async def identity_document(message: Message, state: FSMContext) -> None:
     await state.update_data(identity_document=message.photo[-1].file_id)
     await state.set_state(IdentityForm.tazkira)
-    await message.answer("۷/۸\nعکس تذکره را ارسال کنید.")
+    await message.answer("۷/۸\nعکس تذکره را ارسال کنید.", reply_markup=single_action_menu("🔄 شروع مجدد"))
 
 
 @router.message(IdentityForm.tazkira, F.photo)
@@ -215,7 +216,7 @@ async def identity_tazkira(message: Message, state: FSMContext) -> None:
 async def identity_companion_choice(message: Message, state: FSMContext) -> None:
     if message.text == "✅ بله":
         await state.set_state(IdentityForm.companion_name)
-        await message.answer("نام و نام خانوادگی همراه را وارد کنید:")
+        await message.answer("نام و نام خانوادگی همراه را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
     elif message.text == "❌ خیر":
         await show_identity_summary(message, state)
     else:
@@ -230,7 +231,7 @@ async def identity_companion_name(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(pending_companion_name=value)
     await state.set_state(IdentityForm.companion_mobile)
-    await message.answer("شماره موبایل همراه را وارد کنید:")
+    await message.answer("شماره موبایل همراه را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
 
 
 @router.message(IdentityForm.companion_mobile)
@@ -293,7 +294,7 @@ async def khodnevis_start(message: Message, state: FSMContext) -> None:
         order_id=order.id, public_id=order.public_id, service_code=ServiceCode.KHODNEVIS.value
     )
     await state.set_state(KhodnevisForm.full_name)
-    await message.answer("۱/۷\nنام و نام خانوادگی را وارد کنید:", reply_markup=ReplyKeyboardRemove())
+    await message.answer("۱/۷\nنام و نام خانوادگی را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
 
 
 @router.message(KhodnevisForm.full_name)
@@ -304,7 +305,7 @@ async def khodnevis_name(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(full_name=value)
     await state.set_state(KhodnevisForm.mobile)
-    await message.answer("۲/۷\nشماره موبایل در دسترس را وارد کنید:")
+    await message.answer("۲/۷\nشماره موبایل در دسترس را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
 
 
 @router.message(KhodnevisForm.mobile)
@@ -323,11 +324,11 @@ async def khodnevis_document_type(message: Message, state: FSMContext) -> None:
     if message.text == "🪪 کارت آمایش":
         await state.update_data(document_type="کارت آمایش")
         await state.set_state(KhodnevisForm.amayesh)
-        await message.answer("۴/۷\nعکس کارت آمایش را ارسال کنید.")
+        await message.answer("۴/۷\nعکس کارت آمایش را ارسال کنید.", reply_markup=single_action_menu("🔄 شروع مجدد"))
     elif message.text == "🛂 پاسپورت":
         await state.update_data(document_type="پاسپورت")
         await state.set_state(KhodnevisForm.passport_first)
-        await message.answer("۴/۷\nعکس صفحه اول پاسپورت الزامی است.")
+        await message.answer("۴/۷\nعکس صفحه اول پاسپورت الزامی است.", reply_markup=single_action_menu("🔄 شروع مجدد"))
     else:
         await message.answer("یکی از دو گزینه را انتخاب کنید.", reply_markup=document_type_menu())
 
@@ -336,7 +337,7 @@ async def khodnevis_document_type(message: Message, state: FSMContext) -> None:
 async def khodnevis_amayesh(message: Message, state: FSMContext) -> None:
     await state.update_data(amayesh=message.photo[-1].file_id)
     await state.set_state(KhodnevisForm.own_mobile)
-    await message.answer("شماره موبایل به نام خود شخص را وارد کنید:")
+    await message.answer("شماره موبایل به نام خود شخص را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
 
 
 @router.message(KhodnevisForm.passport_first, F.photo)
@@ -353,7 +354,7 @@ async def khodnevis_passport_renewal(message: Message, state: FSMContext) -> Non
         await state.set_state(KhodnevisForm.residence_renewal)
         await message.answer("صفحه تمدید اقامت/ویزا را دارید؟", reply_markup=optional_document_menu())
     elif message.text == "📸 ارسال تصویر":
-        await message.answer("حالا تصویر صفحه تمدید پاسپورت را ارسال کنید.")
+        await message.answer("حالا تصویر صفحه تمدید پاسپورت را ارسال کنید.", reply_markup=single_action_menu("🔄 شروع مجدد"))
     else:
         await message.answer("یکی از گزینه‌ها را انتخاب کنید.", reply_markup=optional_document_menu())
 
@@ -370,9 +371,9 @@ async def khodnevis_residence_renewal(message: Message, state: FSMContext) -> No
     if message.text == "⏭️ ندارم / رد کردن":
         await state.update_data(residence_renewal=None)
         await state.set_state(KhodnevisForm.own_mobile)
-        await message.answer("شماره موبایل به نام خود شخص را وارد کنید:")
+        await message.answer("شماره موبایل به نام خود شخص را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
     elif message.text == "📸 ارسال تصویر":
-        await message.answer("حالا تصویر صفحه تمدید اقامت/ویزا را ارسال کنید.")
+        await message.answer("حالا تصویر صفحه تمدید اقامت/ویزا را ارسال کنید.", reply_markup=single_action_menu("🔄 شروع مجدد"))
     else:
         await message.answer("یکی از گزینه‌ها را انتخاب کنید.", reply_markup=optional_document_menu())
 
@@ -381,7 +382,7 @@ async def khodnevis_residence_renewal(message: Message, state: FSMContext) -> No
 async def khodnevis_residence_renewal_photo(message: Message, state: FSMContext) -> None:
     await state.update_data(residence_renewal=message.photo[-1].file_id)
     await state.set_state(KhodnevisForm.own_mobile)
-    await message.answer("شماره موبایل به نام خود شخص را وارد کنید:")
+    await message.answer("شماره موبایل به نام خود شخص را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
 
 
 @router.message(KhodnevisForm.own_mobile)
