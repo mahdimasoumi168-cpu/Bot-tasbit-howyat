@@ -1024,6 +1024,11 @@ async def pay_wallet(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.answer("پرداخت از اعتبار انجام شد.")
     await callback.message.edit_text("✅ پرداخت با اعتبار با موفقیت انجام شد.\n\nدرخواست شما برای انجام کار ثبت شد.", reply_markup=await user_main_menu(callback.from_user.id))
+    for admin_id in get_settings().admin_id_set:
+        try:
+            await callback.bot.send_message(admin_id, f"💰 پرداخت با اعتبار انجام شد.\nدرخواست داخلی: {order_id}")
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data == "pay:card")
