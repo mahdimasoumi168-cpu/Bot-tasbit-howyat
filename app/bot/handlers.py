@@ -14,6 +14,7 @@ from app.bot.keyboards import (
     optional_document_menu,
     yes_no_menu,
     single_action_menu,
+    cancel_menu,
     confirm_menu,
 )
 from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm, SupportForm
@@ -162,6 +163,15 @@ async def inline_restart(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await restart(callback.message, state, telegram_id=callback.from_user.id)
 
+@router.callback_query(F.data == "flow:cancel")
+async def flow_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer("عملیات لغو شد.")
+    await callback.message.edit_text(
+        "❌ عملیات جاری لغو شد.\n\nبه منوی اصلی برگشتید.",
+        reply_markup=await user_main_menu(callback.from_user.id),
+    )
+
 @router.callback_query(F.data == "menu:identity")
 async def inline_identity(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
@@ -192,7 +202,7 @@ async def inline_consulate_z(callback: CallbackQuery, state: FSMContext) -> None
     if await state.get_state() != IdentityForm.consulate:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
     await callback.answer(); await state.update_data(consulate="🇦🇫 زاهدان"); await state.set_state(IdentityForm.identity_document)
-    await callback.message.edit_text("۶/۸\n📸 تصویر مدرک شناسایی را ارسال کنید.", reply_markup=single_action_menu())
+    await callback.message.edit_text("۶/۸\n📸 تصویر مدرک شناسایی را ارسال کنید.", reply_markup=cancel_menu())
 
 @router.callback_query(F.data == "identity:consulate:m")
 async def inline_consulate_m(callback: CallbackQuery, state: FSMContext) -> None:
@@ -268,7 +278,7 @@ async def identity_start(message: Message, state: FSMContext, telegram_id: int |
         order_id=order.id, public_id=order.public_id, service_code=ServiceCode.IDENTITY.value
     )
     await state.set_state(IdentityForm.full_name)
-    await message.answer("۱/۸\nنام و نام خانوادگی را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
+    await message.answer("۱/۸\nنام و نام خانوادگی را وارد کنید:", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.full_name)
