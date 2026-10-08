@@ -8,10 +8,21 @@ from sqlalchemy import select
 from app.bot.handlers import STATUS_TEXT
 from app.bot.states import AdminForm
 from app.core.config import get_settings
-from app.db.models import Companion, Document, Order, Operator, Payment, Service, Setting, Ticket, TicketMessage, User
+from app.db.models import AuditLog, Companion, Document, Order, Operator, Payment, Service, Setting, Ticket, TicketMessage, User
 from app.db.session import SessionLocal
 
 router = Router()
+
+
+async def audit(actor_id: int, action: str, order_id: int | None = None, details: dict | None = None) -> None:
+    async with SessionLocal() as session:
+        session.add(AuditLog(
+            actor_telegram_id=actor_id,
+            action=action,
+            order_id=order_id,
+            details_json=json.dumps(details or {}, ensure_ascii=False),
+        ))
+        await session.commit()
 
 
 def is_admin(message: Message) -> bool:
@@ -738,6 +749,7 @@ async def approve(callback: CallbackQuery) -> None:
         user = await session.get(User, order.user_id)
     await callback.answer("پرداخت تأیید شد.")
     await callback.message.edit_reply_markup(reply_markup=None)
+    await audit(callback.from_user.id, "payment_approved", order_id, {"payment_id": payment.id})
     await callback.message.bot.send_message(
         user.telegram_id,
         f"✅ پرداخت درخواست {order.public_id} تأیید شد.\nدرخواست شما وارد مرحله انجام شد.",
@@ -776,6 +788,7 @@ async def reject(callback: CallbackQuery) -> None:
             [InlineKeyboardButton(text="🧾 ارسال مجدد رسید", callback_data=f"retry_receipt:{order.id}")]
         ]
     )
+    await audit(callback.from_user.id, "payment_rejected", order_id, {"payment_id": payment.id})
     await callback.message.bot.send_message(
         user.telegram_id,
         f"❌ رسید درخواست {order.public_id} تأیید نشد.\n"
@@ -1027,6 +1040,7 @@ async def operator_status_change(callback: CallbackQuery) -> None:
         order.status = status
         user = await session.get(User, order.user_id)
         await session.commit()
+    await audit(callback.from_user.id, "status_changed", order_id, {"status": status})
     labels = {"in_progress":"🟡 در حال انجام","waiting_user":"⏳ منتظر مشترک","completed":"✅ تکمیل شده","rejected":"🔴 رد شده"}
     await callback.answer("وضعیت تغییر کرد.")
     await callback.message.edit_reply_markup(reply_markup=None)
