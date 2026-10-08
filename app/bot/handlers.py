@@ -1068,6 +1068,11 @@ async def identity_document_invalid(message: Message, state: FSMContext) -> None
     await message.answer("📸 لطفاً تصویر مدرک شناسایی را به صورت عکس ارسال کنید.", reply_markup=cancel_menu())
 
 
+@router.message(IdentityForm.receipt)
+async def identity_receipt_invalid(message: Message, state: FSMContext) -> None:
+    await message.answer("🧾 لطفاً تصویر رسید را به صورت عکس یا فایل ارسال کنید.", reply_markup=cancel_menu())
+
+
 @router.message(IdentityForm.tazkira)
 async def identity_tazkira_invalid(message: Message, state: FSMContext) -> None:
     await message.answer("📸 لطفاً تصویر تذکره را به صورت عکس ارسال کنید.", reply_markup=cancel_menu())
