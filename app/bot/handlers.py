@@ -784,26 +784,35 @@ async def user_support_start(callback: CallbackQuery, state: FSMContext) -> None
     async with SessionLocal() as session:
         row = (
             await session.execute(
-                select(Ticket, Order, Service)
-                .join(Order, Ticket.order_id == Order.id)
+                select(Order, Service, User)
                 .join(Service, Order.service_id == Service.id)
                 .join(User, Order.user_id == User.id)
                 .where(
                     Order.id == order_id,
                     User.telegram_id == callback.from_user.id,
-                    Ticket.status == "open",
+                    Order.status.in_(["payment_approved", "in_progress", "waiting_user"]),
                 )
             )
         ).one_or_none()
-    if not row:
-        await callback.answer("برای این درخواست هنوز گفت‌وگوی پشتیبانی فعال نیست.", show_alert=True)
-        return
+        if not row:
+            await callback.answer("این درخواست در حال حاضر قابل پشتیبانی نیست.", show_alert=True)
+            return
+        order, service, user = row
+        ticket = (
+            await session.execute(select(Ticket).where(Ticket.order_id == order.id))
+        ).scalar_one_or_none()
+        if ticket is None:
+            ticket = Ticket(order_id=order.id, status="open")
+            session.add(ticket)
+        elif ticket.status != "open":
+            ticket.status = "open"
+        await session.commit()
     await state.clear()
     await state.update_data(support_order_id=order_id)
     await state.set_state(SupportForm.message)
     await callback.answer()
     await callback.message.answer(
-        f"📞 پشتیبانی درخواست {row[1].public_id}\n\n"
+        f"📞 پشتیبانی درخواست {order.public_id}\n\n"
         "پیام، عکس، فایل، ویدیو یا صوت خود را ارسال کنید.\n"
         "پیام شما مستقیم برای مدیریت و اپراتورهای مجاز ارسال می‌شود.",
         reply_markup=single_action_menu("🔄 شروع مجدد"),
@@ -878,23 +887,34 @@ async def support(message: Message, telegram_id: int | None = None) -> None:
     uid = telegram_id or message.from_user.id
     async with SessionLocal() as session:
         rows = (await session.execute(
-            select(Ticket, Order, Service)
-            .join(Order, Ticket.order_id == Order.id)
+            select(Order, Service)
             .join(Service, Order.service_id == Service.id)
             .join(User, Order.user_id == User.id)
-            .where(User.telegram_id == uid, Ticket.status == "open")
+            .where(
+                User.telegram_id == uid,
+                Order.status.in_(["payment_approved", "in_progress", "waiting_user"]),
+            )
             .order_by(Order.id.desc())
             .limit(20)
         )).all()
+        for order, service in rows:
+            ticket = (
+                await session.execute(select(Ticket).where(Ticket.order_id == order.id))
+            ).scalar_one_or_none()
+            if ticket is None:
+                session.add(Ticket(order_id=order.id, status="open"))
+            elif ticket.status != "open":
+                ticket.status = "open"
+        await session.commit()
     if not rows:
         await message.answer(
-            "📞 پشتیبانی\n\nبرای درخواست‌های فعال شما هنوز گفت‌وگوی پشتیبانی ایجاد نشده است.\nپس از تأیید پرداخت، امکان گفت‌وگو برای همان درخواست فعال می‌شود.",
+            "📞 پشتیبانی\n\nدر حال حاضر درخواست فعال و قابل پشتیبانی ندارید.",
             reply_markup=await user_main_menu(uid),
         )
         return
     buttons = [
         [InlineKeyboardButton(text=f"📞 {order.public_id} | {service.name}", callback_data=f"user:support:{order.id}")]
-        for _, order, service in rows
+        for order, service in rows
     ]
     buttons.append([InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart")])
     await message.answer("📞 درخواست موردنظر برای پشتیبانی را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
