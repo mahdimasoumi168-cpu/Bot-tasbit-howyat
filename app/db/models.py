@@ -126,6 +126,17 @@ class Setting(Base):
     key: Mapped[str]=mapped_column(String(128),unique=True,index=True)
     value: Mapped[str]=mapped_column(Text,default="")
 
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actor_telegram_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), index=True)
+    details_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+
 class Companion(Base):
     __tablename__ = "companions"
 
