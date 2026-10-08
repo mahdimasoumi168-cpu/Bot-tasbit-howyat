@@ -114,9 +114,12 @@ async def create_order(message: Message, service_code: ServiceCode) -> Order:
 
 async def payment_instructions(order_id: int) -> str:
     async with SessionLocal() as session:
-        service = (
-            await session.execute(select(Service).join(Order, Order.service_id == Service.id).where(Order.id == order_id))
-        ).scalar_one()
+        order = await session.get(Order, order_id)
+        if order is None:
+            raise ValueError("درخواست پیدا نشد.")
+        service = await session.get(Service, order.service_id)
+        if service is None:
+            raise ValueError("خدمت درخواست پیدا نشد.")
         number = (
             await session.execute(select(Setting).where(Setting.key == "card_number"))
         ).scalar_one_or_none()
@@ -127,7 +130,7 @@ async def payment_instructions(order_id: int) -> str:
     card_holder = holder.value if holder and holder.value else "هنوز توسط مدیریت تنظیم نشده است"
     return (
         "💳 پرداخت کارت‌به‌کارت\n\n"
-        f"مبلغ: {service.price_toman:,} تومان\n"
+        f"مبلغ: {(order.price_snapshot_toman or service.price_toman):,} تومان\n"
         f"شماره کارت: {card_number}\n"
         f"به نام: {card_holder}\n\n"
         "پس از واریز، تصویر رسید را ارسال کنید."
