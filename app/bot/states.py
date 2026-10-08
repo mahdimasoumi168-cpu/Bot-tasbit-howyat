@@ -30,4 +30,4 @@ class KhodnevisForm(StatesGroup):
 
 
 class AdminForm(StatesGroup):
-    send_message = State()
+    send_message = State()\n    set_card = State()\n    set_price = State()
