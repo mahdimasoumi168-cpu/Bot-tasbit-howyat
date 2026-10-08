@@ -89,7 +89,10 @@ async def order_amount_and_coupon(order_id: int) -> tuple[int, int, str | None]:
         discount = 0
         if coupon_code:
             coupon = (await session.execute(select(DiscountCode).where(DiscountCode.code == coupon_code))).scalar_one_or_none()
-            discount = calculate_discount(base, coupon)
+            if coupon and coupon.active and (not coupon.expires_at or coupon.expires_at > __import__("datetime").datetime.now()) and (coupon.max_uses is None or coupon.used_count < coupon.max_uses):
+                discount = calculate_discount(base, coupon)
+            else:
+                coupon_code = None
         return max(0, base - discount), discount, coupon_code
 
 
