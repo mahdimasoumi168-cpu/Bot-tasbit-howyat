@@ -80,6 +80,7 @@ class Payment(Base):
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
     amount_toman: Mapped[int] = mapped_column(Integer)
     receipt_file_id: Mapped[str | None] = mapped_column(String(512))
+    receipt_type: Mapped[str] = mapped_column(String(16), default="photo")
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
