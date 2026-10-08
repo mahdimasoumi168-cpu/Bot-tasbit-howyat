@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.db.models import AuditLog, Companion, Document, Order, Operator, Payment, Service, Setting, Ticket, TicketMessage, User
 from app.db.session import SessionLocal
 
-router = Router()
+router = Router()  # نسخه پایدار پنل مدیریت
 
 
 async def audit(actor_id: int, action: str, order_id: int | None = None, details: dict | None = None) -> None:
