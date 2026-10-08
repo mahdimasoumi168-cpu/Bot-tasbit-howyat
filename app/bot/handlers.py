@@ -18,7 +18,7 @@ from app.bot.keyboards import (
     cancel_menu,
     confirm_menu,
     support_menu,
-    payment_choice_menu, wallet_menu,
+    payment_choice_menu, wallet_menu, payment_invoice_menu,
 )
 from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm, SupportForm, PaymentForm, WalletTopupForm
 from app.core.config import get_settings
@@ -1063,7 +1063,16 @@ async def pay_card(callback: CallbackQuery, state: FSMContext) -> None:
         return
     await state.set_state(IdentityForm.receipt if data.get("service_code") == ServiceCode.IDENTITY.value else KhodnevisForm.receipt)
     await callback.answer()
-    await callback.message.edit_text(await payment_instructions(order_id), reply_markup=cancel_menu(), parse_mode=ParseMode.HTML)
+    invoice_text = await payment_instructions(order_id)
+    async with SessionLocal() as session:
+        card_setting = (await session.execute(select(Setting).where(Setting.key == "card_number"))).scalar_one_or_none()
+    card_number = card_setting.value if card_setting and card_setting.value else "تنظیم نشده"
+    amount_toman, _, _ = await order_amount_and_coupon(order_id)
+    await callback.message.edit_text(
+        invoice_text,
+        reply_markup=payment_invoice_menu(card_number, amount_toman * 10),
+        parse_mode=ParseMode.HTML,
+    )
 
 
 @router.callback_query(F.data == "pay:coupon")
@@ -1139,7 +1148,15 @@ async def wallet_topup_amount(message: Message, state: FSMContext) -> None:
         await state.update_data(topup_id=topup.id)
         await session.commit()
     await state.set_state(WalletTopupForm.receipt)
-    await message.answer(await wallet_topup_invoice(amount), reply_markup=cancel_menu(), parse_mode=ParseMode.HTML)
+    invoice_text = await wallet_topup_invoice(amount)
+    async with SessionLocal() as session:
+        card_setting = (await session.execute(select(Setting).where(Setting.key == "card_number"))).scalar_one_or_none()
+    card_number = card_setting.value if card_setting and card_setting.value else "تنظیم نشده"
+    await message.answer(
+        invoice_text,
+        reply_markup=payment_invoice_menu(card_number, amount * 10),
+        parse_mode=ParseMode.HTML,
+    )
 
 
 async def wallet_topup_invoice(amount: int) -> str:
