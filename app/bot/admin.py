@@ -55,13 +55,15 @@ def order_actions(order_id: int, operator: Operator | None = None) -> InlineKeyb
             rows.append([InlineKeyboardButton(text="✅ تأیید پرداخت", callback_data=f"adm:approve:{order_id}")])
         if can_operator(operator, "reject_payment"):
             rows.append([InlineKeyboardButton(text="❌ رد پرداخت", callback_data=f"adm:reject:{order_id}")])
-    rows.extend([
-        [InlineKeyboardButton(text="🟡 در حال انجام", callback_data=f"adm:status:{order_id}:in_progress")],
-        [InlineKeyboardButton(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order_id}:waiting_user")],
-        [InlineKeyboardButton(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order_id}:completed")],
-        [InlineKeyboardButton(text="🔴 رد درخواست", callback_data=f"adm:status:{order_id}:rejected")],
-        [InlineKeyboardButton(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order_id}")],
-    ])
+    if operator is None or can_operator(operator, "set_status"):
+        rows.extend([
+            [InlineKeyboardButton(text="🟡 در حال انجام", callback_data=f"adm:status:{order_id}:in_progress")],
+            [InlineKeyboardButton(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order_id}:waiting_user")],
+            [InlineKeyboardButton(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order_id}:completed")],
+            [InlineKeyboardButton(text="🔴 رد درخواست", callback_data=f"adm:status:{order_id}:rejected")],
+        ])
+    if operator is None or can_operator(operator, "message_user"):
+        rows.append([InlineKeyboardButton(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order_id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -174,10 +176,19 @@ async def operator_pending(callback: CallbackQuery) -> None:
         ]))
         await callback.answer()
         return
-    await callback.message.edit_text("🔵 رسیدهای در انتظار بررسی:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"{o.public_id} | {s.name}",callback_data=f"op:order:{o.id}")]
-        for p,o,s,u in rows
-    ]))
+    await callback.message.edit_text("🔵 رسیدهای در انتظار بررسی:")
+    for payment, order, service, user in rows:
+        await callback.message.answer(
+            f"{status_header(order, service)}\n"
+            f"👤 {user.first_name or ''} {user.last_name or ''}\n"
+            f"💰 {payment.amount_toman:,} تومان",
+            reply_markup=order_actions(order.id, operator=operator),
+        )
+        if payment.receipt_file_id:
+            await callback.message.answer_photo(
+                payment.receipt_file_id,
+                caption=f"🧾 رسید {order.public_id}",
+            )
     await callback.answer()
 \n\n@router.message(F.text == "/admin")
 async def admin_start(message: Message, state: FSMContext) -> None:
