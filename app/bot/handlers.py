@@ -4,7 +4,7 @@ import re
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
 from sqlalchemy import select
 
 from app.bot.keyboards import (
@@ -15,6 +15,7 @@ from app.bot.keyboards import (
     yes_no_menu,
 )
 from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm
+from app.core.config import get_settings
 from app.db.models import Companion, Document, Order, Payment, Service, ServiceCode, Setting, User
 from app.db.session import SessionLocal
 from app.utils.dates import gregorian_display, jalali_to_gregorian
@@ -115,7 +116,7 @@ async def start(message: Message, state: FSMContext) -> None:
     await get_or_create_user(message)
     await message.answer(
         "سلام 🌷\nبه «بات تثبیت هویت» خوش آمدید.\n\nخدمت موردنظر را انتخاب کنید:",
-        reply_markup=main_menu(),
+        reply_markup=main_menu(message.from_user.id in get_settings().admin_id_set),
     )
 
 
@@ -134,13 +135,13 @@ async def identity_start(message: Message, state: FSMContext) -> None:
     try:
         order = await create_order(message, ServiceCode.IDENTITY)
     except ValueError as exc:
-        await message.answer(f"❌ {exc}", reply_markup=main_menu())
+        await message.answer(f"❌ {exc}", reply_markup=main_menu(message.from_user.id in get_settings().admin_id_set))
         return
     await state.update_data(
         order_id=order.id, public_id=order.public_id, service_code=ServiceCode.IDENTITY.value
     )
     await state.set_state(IdentityForm.full_name)
-    await message.answer("۱/۸\nنام و نام خانوادگی را وارد کنید:")
+    await message.answer("۱/۸\nنام و نام خانوادگی را وارد کنید:", reply_markup=ReplyKeyboardRemove())
 
 
 @router.message(IdentityForm.full_name)
@@ -295,7 +296,7 @@ async def khodnevis_start(message: Message, state: FSMContext) -> None:
         order_id=order.id, public_id=order.public_id, service_code=ServiceCode.KHODNEVIS.value
     )
     await state.set_state(KhodnevisForm.full_name)
-    await message.answer("۱/۷\nنام و نام خانوادگی را وارد کنید:")
+    await message.answer("۱/۷\nنام و نام خانوادگی را وارد کنید:", reply_markup=ReplyKeyboardRemove())
 
 
 @router.message(KhodnevisForm.full_name)
