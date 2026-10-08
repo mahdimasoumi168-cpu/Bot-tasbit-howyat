@@ -120,13 +120,13 @@ async def admin_topups(callback: CallbackQuery) -> None:
         )).all()
     if not rows:
         await callback.answer("شارژ در انتظار بررسی وجود ندارد.", show_alert=True); return
-    buttons = [[InlineKeyboardButton(text=f"#{t.id} | {t.amount_toman:,} تومان | {u.telegram_id}", callback_data=f"adm:topup:{t.id}")] for t,u in rows]
+    buttons = [[InlineKeyboardButton(text=f"#{t.id} | {t.amount_toman:,} تومان | {u.telegram_id}", callback_data=f"adm:topup:view:{t.id}")] for t,u in rows]
     buttons.append([InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu:admin")])
     await callback.answer()
     await callback.message.edit_text("➕ شارژهای در انتظار بررسی:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
-@router.callback_query(F.data.startswith("adm:topup:"))
+@router.callback_query(F.data.startswith("adm:topup:view:"))
 async def admin_topup_view(callback: CallbackQuery) -> None:
     if callback.from_user.id not in get_settings().admin_id_set:
         await callback.answer("دسترسی ندارید.", show_alert=True); return
