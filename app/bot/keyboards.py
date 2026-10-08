@@ -71,7 +71,7 @@ def support_menu(active_orders: bool = False) -> InlineKeyboardMarkup:
     ]
     if active_orders:
         rows.append([InlineKeyboardButton(text="📋 پشتیبانی درخواست‌های من", callback_data="menu:support_orders", style="primary")])
-    rows.append([InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="flow:cancel", style="danger")])
+    rows.append([InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="flow:cancel", style="primary")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -120,7 +120,7 @@ def wallet_menu(balance: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ افزایش اعتبار", callback_data="wallet:topup", style="primary")],
         [InlineKeyboardButton(text="📜 تاریخچه اعتبار", callback_data="wallet:history", style="primary")],
-        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="flow:cancel")],
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="flow:cancel", style="primary")],
     ])
 
 
