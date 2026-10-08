@@ -16,6 +16,18 @@ from app.db.session import SessionLocal
 router = Router()
 
 
+def ui_button(text: str, **kwargs):
+    """Create consistently styled Telegram inline buttons: blue by default, semantic red/green when appropriate."""
+    if "style" not in kwargs:
+        if any(token in text for token in ("❌", "رد", "حذف", "غیرفعال", "انصراف")):
+            kwargs["style"] = "danger"
+        elif any(token in text for token in ("✅", "تأیید", "ذخیره", "انجام", "فعال")):
+            kwargs["style"] = "success"
+        else:
+            kwargs["style"] = "primary"
+    return InlineKeyboardButton(text=text, **kwargs)
+
+
 async def audit(actor_id: int, action: str, order_id: int | None = None, details: dict | None = None) -> None:
     async with SessionLocal() as session:
         session.add(AuditLog(
@@ -34,18 +46,18 @@ def is_admin(message: Message) -> bool:
 def admin_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🔵 رسیدهای در انتظار بررسی", callback_data="adm:pending")],
-            [InlineKeyboardButton(text="📋 درخواست‌ها", callback_data="adm:orders")],
-            [InlineKeyboardButton(text="🔎 پرونده با کد پیگیری", callback_data="adm:case")],
-            [InlineKeyboardButton(text="📊 گزارش‌ها", callback_data="adm:stats")],
-            [InlineKeyboardButton(text="👥 مشترکان", callback_data="adm:users")],
-            [InlineKeyboardButton(text="👨‍💼 اپراتورها", callback_data="adm:operators")],
-            [InlineKeyboardButton(text="🧩 خدمات", callback_data="adm:services")],
-            [InlineKeyboardButton(text="💰 قیمت خدمات", callback_data="adm:prices")],
-            [InlineKeyboardButton(text="💳 اطلاعات کارت", callback_data="adm:card")],
-            [InlineKeyboardButton(text="💰 اعتبار مشترکان", callback_data="adm:wallets"), InlineKeyboardButton(text="➕ شارژهای در انتظار", callback_data="adm:topups")],
-            [InlineKeyboardButton(text="🏷️ کدهای تخفیف", callback_data="adm:coupons")],
-            [InlineKeyboardButton(text="⚙️ تنظیمات", callback_data="adm:settings")],
+            [ui_button(text="🔵 رسیدهای در انتظار بررسی", callback_data="adm:pending")],
+            [ui_button(text="📋 درخواست‌ها", callback_data="adm:orders")],
+            [ui_button(text="🔎 پرونده با کد پیگیری", callback_data="adm:case")],
+            [ui_button(text="📊 گزارش‌ها", callback_data="adm:stats")],
+            [ui_button(text="👥 مشترکان", callback_data="adm:users")],
+            [ui_button(text="👨‍💼 اپراتورها", callback_data="adm:operators")],
+            [ui_button(text="🧩 خدمات", callback_data="adm:services")],
+            [ui_button(text="💰 قیمت خدمات", callback_data="adm:prices")],
+            [ui_button(text="💳 اطلاعات کارت", callback_data="adm:card")],
+            [ui_button(text="💰 اعتبار مشترکان", callback_data="adm:wallets"), ui_button(text="➕ شارژهای در انتظار", callback_data="adm:topups")],
+            [ui_button(text="🏷️ کدهای تخفیف", callback_data="adm:coupons")],
+            [ui_button(text="⚙️ تنظیمات", callback_data="adm:settings")],
         ]
     )
 
@@ -53,22 +65,22 @@ def admin_menu() -> InlineKeyboardMarkup:
 def order_actions(order_id: int, operator: Operator | None = None, payment_review: bool = True) -> InlineKeyboardMarkup:
     rows = []
     if payment_review and operator is None:
-        rows.append([InlineKeyboardButton(text="✅ تأیید پرداخت", callback_data=f"adm:approve:{order_id}")])
-        rows.append([InlineKeyboardButton(text="❌ رد پرداخت", callback_data=f"adm:reject:{order_id}")])
+        rows.append([ui_button(text="✅ تأیید پرداخت", callback_data=f"adm:approve:{order_id}")])
+        rows.append([ui_button(text="❌ رد پرداخت", callback_data=f"adm:reject:{order_id}")])
     elif payment_review:
         if can_operator(operator, "approve_payment"):
-            rows.append([InlineKeyboardButton(text="✅ تأیید پرداخت", callback_data=f"adm:approve:{order_id}")])
+            rows.append([ui_button(text="✅ تأیید پرداخت", callback_data=f"adm:approve:{order_id}")])
         if can_operator(operator, "reject_payment"):
-            rows.append([InlineKeyboardButton(text="❌ رد پرداخت", callback_data=f"adm:reject:{order_id}")])
+            rows.append([ui_button(text="❌ رد پرداخت", callback_data=f"adm:reject:{order_id}")])
     if operator is None or can_operator(operator, "set_status"):
         rows.extend([
-            [InlineKeyboardButton(text="🟡 در حال انجام", callback_data=f"adm:status:{order_id}:in_progress")],
-            [InlineKeyboardButton(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order_id}:waiting_user")],
-            [InlineKeyboardButton(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order_id}:completed")],
-            [InlineKeyboardButton(text="🔴 رد درخواست", callback_data=f"adm:status:{order_id}:rejected")],
+            [ui_button(text="🟡 در حال انجام", callback_data=f"adm:status:{order_id}:in_progress")],
+            [ui_button(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order_id}:waiting_user")],
+            [ui_button(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order_id}:completed")],
+            [ui_button(text="🔴 رد درخواست", callback_data=f"adm:status:{order_id}:rejected")],
         ])
     if operator is None or can_operator(operator, "message_user"):
-        rows.append([InlineKeyboardButton(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order_id}")])
+        rows.append([ui_button(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order_id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -104,7 +116,7 @@ async def admin_wallets(callback: CallbackQuery) -> None:
     ) if rows else "هیچ مشترکی اعتبار مثبت ندارد.")
     await callback.answer()
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu:admin")]
+        [ui_button(text="🔙 بازگشت", callback_data="menu:admin")]
     ]))
 
 
@@ -120,8 +132,8 @@ async def admin_topups(callback: CallbackQuery) -> None:
         )).all()
     if not rows:
         await callback.answer("شارژ در انتظار بررسی وجود ندارد.", show_alert=True); return
-    buttons = [[InlineKeyboardButton(text=f"#{t.id} | {t.amount_toman:,} تومان | {u.telegram_id}", callback_data=f"adm:topup:view:{t.id}")] for t,u in rows]
-    buttons.append([InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu:admin")])
+    buttons = [[ui_button(text=f"#{t.id} | {t.amount_toman:,} تومان | {u.telegram_id}", callback_data=f"adm:topup:view:{t.id}")] for t,u in rows]
+    buttons.append([ui_button(text="🔙 بازگشت", callback_data="menu:admin")])
     await callback.answer()
     await callback.message.edit_text("➕ شارژهای در انتظار بررسی:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
@@ -142,9 +154,9 @@ async def admin_topup_view(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
         f"➕ شارژ اعتبار #{topup.id}\n👤 {user.first_name or ''} {user.last_name or ''}\n🆔 {user.telegram_id}\n💰 {topup.amount_toman:,} تومان",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ تأیید و افزایش اعتبار", callback_data=f"adm:topup:approve:{topup.id}")],
-            [InlineKeyboardButton(text="❌ رد شارژ", callback_data=f"adm:topup:reject:{topup.id}")],
-            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:topups")],
+            [ui_button(text="✅ تأیید و افزایش اعتبار", callback_data=f"adm:topup:approve:{topup.id}")],
+            [ui_button(text="❌ رد شارژ", callback_data=f"adm:topup:reject:{topup.id}")],
+            [ui_button(text="🔙 بازگشت", callback_data="adm:topups")],
         ])
     )
     if topup.receipt_file_id:
@@ -168,8 +180,8 @@ async def admin_coupons(callback: CallbackQuery, state: FSMContext) -> None:
     if not rows: lines.append("هنوز کدی ثبت نشده است.")
     await callback.answer()
     await callback.message.edit_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ ایجاد کد تخفیف", callback_data="adm:coupon:add")],
-        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu:admin")],
+        [ui_button(text="➕ ایجاد کد تخفیف", callback_data="adm:coupon:add")],
+        [ui_button(text="🔙 بازگشت", callback_data="menu:admin")],
     ]))
 
 
@@ -238,9 +250,9 @@ async def operator_button(message: Message, state: FSMContext) -> None:
         return
     await state.clear()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
-        [InlineKeyboardButton(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
-        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="op:back")],
+        [ui_button(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
+        [ui_button(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
+        [ui_button(text="🔙 بازگشت", callback_data="op:back")],
     ])
     await message.answer("👨‍💼 پنل اپراتور\n\nدسترسی‌های شما بر اساس تنظیمات مدیریت نمایش داده می‌شود.", reply_markup=keyboard)
 
@@ -251,8 +263,8 @@ async def operator_back(callback: CallbackQuery) -> None:
     if operator is None:
         return
     await callback.message.edit_text("👨‍💼 پنل اپراتور", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
-        [InlineKeyboardButton(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
+        [ui_button(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
+        [ui_button(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
     ]))
     await callback.answer()
 
@@ -280,9 +292,9 @@ async def operator_orders(callback: CallbackQuery) -> None:
             for o,s,u in rows
         )
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=o.public_id, callback_data=f"op:order:{o.id}")]
+        [ui_button(text=o.public_id, callback_data=f"op:order:{o.id}")]
         for o,s,u in rows
-    ] + [[InlineKeyboardButton(text="🔙 بازگشت", callback_data="op:back")]]))
+    ] + [[ui_button(text="🔙 بازگشت", callback_data="op:back")]]))
     await callback.answer()
 
 
@@ -328,7 +340,7 @@ async def operator_pending(callback: CallbackQuery) -> None:
         )).all()
     if not rows:
         await callback.message.edit_text("🔵 رسید در انتظار بررسی وجود ندارد.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 بازگشت",callback_data="op:back")]
+            [ui_button(text="🔙 بازگشت",callback_data="op:back")]
         ]))
         await callback.answer()
         return
@@ -363,9 +375,9 @@ async def inline_operator_open(callback: CallbackQuery, state: FSMContext) -> No
     await state.clear()
     await callback.answer()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
-        [InlineKeyboardButton(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
-        [InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="op:back")],
+        [ui_button(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
+        [ui_button(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
+        [ui_button(text="🔙 بازگشت به منوی اصلی", callback_data="op:back")],
     ])
     await callback.message.edit_text("👨‍💼 پنل اپراتور\n\nبخش موردنظر را انتخاب کنید:", reply_markup=keyboard)
 
@@ -442,8 +454,8 @@ async def show_card(callback: CallbackQuery) -> None:
         f"شماره کارت: {number.value if number and number.value else 'تنظیم نشده'}\n"
         f"نام صاحب کارت: {holder.value if holder and holder.value else 'تنظیم نشده'}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✏️ ویرایش اطلاعات کارت", callback_data="adm:setcard")],
-            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:home")],
+            [ui_button(text="✏️ ویرایش اطلاعات کارت", callback_data="adm:setcard")],
+            [ui_button(text="🔙 بازگشت", callback_data="adm:home")],
         ]),
     )
     await callback.answer()
@@ -458,10 +470,10 @@ async def settings_panel(callback: CallbackQuery) -> None:
         "مدیریت اطلاعات حساس و تنظیمات پایه از همین پنل انجام می‌شود.\n"
         "در این بخش فعلاً اطلاعات کارت و قیمت خدمات قابل مدیریت است.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 اطلاعات کارت", callback_data="adm:card")],
-            [InlineKeyboardButton(text="💰 قیمت خدمات", callback_data="adm:prices")],
-            [InlineKeyboardButton(text="🧩 وضعیت خدمات", callback_data="adm:services")],
-            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:home")],
+            [ui_button(text="💳 اطلاعات کارت", callback_data="adm:card")],
+            [ui_button(text="💰 قیمت خدمات", callback_data="adm:prices")],
+            [ui_button(text="🧩 وضعیت خدمات", callback_data="adm:services")],
+            [ui_button(text="🔙 بازگشت", callback_data="adm:home")],
         ]),
     )
     await callback.answer()
@@ -476,11 +488,11 @@ async def services_panel(callback: CallbackQuery) -> None:
     buttons = []
     for service in rows:
         state_text = "🟢 فعال" if service.enabled else "🔴 غیرفعال"
-        buttons.append([InlineKeyboardButton(
+        buttons.append([ui_button(
             text=f"{state_text} | {service.name}",
             callback_data=f"adm:toggle:{service.id}"
         )])
-    buttons.append([InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:home")])
+    buttons.append([ui_button(text="🔙 بازگشت", callback_data="adm:home")])
     text = "🧩 مدیریت خدمات\n\nبرای فعال/غیرفعال کردن هر خدمت، روی همان خدمت بزنید."
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
@@ -711,9 +723,9 @@ async def prices(callback: CallbackQuery) -> None:
     ) or "خدمتی ثبت نشده است."
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🪪 تغییر قیمت تثبیت هویت", callback_data="adm:setprice:identity")],
-            [InlineKeyboardButton(text="📝 تغییر قیمت کد رهگیری خودنویس", callback_data="adm:setprice:khodnevis")],
-            [InlineKeyboardButton(text="🔙 بازگشت به پنل", callback_data="adm:home")],
+            [ui_button(text="🪪 تغییر قیمت تثبیت هویت", callback_data="adm:setprice:identity")],
+            [ui_button(text="📝 تغییر قیمت کد رهگیری خودنویس", callback_data="adm:setprice:khodnevis")],
+            [ui_button(text="🔙 بازگشت به پنل", callback_data="adm:home")],
         ]
     )
     await callback.message.edit_text(text, reply_markup=keyboard)
@@ -835,7 +847,7 @@ async def admin_stats(callback: CallbackQuery) -> None:
     await callback.message.edit_text(
         "\n".join(lines),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:home")]
+            [ui_button(text="🔙 بازگشت", callback_data="adm:home")]
         ])
     )
     await callback.answer()
@@ -874,14 +886,14 @@ async def admin_order_detail(callback: CallbackQuery) -> None:
         f"💳 پرداخت‌ها: {len(payments)}"
     )
     await callback.message.edit_text(summary, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📎 ارسال مدارک به من", callback_data=f"adm:docs:{order.id}")],
-        [InlineKeyboardButton(text="💳 رسیدها", callback_data=f"adm:payments:{order.id}")],
-        [InlineKeyboardButton(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order.id}")],
-        [InlineKeyboardButton(text="🟡 در حال انجام", callback_data=f"adm:status:{order.id}:in_progress")],
-        [InlineKeyboardButton(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order.id}:waiting_user")],
-        [InlineKeyboardButton(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order.id}:completed")],
-        [InlineKeyboardButton(text="🔴 رد درخواست", callback_data=f"adm:status:{order.id}:rejected")],
-        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:orders")],
+        [ui_button(text="📎 ارسال مدارک به من", callback_data=f"adm:docs:{order.id}")],
+        [ui_button(text="💳 رسیدها", callback_data=f"adm:payments:{order.id}")],
+        [ui_button(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order.id}")],
+        [ui_button(text="🟡 در حال انجام", callback_data=f"adm:status:{order.id}:in_progress")],
+        [ui_button(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order.id}:waiting_user")],
+        [ui_button(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order.id}:completed")],
+        [ui_button(text="🔴 رد درخواست", callback_data=f"adm:status:{order.id}:rejected")],
+        [ui_button(text="🔙 بازگشت", callback_data="adm:orders")],
     ]))
     await callback.answer()
 
@@ -974,9 +986,9 @@ async def orders(callback: CallbackQuery) -> None:
         for o, s, u in rows
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"{o.public_id} | {STATUS_TEXT.get(o.status,o.status)}", callback_data=f"adm:order:{o.id}")]
+        [ui_button(text=f"{o.public_id} | {STATUS_TEXT.get(o.status,o.status)}", callback_data=f"adm:order:{o.id}")]
         for o,s,u in rows
-    ] + [[InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:home")]])
+    ] + [[ui_button(text="🔙 بازگشت", callback_data="adm:home")]])
     await callback.message.edit_text(text or "درخواستی ثبت نشده است.", reply_markup=keyboard)
     await callback.answer()
 
@@ -1129,7 +1141,7 @@ async def reject(callback: CallbackQuery) -> None:
     await callback.message.edit_reply_markup(reply_markup=None)
     retry_keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🧾 ارسال مجدد رسید", callback_data=f"retry_receipt:{order.id}")]
+            [ui_button(text="🧾 ارسال مجدد رسید", callback_data=f"retry_receipt:{order.id}")]
         ]
     )
     await audit(callback.from_user.id, "payment_rejected", order_id, {"payment_id": payment.id})
@@ -1306,10 +1318,10 @@ async def operators_panel(callback: CallbackQuery, state: FSMContext) -> None:
     else:
         text += "هنوز اپراتوری ثبت نشده است.\n"
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➕ افزودن اپراتور", callback_data="adm:operator:add")],
-        [InlineKeyboardButton(text="🔐 تنظیم دسترسی اپراتور", callback_data="adm:operator:perm")],
-        [InlineKeyboardButton(text="🚫 غیرفعال کردن اپراتور", callback_data="adm:operator:remove")],
-        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:home")],
+        [ui_button(text="➕ افزودن اپراتور", callback_data="adm:operator:add")],
+        [ui_button(text="🔐 تنظیم دسترسی اپراتور", callback_data="adm:operator:perm")],
+        [ui_button(text="🚫 غیرفعال کردن اپراتور", callback_data="adm:operator:remove")],
+        [ui_button(text="🔙 بازگشت", callback_data="adm:home")],
     ])
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
@@ -1374,13 +1386,13 @@ def operator_permission_keyboard(telegram_id: int, permissions: set[str]) -> Inl
     rows = []
     for key in ("view_orders", "approve_payment", "reject_payment", "set_status", "message_user"):
         mark = "✅" if key in permissions else "⬜"
-        rows.append([InlineKeyboardButton(
+        rows.append([ui_button(
             text=f"{mark} {PERMISSION_ICONS[key]} {PERMISSION_LABELS[key]}",
             callback_data=f"adm:operator:perm:toggle:{telegram_id}:{key}",
         )])
     rows.append([
-        InlineKeyboardButton(text="💾 ذخیره دسترسی‌ها", callback_data=f"adm:operator:perm:save:{telegram_id}"),
-        InlineKeyboardButton(text="❌ انصراف", callback_data="adm:operators"),
+        ui_button(text="💾 ذخیره دسترسی‌ها", callback_data=f"adm:operator:perm:save:{telegram_id}"),
+        ui_button(text="❌ انصراف", callback_data="adm:operators"),
     ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -1400,13 +1412,13 @@ async def operator_perm_start(callback: CallbackQuery, state: FSMContext) -> Non
         await callback.message.edit_text("👨‍💼 مدیریت اپراتورها", reply_markup=admin_menu())
         return
     buttons = [
-        [InlineKeyboardButton(
+        [ui_button(
             text=f"{'🟢' if op.active else '🔴'} {op.display_name or 'بدون نام'} | {op.telegram_id}",
             callback_data=f"adm:operator:perm:select:{op.telegram_id}",
         )]
         for op in operators
     ]
-    buttons.append([InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:operators")])
+    buttons.append([ui_button(text="🔙 بازگشت", callback_data="adm:operators")])
     await callback.answer()
     await callback.message.edit_text(
         "🔐 تنظیم دسترسی همکار\n\nلطفاً همکار موردنظر را انتخاب کنید:",
