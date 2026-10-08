@@ -122,11 +122,8 @@ async def start(message: Message, state: FSMContext) -> None:
 
 @router.message(F.text == "🔄 شروع مجدد")
 async def restart(message: Message, state: FSMContext) -> None:
-    await state.clear()
-    await message.answer(
-        "فرآیند فعلی لغو شد. درخواست ثبت‌شده حذف نشده است.\nاز منوی اصلی یک خدمت را انتخاب کنید.",
-        reply_markup=main_menu(message.from_user.id in get_settings().admin_id_set),
-    )
+    # «شروع مجدد» دقیقاً همان رفتار /start را اجرا می‌کند.
+    await start(message, state)
 
 
 @router.message(F.text == "🪪 تثبیت هویت")
