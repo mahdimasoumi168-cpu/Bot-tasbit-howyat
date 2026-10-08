@@ -64,13 +64,14 @@ def valid_mobile(value: str) -> bool:
     return bool(re.fullmatch(r"(?:09\d{9}|9\d{9}|989\d{9}|00989\d{9})", digits))
 
 
-async def get_or_create_user(message: Message) -> User:
+async def get_or_create_user(message: Message, telegram_id: int | None = None) -> User:
+    uid = telegram_id or message.from_user.id
     async with SessionLocal() as session:
-        result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
+        result = await session.execute(select(User).where(User.telegram_id == uid))
         user = result.scalar_one_or_none()
         if user is None:
             user = User(
-                telegram_id=message.from_user.id,
+                telegram_id=uid,
                 first_name=message.from_user.first_name,
                 last_name=message.from_user.last_name,
                 username=message.from_user.username,
@@ -79,18 +80,20 @@ async def get_or_create_user(message: Message) -> User:
             await session.commit()
             await session.refresh(user)
         else:
-            user.first_name = message.from_user.first_name
-            user.last_name = message.from_user.last_name
-            user.username = message.from_user.username
-            await session.commit()
+            if telegram_id is None:
+                user.first_name = message.from_user.first_name
+                user.last_name = message.from_user.last_name
+                user.username = message.from_user.username
+                await session.commit()
         return user
 
 
-async def create_order(message: Message, service_code: ServiceCode) -> Order:
-    await get_or_create_user(message)
+async def create_order(message: Message, service_code: ServiceCode, telegram_id: int | None = None) -> Order:
+    uid = telegram_id or message.from_user.id
+    await get_or_create_user(message, telegram_id=telegram_id)
     async with SessionLocal() as session:
         user = (
-            await session.execute(select(User).where(User.telegram_id == message.from_user.id))
+            await session.execute(select(User).where(User.telegram_id == uid))
         ).scalar_one()
         service = (
             await session.execute(select(Service).where(Service.code == service_code.value))
@@ -138,17 +141,18 @@ async def payment_instructions(order_id: int) -> str:
 
 
 @router.message(CommandStart())
-async def start(message: Message, state: FSMContext) -> None:
+async def start(message: Message, state: FSMContext, telegram_id: int | None = None) -> None:
+    uid = telegram_id or message.from_user.id
     await state.clear()
-    await get_or_create_user(message)
+    await get_or_create_user(message, telegram_id=telegram_id)
     await message.answer(
         "سلام 🌷\nبه «رنا یار بات» خوش آمدید.\n\nخدمت موردنظر را انتخاب کنید:",
-        reply_markup=await user_main_menu(message.from_user.id),
+        reply_markup=await user_main_menu(uid),
     )
 
 
 @router.message(F.text == "🔄 شروع مجدد")
-async def restart(message: Message, state: FSMContext) -> None:
+async def restart(message: Message, state: FSMContext, telegram_id: int | None = None) -> None:
     # «شروع مجدد» دقیقاً همان رفتار /start را اجرا می‌کند.
     await start(message, state)
 
@@ -156,32 +160,32 @@ async def restart(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "menu:restart")
 async def inline_restart(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await restart(callback.message, state)
+    await restart(callback.message, state, telegram_id=callback.from_user.id)
 
 @router.callback_query(F.data == "menu:identity")
 async def inline_identity(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await identity_start(callback.message, state)
+    await identity_start(callback.message, state, telegram_id=callback.from_user.id)
 
 @router.callback_query(F.data == "menu:khodnevis")
 async def inline_khodnevis(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    await khodnevis_start(callback.message, state)
+    await khodnevis_start(callback.message, state, telegram_id=callback.from_user.id)
 
 @router.callback_query(F.data == "menu:tracking")
 async def inline_tracking(callback: CallbackQuery) -> None:
     await callback.answer()
-    await track_orders(callback.message)
+    await track_orders(callback.message, telegram_id=callback.from_user.id)
 
 @router.callback_query(F.data == "menu:account")
 async def inline_account(callback: CallbackQuery) -> None:
     await callback.answer()
-    await account(callback.message)
+    await account(callback.message, telegram_id=callback.from_user.id)
 
 @router.callback_query(F.data == "menu:support")
 async def inline_support(callback: CallbackQuery) -> None:
     await callback.answer()
-    await support(callback.message)
+    await support(callback.message, telegram_id=callback.from_user.id)
 
 @router.callback_query(F.data == "identity:consulate:z")
 async def inline_consulate_z(callback: CallbackQuery, state: FSMContext) -> None:
@@ -252,10 +256,10 @@ async def inline_confirm(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 @router.message(F.text == "🪪 تثبیت هویت")
-async def identity_start(message: Message, state: FSMContext) -> None:
+async def identity_start(message: Message, state: FSMContext, telegram_id: int | None = None) -> None:
     await state.clear()
     try:
-        order = await create_order(message, ServiceCode.IDENTITY)
+        order = await create_order(message, ServiceCode.IDENTITY, telegram_id=telegram_id)
     except ValueError as exc:
         await message.answer(f"❌ {exc}", reply_markup=await user_main_menu(message.from_user.id))
         return
@@ -408,10 +412,10 @@ async def identity_receipt(message: Message, state: FSMContext) -> None:
 
 
 @router.message(F.text == "📝 کد رهگیری خودنویس")
-async def khodnevis_start(message: Message, state: FSMContext) -> None:
+async def khodnevis_start(message: Message, state: FSMContext, telegram_id: int | None = None) -> None:
     await state.clear()
     try:
-        order = await create_order(message, ServiceCode.KHODNEVIS)
+        order = await create_order(message, ServiceCode.KHODNEVIS, telegram_id=telegram_id)
     except ValueError as exc:
         await message.answer(f"❌ {exc}", reply_markup=await user_main_menu(message.from_user.id))
         return
@@ -637,7 +641,7 @@ async def retry_receipt_save(message: Message, state: FSMContext) -> None:
 
 
 @router.message(F.text == "📋 پیگیری درخواست‌ها")
-async def track_orders(message: Message) -> None:
+async def track_orders(message: Message, telegram_id: int | None = None) -> None:
     async with SessionLocal() as session:
         result = await session.execute(
             select(Order, Service)
@@ -728,8 +732,8 @@ async def user_order_detail(callback: CallbackQuery) -> None:
     await callback.answer()
 
 @router.message(F.text == "👤 حساب من")
-async def account(message: Message) -> None:
-    user = await get_or_create_user(message)
+async def account(message: Message, telegram_id: int | None = None) -> None:
+    user = await get_or_create_user(message, telegram_id=telegram_id)
     await message.answer(
         f"👤 حساب شما\nشناسه تلگرام: {user.telegram_id}\n"
         f"نام: {user.first_name or ''} {user.last_name or ''}".strip(),
@@ -838,7 +842,7 @@ async def user_support_message(message: Message, state: FSMContext) -> None:
     await message.answer("✅ پیام شما برای پشتیبانی ارسال شد.", reply_markup=await user_main_menu(message.from_user.id))
 
 @router.message(F.text == "📞 پشتیبانی")
-async def support(message: Message) -> None:
+async def support(message: Message, telegram_id: int | None = None) -> None:
     await message.answer(
         "📞 پشتیبانی\nپیام خود را ارسال کنید؛ اگر درخواست فعالی داشته باشید، برای مدیریت همان درخواست ارسال می‌شود.",
         reply_markup=await user_main_menu(message.from_user.id),
