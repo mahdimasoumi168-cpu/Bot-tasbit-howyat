@@ -513,6 +513,7 @@ async def identity_confirm(message: Message, state: FSMContext) -> None:
 
 
 @router.message(IdentityForm.receipt, F.photo)
+@router.message(IdentityForm.receipt, F.document)
 async def identity_receipt(message: Message, state: FSMContext) -> None:
     try:
         await save_receipt(message, state)
@@ -656,6 +657,7 @@ async def khodnevis_confirm(message: Message, state: FSMContext) -> None:
 
 
 @router.message(KhodnevisForm.receipt, F.photo)
+@router.message(KhodnevisForm.receipt, F.document)
 async def khodnevis_receipt(message: Message, state: FSMContext) -> None:
     try:
         await save_receipt(message, state)
@@ -737,7 +739,8 @@ async def save_receipt(message: Message, state: FSMContext) -> None:
             Payment(
                 order_id=order.id,
                 amount_toman=order.price_snapshot_toman or service.price_toman,
-                receipt_file_id=message.photo[-1].file_id,
+                receipt_file_id=(message.photo[-1].file_id if message.photo else message.document.file_id),
+                receipt_type=("photo" if message.photo else "document"),
                 status="pending",
             )
         )
@@ -789,6 +792,7 @@ async def retry_receipt_start(callback: CallbackQuery, state: FSMContext) -> Non
 
 
 @router.message(RetryReceiptForm.receipt, F.photo)
+@router.message(RetryReceiptForm.receipt, F.document)
 async def retry_receipt_save(message: Message, state: FSMContext) -> None:
     try:
         await save_receipt(message, state)
@@ -1081,9 +1085,9 @@ async def khodnevis_passport_first_invalid(message: Message, state: FSMContext) 
 
 @router.message(KhodnevisForm.receipt)
 async def khodnevis_receipt_invalid(message: Message, state: FSMContext) -> None:
-    await message.answer("🧾 لطفاً تصویر رسید پرداخت را به صورت عکس ارسال کنید.", reply_markup=cancel_menu())
+    await message.answer("🧾 لطفاً تصویر رسید را به صورت عکس یا فایل ارسال کنید.", reply_markup=cancel_menu())
 
 
 @router.message(RetryReceiptForm.receipt)
 async def retry_receipt_invalid(message: Message, state: FSMContext) -> None:
-    await message.answer("🧾 لطفاً تصویر رسید جدید را به صورت عکس ارسال کنید.", reply_markup=cancel_menu())
+    await message.answer("🧾 لطفاً تصویر رسید را به صورت عکس یا فایل ارسال کنید.", reply_markup=cancel_menu())
