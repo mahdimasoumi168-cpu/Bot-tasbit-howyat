@@ -1301,15 +1301,21 @@ async def user_support_message(message: Message, state: FSMContext) -> None:
                 .where(
                     Order.id == order_id,
                     User.telegram_id == message.from_user.id,
-                    Ticket.status == "open",
                 )
             )
         ).one_or_none()
         if not row:
             await state.clear()
-            await message.answer("❌ گفت‌وگوی پشتیبانی فعال نیست.", reply_markup=await user_main_menu(message.from_user.id))
+            await message.answer("❌ درخواست پشتیبانی پیدا نشد.", reply_markup=await user_main_menu(message.from_user.id))
             return
         ticket, order, service = row
+
+        # اگر تیکت در فاصله بین انتخاب درخواست و ارسال پیام بسته شده باشد،
+        # با ارسال پیام مشترک دوباره فعال می‌شود؛ پیام مشترک نباید به خاطر
+        # وضعیت لحظه‌ای تیکت از بین برود.
+        if ticket.status != "open":
+            ticket.status = "open"
+            await session.flush()
         file_id = None
         if message.photo:
             file_id = message.photo[-1].file_id
