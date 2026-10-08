@@ -440,7 +440,7 @@ async def khodnevis_confirm(message: Message, state: FSMContext) -> None:
 async def khodnevis_receipt(message: Message, state: FSMContext) -> None:
     await save_receipt(message, state)
     await state.clear()
-    await message.answer("✅ رسید ثبت شد و در انتظار بررسی است.", reply_markup=main_menu())
+    await message.answer("✅ رسید ثبت شد و در انتظار بررسی است.", reply_markup=await user_main_menu(message.from_user.id))
 
 
 async def save_order_data(data: dict) -> None:
@@ -524,7 +524,7 @@ async def retry_receipt_start(callback: CallbackQuery, state: FSMContext) -> Non
 async def retry_receipt_save(message: Message, state: FSMContext) -> None:
     await save_receipt(message, state)
     await state.clear()
-    await message.answer("✅ رسید جدید ثبت شد و دوباره برای بررسی ارسال گردید.", reply_markup=main_menu())
+    await message.answer("✅ رسید جدید ثبت شد و دوباره برای بررسی ارسال گردید.", reply_markup=await user_main_menu(message.from_user.id))
 
 
 @router.message(F.text == "📋 پیگیری درخواست‌ها")
@@ -539,12 +539,12 @@ async def track_orders(message: Message) -> None:
         )
         rows = result.all()
     if not rows:
-        await message.answer("هنوز درخواستی ثبت نکرده‌اید.", reply_markup=main_menu())
+        await message.answer("هنوز درخواستی ثبت نکرده‌اید.", reply_markup=await user_main_menu(message.from_user.id))
         return
     text = "📋 درخواست‌های شما:\n\n"
     for order, service in rows:
         text += f"{order.public_id} — {service.name}\nوضعیت: {STATUS_TEXT.get(order.status, order.status)}\n\n"
-    await message.answer(text, reply_markup=main_menu())
+    await message.answer(text, reply_markup=await user_main_menu(message.from_user.id))
 
 
 @router.message(F.text == "👤 حساب من")
@@ -553,7 +553,7 @@ async def account(message: Message) -> None:
     await message.answer(
         f"👤 حساب شما\nشناسه تلگرام: {user.telegram_id}\n"
         f"نام: {user.first_name or ''} {user.last_name or ''}".strip(),
-        reply_markup=main_menu(message.from_user.id in get_settings().admin_id_set),
+        reply_markup=await user_main_menu(message.from_user.id),
     )
 
 
@@ -561,6 +561,6 @@ async def account(message: Message) -> None:
 async def support(message: Message) -> None:
     await message.answer(
         "📞 پشتیبانی\nپیام خود را ارسال کنید؛ اگر درخواست فعالی داشته باشید، برای مدیریت همان درخواست ارسال می‌شود.",
-        reply_markup=main_menu(message.from_user.id in get_settings().admin_id_set),
+        reply_markup=await user_main_menu(message.from_user.id),
     )
 
