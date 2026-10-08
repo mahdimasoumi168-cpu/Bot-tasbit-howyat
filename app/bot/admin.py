@@ -1235,6 +1235,17 @@ async def send_message_to_user(message: Message, state: FSMContext) -> None:
             await message.answer("❌ تیکت فعال پیدا نشد.")
             return
         order, service, user = row
+        file_id = None
+        if message.photo:
+            file_id = message.photo[-1].file_id
+        elif message.document:
+            file_id = message.document.file_id
+        elif message.video:
+            file_id = message.video.file_id
+        elif message.audio:
+            file_id = message.audio.file_id
+        elif message.voice:
+            file_id = message.voice.file_id
         session.add(
             TicketMessage(
                 ticket_id=ticket.id,
@@ -1242,10 +1253,16 @@ async def send_message_to_user(message: Message, state: FSMContext) -> None:
                 sender_telegram_id=message.from_user.id,
                 content_type=message.content_type,
                 text=message.text or message.caption,
+                file_id=file_id,
             )
         )
         await session.commit()
-    await message.bot.send_message(user.telegram_id, status_header(order, service))
+    # اعلان مستقل از خود محتوا: مشترک حتماً یک نوتیفیکیشن قابل مشاهده دریافت می‌کند.
+    await message.bot.send_message(
+        user.telegram_id,
+        f"🔔 پیام جدید از پشتیبانی\n📋 درخواست: {order.public_id}\n\n"
+        "یک پیام جدید برای شما ارسال شده است.",
+    )
     await message.copy_to(user.telegram_id)
     await state.clear()
     await message.answer("✅ پیام ارسال شد.", reply_markup=admin_menu())
