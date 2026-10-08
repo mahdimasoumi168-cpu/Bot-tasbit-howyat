@@ -922,8 +922,18 @@ async def user_ticket_reply(message: Message) -> None:
             )
         )
         await session.commit()
-    for admin_id in get_settings().admin_id_set:
-        await message.bot.send_message(
-            admin_id, status_header(order, service) + f"\n👤 پاسخ مشترک: {message.from_user.id}"
+    recipients = set(get_settings().admin_id_set)
+    async with SessionLocal() as session:
+        operators = (await session.execute(
+            select(Operator).where(Operator.active.is_(True))
+        )).scalars().all()
+        recipients.update(
+            op.telegram_id
+            for op in operators
+            if can_operator(op, "view_orders") and can_operator(op, "message_user")
         )
-        await message.copy_to(admin_id)
+    for recipient_id in recipients:
+        await message.bot.send_message(
+            recipient_id, status_header(order, service) + f"\n👤 پاسخ مشترک: {message.from_user.id}"
+        )
+        await message.copy_to(recipient_id)
