@@ -115,7 +115,7 @@ async def start(message: Message, state: FSMContext) -> None:
     await state.clear()
     await get_or_create_user(message)
     await message.answer(
-        "سلام 🌷\nبه «بات تثبیت هویت» خوش آمدید.\n\nخدمت موردنظر را انتخاب کنید:",
+        "سلام 🌷\nبه «رنا یار بات» خوش آمدید.\n\nخدمت موردنظر را انتخاب کنید:",
         reply_markup=main_menu(message.from_user.id in get_settings().admin_id_set),
     )
 
