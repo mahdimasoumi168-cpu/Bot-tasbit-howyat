@@ -101,6 +101,7 @@ async def create_order(message: Message, service_code: ServiceCode) -> Order:
             public_id="PENDING",
             user_id=user.id,
             service_id=service.id,
+            price_snapshot_toman=service.price_toman,
             data_json="{}",
         )
         session.add(order)
@@ -126,7 +127,7 @@ async def payment_instructions(service_code: str) -> str:
     card_holder = holder.value if holder and holder.value else "هنوز توسط مدیریت تنظیم نشده است"
     return (
         "💳 پرداخت کارت‌به‌کارت\n\n"
-        f"مبلغ: {service.price_toman:,} تومان\n"
+        f"مبلغ: {(service.price_toman if service else 0):,} تومان\n"
         f"شماره کارت: {card_number}\n"
         f"به نام: {card_holder}\n\n"
         "پس از واریز، تصویر رسید را ارسال کنید."
@@ -484,7 +485,7 @@ async def save_receipt(message: Message, state: FSMContext) -> None:
         session.add(
             Payment(
                 order_id=order.id,
-                amount_toman=service.price_toman,
+                amount_toman=order.price_snapshot_toman or service.price_toman,
                 receipt_file_id=message.photo[-1].file_id,
                 status="pending",
             )
