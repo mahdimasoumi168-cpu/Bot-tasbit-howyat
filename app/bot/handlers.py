@@ -22,7 +22,7 @@ from app.bot.keyboards import (
 )
 from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm, SupportForm, PaymentForm, WalletTopupForm
 from app.core.config import get_settings
-from app.db.models import Companion, Document, Operator, Order, Payment, Service, ServiceCode, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode
+from app.db.models import Companion, Document, Operator, Order, Payment, Service, ServiceCode, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode, AuditLog
 from app.db.session import SessionLocal
 from app.utils.dates import gregorian_display, jalali_to_gregorian
 from app.utils.ids import public_order_id
@@ -105,7 +105,7 @@ async def show_payment_options(message: Message, state: FSMContext, order_id: in
     )
 
 
-async def apply_wallet_payment(message: Message, state: FSMContext, order_id: int) -> bool:
+async def apply_wallet_payment(telegram_id: int, order_id: int) -> bool:
     async with SessionLocal() as session:
         row = (await session.execute(
             select(Order, Service, User).join(Service, Order.service_id == Service.id).join(User, Order.user_id == User.id)
@@ -998,7 +998,7 @@ async def pay_wallet(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("درخواست پرداخت پیدا نشد.", show_alert=True)
         return
     try:
-        ok = await apply_wallet_payment(callback.message, state, order_id)
+        ok = await apply_wallet_payment(callback.from_user.id, order_id)
     except ValueError as exc:
         await callback.answer(str(exc), show_alert=True)
         return
