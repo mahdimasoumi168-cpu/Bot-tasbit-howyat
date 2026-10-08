@@ -304,12 +304,12 @@ async def identity_start(message: Message, state: FSMContext, telegram_id: int |
 @router.message(IdentityForm.full_name)
 async def identity_name(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
-    if len(value) < 3:
-        await message.answer("❌ نام و نام خانوادگی را کامل وارد کنید.", reply_markup=cancel_menu())
+    if not valid_name(value):
+        await message.answer("❌ نام باید بین ۳ تا ۸۰ نویسه باشد و فقط شامل حروف و فاصله باشد. مثال: «احمد محمدی».", reply_markup=cancel_menu())
         return
-    await state.update_data(full_name=value)
+    await state.update_data(full_name=" ".join(value.split()))
     await state.set_state(IdentityForm.mobile)
-    await message.answer("۲/۸\nشماره موبایل در دسترس را وارد کنید:", reply_markup=cancel_menu())
+    await message.answer("۲/۸\nشماره موبایل در دسترس را وارد کنید.\nمثال: 09123456789\nمحدودیت: فقط شماره موبایل ایران ۱۱ رقمی.", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.mobile)
@@ -320,7 +320,7 @@ async def identity_mobile(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(mobile=value)
     await state.set_state(IdentityForm.birth_date)
-    await message.answer("۳/۸\nتاریخ تولد را به شمسی وارد کنید. مثال: ۱۴۰۵/۰۱/۱۵", reply_markup=cancel_menu())
+    await message.answer("۳/۸\nتاریخ تولد را به شمسی وارد کنید.\nمثال: ۱۳۷۵/۰۵/۲۰\nمحدودیت: تاریخ شمسی معتبر، سال بین ۱۳۰۰ تا ۱۵۰۰.", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.birth_date)
@@ -332,7 +332,7 @@ async def identity_birth(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(birth_date_gregorian=gregorian_display(value))
     await state.set_state(IdentityForm.return_date)
-    await message.answer("۴/۸\nآخرین تاریخ بازگشت به افغانستان را به شمسی وارد کنید:", reply_markup=cancel_menu())
+    await message.answer("۴/۸\nآخرین تاریخ بازگشت به افغانستان را به شمسی وارد کنید.\nمثال: ۱۴۰۵/۰۱/۱۵\nمحدودیت: سال بین ۱۳۰۰ تا ۱۵۰۰.", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.return_date)
@@ -390,7 +390,7 @@ async def identity_companion_name(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(pending_companion_name=value)
     await state.set_state(IdentityForm.companion_mobile)
-    await message.answer("شماره موبایل همراه را وارد کنید:", reply_markup=cancel_menu())
+    await message.answer("شماره موبایل همراه را وارد کنید.\nمثال: 09123456789\nمحدودیت: فقط شماره موبایل ایران ۱۱ رقمی.", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.companion_mobile)
@@ -470,7 +470,7 @@ async def khodnevis_name(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(full_name=value)
     await state.set_state(KhodnevisForm.mobile)
-    await message.answer("۲/۷\nشماره موبایل در دسترس را وارد کنید:", reply_markup=cancel_menu())
+    await message.answer("۲/۷\nشماره موبایل در دسترس را وارد کنید.\nمثال: 09123456789\nمحدودیت: فقط شماره موبایل ایران ۱۱ رقمی.", reply_markup=cancel_menu())
 
 
 @router.message(KhodnevisForm.mobile)
@@ -575,7 +575,7 @@ async def khodnevis_confirm(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     await save_order_data(data)
     await state.set_state(KhodnevisForm.receipt)
-    await message.answer(await payment_instructions(data["order_id"]))
+    await message.answer(await payment_instructions(data["order_id"]), reply_markup=cancel_menu())
 
 
 @router.message(KhodnevisForm.receipt, F.photo)
