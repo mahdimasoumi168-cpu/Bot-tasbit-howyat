@@ -1077,6 +1077,59 @@ async def reject(callback: CallbackQuery) -> None:
     )
 
 
+
+
+
+@router.callback_query(F.data.startswith("adm:topup:approve:"))
+async def admin_topup_approve(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True); return
+    topup_id = int(callback.data.rsplit(":", 1)[1])
+    async with SessionLocal() as session:
+        topup = await session.get(WalletTopup, topup_id)
+        if not topup or topup.status != "waiting_receipt_review":
+            await callback.answer("این شارژ قبلاً بررسی شده است.", show_alert=True); return
+        wallet = await ensure_wallet_admin(session, topup.user_id)
+        wallet.balance_toman += topup.amount_toman
+        session.add(WalletTransaction(
+            user_id=topup.user_id, amount_toman=topup.amount_toman,
+            balance_after_toman=wallet.balance_toman, kind="topup",
+            description=f"افزایش اعتبار #{topup.id}", topup_id=topup.id
+        ))
+        topup.status = "approved"
+        user = await session.get(User, topup.user_id)
+        new_balance = wallet.balance_toman
+        await session.commit()
+    await audit(callback.from_user.id, "wallet_topup_approved", None, {"topup_id": topup_id, "amount_toman": topup.amount_toman})
+    await callback.answer("اعتبار افزایش یافت.")
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.bot.send_message(
+        user.telegram_id,
+        f"✅ افزایش اعتبار تأیید شد.\n💰 مبلغ: {topup.amount_toman:,} تومان\n💳 موجودی جدید: {new_balance:,} تومان",
+    )
+
+
+@router.callback_query(F.data.startswith("adm:topup:reject:"))
+async def admin_topup_reject(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True); return
+    topup_id = int(callback.data.rsplit(":", 1)[1])
+    async with SessionLocal() as session:
+        topup = await session.get(WalletTopup, topup_id)
+        if not topup or topup.status != "waiting_receipt_review":
+            await callback.answer("این شارژ قبلاً بررسی شده است.", show_alert=True); return
+        topup.status = "rejected"
+        user = await session.get(User, topup.user_id)
+        await session.commit()
+    await audit(callback.from_user.id, "wallet_topup_rejected", None, {"topup_id": topup_id, "amount_toman": topup.amount_toman})
+    await callback.answer("شارژ رد شد.")
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.bot.send_message(
+        user.telegram_id,
+        f"❌ رسید افزایش اعتبار #{topup.id} تأیید نشد.\nدر صورت نیاز دوباره از بخش «اعتبار من» اقدام کنید.",
+    )
+
+
 @router.callback_query(F.data.startswith("adm:msg:"))
 async def start_message(callback: CallbackQuery, state: FSMContext) -> None:
     operator = await get_operator(callback.from_user.id)
