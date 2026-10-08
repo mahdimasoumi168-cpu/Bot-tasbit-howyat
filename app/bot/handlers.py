@@ -326,7 +326,13 @@ async def identity_mobile(message: Message, state: FSMContext) -> None:
 @router.message(IdentityForm.birth_date)
 async def identity_birth(message: Message, state: FSMContext) -> None:
     try:
-        value = jalali_to_gregorian(message.text or "")
+        raw = normalize_digits(message.text or "").strip()
+        if not re.fullmatch(r"\d{4}[/-]\d{1,2}[/-]\d{1,2}", raw):
+            raise ValueError("فرمت تاریخ باید مانند ۱۴۰۵/۰۱/۱۵ باشد.")
+        year = int(re.split(r"[/-]", raw)[0])
+        if not 1300 <= year <= 1500:
+            raise ValueError("سال تاریخ باید بین ۱۳۰۰ تا ۱۵۰۰ باشد.")
+        value = jalali_to_gregorian(raw)
     except ValueError as exc:
         await message.answer(f"❌ {exc}", reply_markup=cancel_menu())
         return
