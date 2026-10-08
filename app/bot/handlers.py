@@ -5,7 +5,7 @@ from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from app.bot.keyboards import (
     consulate_menu,
@@ -127,7 +127,7 @@ async def payment_instructions(service_code: str) -> str:
     card_holder = holder.value if holder and holder.value else "هنوز توسط مدیریت تنظیم نشده است"
     return (
         "💳 پرداخت کارت‌به‌کارت\n\n"
-        f"مبلغ: {(service.price_toman if service else 0):,} تومان\n"
+        f"مبلغ: {service.price_toman:,} تومان\n"
         f"شماره کارت: {card_number}\n"
         f"به نام: {card_holder}\n\n"
         "پس از واریز، تصویر رسید را ارسال کنید."
@@ -485,7 +485,7 @@ async def save_receipt(message: Message, state: FSMContext) -> None:
         if service is None:
             return
         await session.execute(
-            __import__("sqlalchemy").update(Payment)
+            update(Payment)
             .where(Payment.order_id == order.id, Payment.status == "pending")
             .values(status="superseded")
         )
@@ -523,7 +523,7 @@ async def retry_receipt_start(callback: CallbackQuery, state: FSMContext) -> Non
     await callback.answer()
     await callback.message.answer(
         f"🧾 ارسال مجدد رسید {order.public_id}\n"
-        f"مبلغ: {service.price_toman:,} تومان\n"
+        f"مبلغ: {(order.price_snapshot_toman or service.price_toman):,} تومان\n"
         "لطفاً تصویر رسید جدید را ارسال کنید."
     )
 
