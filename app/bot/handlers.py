@@ -112,10 +112,10 @@ async def create_order(message: Message, service_code: ServiceCode) -> Order:
         return order
 
 
-async def payment_instructions(service_code: str) -> str:
+async def payment_instructions(order_id: int) -> str:
     async with SessionLocal() as session:
         service = (
-            await session.execute(select(Service).where(Service.code == service_code))
+            await session.execute(select(Service).join(Order, Order.service_id == Service.id).where(Order.id == order_id))
         ).scalar_one()
         number = (
             await session.execute(select(Setting).where(Setting.key == "card_number"))
@@ -296,7 +296,7 @@ async def identity_confirm(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     await save_order_data(data)
     await state.set_state(IdentityForm.receipt)
-    await message.answer(await payment_instructions(ServiceCode.IDENTITY.value))
+    await message.answer(await payment_instructions(data["order_id"]))
 
 
 @router.message(IdentityForm.receipt, F.photo)
@@ -434,7 +434,7 @@ async def khodnevis_confirm(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     await save_order_data(data)
     await state.set_state(KhodnevisForm.receipt)
-    await message.answer(await payment_instructions(ServiceCode.KHODNEVIS.value))
+    await message.answer(await payment_instructions(data["order_id"]))
 
 
 @router.message(KhodnevisForm.receipt, F.photo)
