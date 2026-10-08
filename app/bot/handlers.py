@@ -1278,6 +1278,9 @@ async def user_support_message(message: Message, state: FSMContext) -> None:
         ))
         await session.commit()
     recipients = set(get_settings().admin_id_set)
+    support_id = get_settings().support_telegram_id
+    if support_id:
+        recipients.add(support_id)
     async with SessionLocal() as session:
         operators = (await session.execute(select(Operator).where(Operator.active.is_(True)))).scalars().all()
     for op in operators:
@@ -1287,11 +1290,19 @@ async def user_support_message(message: Message, state: FSMContext) -> None:
             permissions = {}
         if permissions.get("view_orders") and permissions.get("message_user"):
             recipients.add(op.telegram_id)
+    sent_any = False
     for recipient_id in recipients:
-        await message.bot.send_message(recipient_id, f"📞 پشتیبانی | {order.public_id} | {service.name}")
-        await message.copy_to(recipient_id)
+        try:
+            await message.bot.send_message(recipient_id, f"📞 پشتیبانی | {order.public_id} | {service.name}")
+            await message.copy_to(recipient_id)
+            sent_any = True
+        except Exception:
+            continue
     await state.clear()
-    await message.answer("✅ پیام شما برای پشتیبانی ارسال شد.", reply_markup=await user_main_menu(message.from_user.id))
+    if sent_any:
+        await message.answer("✅ پیام شما برای پشتیبانی ارسال شد.", reply_markup=await user_main_menu(message.from_user.id))
+    else:
+        await message.answer("⚠️ پیام ثبت شد، اما ارسال به پشتیبان در دسترس نبود. مدیریت باید شناسه عددی پشتیبان را در تنظیمات بات ثبت کند.", reply_markup=await user_main_menu(message.from_user.id))
 
 @router.message(F.text == "📞 پشتیبانی")
 async def support(message: Message, telegram_id: int | None = None, show_direct: bool = True) -> None:
