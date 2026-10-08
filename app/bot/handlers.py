@@ -4,7 +4,7 @@ import re
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy import delete, select, update
 
 from app.bot.keyboards import (
@@ -552,8 +552,55 @@ async def track_orders(message: Message) -> None:
     text = "📋 درخواست‌های شما:\n\n"
     for order, service in rows:
         text += f"{order.public_id} — {service.name}\nوضعیت: {STATUS_TEXT.get(order.status, order.status)}\n\n"
-    await message.answer(text, reply_markup=await user_main_menu(message.from_user.id))
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"🔎 {order.public_id} | {STATUS_TEXT.get(order.status, order.status)}",
+            callback_data=f"user:order:{order.id}",
+        )]
+        for order, service in rows[:20]
+    ])
+    await message.answer(text, reply_markup=keyboard)
 
+
+
+@router.callback_query(F.data.startswith("user:order:"))
+async def user_order_detail(callback: CallbackQuery) -> None:
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(
+                select(Order, Service, User)
+                .join(Service, Order.service_id == Service.id)
+                .join(User, Order.user_id == User.id)
+                .where(Order.id == order_id, User.telegram_id == callback.from_user.id)
+            )
+        ).one_or_none()
+        if not row:
+            await callback.answer("این درخواست متعلق به شما نیست.", show_alert=True)
+            return
+        order, service, user = row
+        data = json.loads(order.data_json or "{}")
+    text = (
+        f"📋 درخواست {order.public_id}\n\n"
+        f"🧾 خدمت: {service.name}\n"
+        f"📌 وضعیت: {STATUS_TEXT.get(order.status, order.status)}\n"
+        f"💰 مبلغ ثبت‌شده: {(order.price_snapshot_toman or service.price_toman):,} تومان\n"
+        f"📅 تاریخ ثبت: {order.created_at.strftime('%Y/%m/%d') if order.created_at else '—'}\n"
+    )
+    if data.get("full_name"):
+        text += f"👤 نام: {data['full_name']}\n"
+    if data.get("mobile"):
+        text += f"📱 موبایل: {data['mobile']}\n"
+    buttons = []
+    if order.status == "rejected":
+        buttons.append([InlineKeyboardButton(text="🧾 ارسال مجدد رسید", callback_data=f"retry_receipt:{order.id}")])
+    buttons.append([InlineKeyboardButton(text="📞 پشتیبانی", callback_data=f"user:support:{order.id}")])
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await callback.answer()
 
 @router.message(F.text == "👤 حساب من")
 async def account(message: Message) -> None:
