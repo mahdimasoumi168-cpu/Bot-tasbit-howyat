@@ -40,6 +40,8 @@ class AdminForm(StatesGroup):
     operator_add = State()
     operator_permission = State()
     operator_remove = State()
+    discount_code = State()
+    discount_value = State()
 
 
 class RetryReceiptForm(StatesGroup):
