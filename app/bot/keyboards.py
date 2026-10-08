@@ -3,7 +3,8 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 def main_menu(is_admin: bool = False, is_operator: bool = False) -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(text="💰 اعتبار من", callback_data="menu:wallet"), InlineKeyboardButton(text="🪪 تثبیت هویت",, callback_data="menu:identity"), InlineKeyboardButton(text="📝 کد رهگیری خودنویس", callback_data="menu:khodnevis")],
+        [InlineKeyboardButton(text="🪪 تثبیت هویت", callback_data="menu:identity"), InlineKeyboardButton(text="📝 کد رهگیری خودنویس", callback_data="menu:khodnevis")],
+        [InlineKeyboardButton(text="💰 اعتبار من", callback_data="menu:wallet")],
         [InlineKeyboardButton(text="📋 پیگیری درخواست‌ها", callback_data="menu:tracking"), InlineKeyboardButton(text="👤 حساب من", callback_data="menu:account")],
         [InlineKeyboardButton(text="📞 پشتیبانی", callback_data="menu:support"), InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart")],
     ]
