@@ -48,3 +48,10 @@ def single_action_menu(text: str = "🔄 شروع مجدد") -> ReplyKeyboardMar
         keyboard=[[KeyboardButton(text=text)]],
         resize_keyboard=True,
     )
+
+
+def confirm_menu() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="✅ تأیید و ادامه")], [KeyboardButton(text="🔄 شروع مجدد")]],
+        resize_keyboard=True,
+    )
