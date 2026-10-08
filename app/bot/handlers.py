@@ -246,6 +246,13 @@ async def payment_instructions(order_id: int) -> str:
     card_number = number.value if number and number.value else "هنوز توسط مدیریت تنظیم نشده است"
     card_holder = holder.value if holder and holder.value else "هنوز توسط مدیریت تنظیم نشده است"
     amount_toman = int(order.price_snapshot_toman or service.price_toman)
+    data = json.loads(order.data_json or "{}")
+    discount = 0
+    code = data.get("discount_code")
+    if code:
+        coupon = (await session.execute(select(DiscountCode).where(DiscountCode.code == code))).scalar_one_or_none()
+        discount = calculate_discount(amount_toman, coupon) if coupon else 0
+    amount_toman = max(0, amount_toman - discount)
     amount_rial = amount_toman * 10
     return (
         "🧾 فاکتور پرداخت\n"
@@ -253,7 +260,7 @@ async def payment_instructions(order_id: int) -> str:
         f"📌 خدمت: {service.name}\n"
         f"🔢 شماره درخواست: {order.public_id}\n\n"
         "💰 مبلغ قابل پرداخت\n"
-        f"تومان: {amount_toman:,} تومان\n"
+        f"تومان: {amount_toman:,} تومان\n" + (f"🏷️ تخفیف: {discount:,} تومان\n" if discount else "")
         f"ریال: {amount_rial}\n\n"
         "💳 اطلاعات کارت\n"
         f"شماره کارت: {card_number}\n"
@@ -828,7 +835,7 @@ async def save_receipt(message: Message, state: FSMContext) -> None:
         session.add(
             Payment(
                 order_id=order.id,
-                amount_toman=order.price_snapshot_toman or service.price_toman,
+                amount_toman=(lambda base, payload: max(0, base - calculate_discount(base, next((x for x in [None] if False), None))))(order.price_snapshot_toman or service.price_toman, json.loads(order.data_json or "{}")),
                 receipt_file_id=(message.photo[-1].file_id if message.photo else message.document.file_id),
                 receipt_type=("photo" if message.photo else "document"),
                 status="pending",
