@@ -33,11 +33,16 @@ def admin_menu() -> InlineKeyboardMarkup:
     )
 
 
-def order_actions(order_id: int, operator: bool = False) -> InlineKeyboardMarkup:
+def order_actions(order_id: int, operator: Operator | None = None) -> InlineKeyboardMarkup:
     rows = []
-    if not operator:
+    if operator is None:
         rows.append([InlineKeyboardButton(text="✅ تأیید پرداخت", callback_data=f"adm:approve:{order_id}")])
         rows.append([InlineKeyboardButton(text="❌ رد پرداخت", callback_data=f"adm:reject:{order_id}")])
+    else:
+        if can_operator(operator, "approve_payment"):
+            rows.append([InlineKeyboardButton(text="✅ تأیید پرداخت", callback_data=f"adm:approve:{order_id}")])
+        if can_operator(operator, "reject_payment"):
+            rows.append([InlineKeyboardButton(text="❌ رد پرداخت", callback_data=f"adm:reject:{order_id}")])
     rows.extend([
         [InlineKeyboardButton(text="🟡 در حال انجام", callback_data=f"adm:status:{order_id}:in_progress")],
         [InlineKeyboardButton(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order_id}:waiting_user")],
@@ -131,7 +136,7 @@ async def operator_order_detail(callback: CallbackQuery) -> None:
         f"👤 {user.first_name or ''} {user.last_name or ''}\n"
         f"🆔 {user.telegram_id}\n"
         f"💰 مبلغ خدمت: {service.price_toman:,} تومان",
-        reply_markup=order_actions(order.id, operator=True),
+        reply_markup=order_actions(order.id, operator=operator),
     )
     await callback.answer()
 
