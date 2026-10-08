@@ -368,6 +368,12 @@ async def user_search(message: Message, state: FSMContext) -> None:
                 ).order_by(User.id.desc()).limit(1)
             )).scalar_one_or_none()
         if user is None:
+            order_match = (await session.execute(
+                select(Order).where(Order.data_json.ilike(pattern)).order_by(Order.id.desc()).limit(1)
+            )).scalar_one_or_none()
+            if order_match:
+                user = await session.get(User, order_match.user_id)
+        if user is None:
             await message.answer("❌ مشترک پیدا نشد. نام، نام کاربری، شناسه تلگرام یا شماره درخواست را امتحان کنید:")
             return
         orders = (await session.execute(
