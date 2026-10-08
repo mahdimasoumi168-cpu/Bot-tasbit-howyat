@@ -1,10 +1,11 @@
 import json
 import logging
+import re
 
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery,InlineKeyboardButton,InlineKeyboardMarkup,Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy import select
 
 from app.bot.keyboards import (
@@ -15,13 +16,32 @@ from app.bot.keyboards import (
     yes_no_menu,
 )
 from app.bot.states import IdentityForm, KhodnevisForm
-from app.db.models import Order, Service, ServiceCode, User
+from app.core.config import get_settings
+from app.db.models import Companion, Document, Order, Payment, Service, ServiceCode, Setting, User
 from app.db.session import SessionLocal
 from app.utils.dates import gregorian_display, jalali_to_gregorian
 from app.utils.ids import public_order_id
 
 router = Router()
 logger = logging.getLogger(__name__)
+
+STATUS_TEXT = {
+    "draft": "پیش‌نویس",
+    "waiting_payment": "در انتظار پرداخت",
+    "waiting_receipt_review": "در انتظار بررسی رسید",
+    "payment_approved": "پرداخت تأیید شده",
+    "in_progress": "در حال انجام",
+    "waiting_user": "در انتظار مشترک",
+    "completed": "تکمیل شده",
+    "rejected": "رد شده",
+}
+
+
+def valid_mobile(value: str) -> bool:
+    digits = re.sub(r"[^0-9۰-۹]", "", value.strip()).translate(
+        str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789")
+    )
+    return bool(re.fullmatch(r"(?:09\d{9}|9\d{9}|989\d{9}|00989\d{9})", digits))
 
 
 async def get_or_create_user(message: Message) -> User:
@@ -38,20 +58,30 @@ async def get_or_create_user(message: Message) -> User:
             session.add(user)
             await session.commit()
             await session.refresh(user)
+        else:
+            user.first_name = message.from_user.first_name
+            user.last_name = message.from_user.last_name
+            user.username = message.from_user.username
+            await session.commit()
         return user
 
 
 async def create_order(message: Message, service_code: ServiceCode) -> Order:
+    await get_or_create_user(message)
     async with SessionLocal() as session:
-        result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
-        user = result.scalar_one()
-        result = await session.execute(select(Service).where(Service.code == service_code.value))
-        service = result.scalar_one()
+        user = (
+            await session.execute(select(User).where(User.telegram_id == message.from_user.id))
+        ).scalar_one()
+        service = (
+            await session.execute(select(Service).where(Service.code == service_code.value))
+        ).scalar_one()
+        if not service.enabled:
+            raise ValueError("این خدمت در حال حاضر فعال نیست.")
         order = Order(
             public_id="PENDING",
             user_id=user.id,
             service_id=service.id,
-            data_json=json.dumps({}, ensure_ascii=False),
+            data_json="{}",
         )
         session.add(order)
         await session.flush()
@@ -59,6 +89,28 @@ async def create_order(message: Message, service_code: ServiceCode) -> Order:
         await session.commit()
         await session.refresh(order)
         return order
+
+
+async def payment_instructions(service_code: str) -> str:
+    async with SessionLocal() as session:
+        service = (
+            await session.execute(select(Service).where(Service.code == service_code))
+        ).scalar_one()
+        number = (
+            await session.execute(select(Setting).where(Setting.key == "card_number"))
+        ).scalar_one_or_none()
+        holder = (
+            await session.execute(select(Setting).where(Setting.key == "card_holder"))
+        ).scalar_one_or_none()
+    card_number = number.value if number and number.value else "هنوز توسط مدیریت تنظیم نشده است"
+    card_holder = holder.value if holder and holder.value else "هنوز توسط مدیریت تنظیم نشده است"
+    return (
+        "💳 پرداخت کارت‌به‌کارت\n\n"
+        f"مبلغ: {service.price_toman:,} تومان\n"
+        f"شماره کارت: {card_number}\n"
+        f"به نام: {card_holder}\n\n"
+        "پس از واریز، تصویر رسید را ارسال کنید."
+    )
 
 
 @router.message(CommandStart())
@@ -74,36 +126,53 @@ async def start(message: Message, state: FSMContext) -> None:
 @router.message(F.text == "🔄 شروع مجدد")
 async def restart(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await message.answer("فرآیند فعلی لغو شد. از منوی اصلی یک خدمت را انتخاب کنید.", reply_markup=main_menu())
+    await message.answer(
+        "فرآیند فعلی لغو شد. درخواست ثبت‌شده حذف نشده است.\nاز منوی اصلی یک خدمت را انتخاب کنید.",
+        reply_markup=main_menu(),
+    )
 
 
 @router.message(F.text == "🪪 تثبیت هویت")
 async def identity_start(message: Message, state: FSMContext) -> None:
     await state.clear()
-    order = await create_order(message, ServiceCode.IDENTITY)
-    await state.update_data(order_id=order.id, public_id=order.public_id, service_code=ServiceCode.IDENTITY.value)
+    try:
+        order = await create_order(message, ServiceCode.IDENTITY)
+    except ValueError as exc:
+        await message.answer(f"❌ {exc}", reply_markup=main_menu())
+        return
+    await state.update_data(
+        order_id=order.id, public_id=order.public_id, service_code=ServiceCode.IDENTITY.value
+    )
     await state.set_state(IdentityForm.full_name)
     await message.answer("۱/۸\nنام و نام خانوادگی را وارد کنید:")
 
 
 @router.message(IdentityForm.full_name)
 async def identity_name(message: Message, state: FSMContext) -> None:
-    await state.update_data(full_name=message.text.strip())
+    value = (message.text or "").strip()
+    if len(value) < 3:
+        await message.answer("❌ نام و نام خانوادگی را کامل وارد کنید.")
+        return
+    await state.update_data(full_name=value)
     await state.set_state(IdentityForm.mobile)
     await message.answer("۲/۸\nشماره موبایل در دسترس را وارد کنید:")
 
 
 @router.message(IdentityForm.mobile)
 async def identity_mobile(message: Message, state: FSMContext) -> None:
-    await state.update_data(mobile=message.text.strip())
+    value = (message.text or "").strip()
+    if not valid_mobile(value):
+        await message.answer("❌ شماره موبایل معتبر نیست. مثال: 09123456789")
+        return
+    await state.update_data(mobile=value)
     await state.set_state(IdentityForm.birth_date)
-    await message.answer("۳/۸\nتاریخ تولد را به شمسی وارد کنید. مثال: ۱۴۰۵/۰۱/۱۵ یا 1405/01/15")
+    await message.answer("۳/۸\nتاریخ تولد را به شمسی وارد کنید. مثال: ۱۴۰۵/۰۱/۱۵")
 
 
 @router.message(IdentityForm.birth_date)
 async def identity_birth(message: Message, state: FSMContext) -> None:
     try:
-        value = jalali_to_gregorian(message.text)
+        value = jalali_to_gregorian(message.text or "")
     except ValueError as exc:
         await message.answer(f"❌ {exc}")
         return
@@ -115,7 +184,7 @@ async def identity_birth(message: Message, state: FSMContext) -> None:
 @router.message(IdentityForm.return_date)
 async def identity_return(message: Message, state: FSMContext) -> None:
     try:
-        value = jalali_to_gregorian(message.text)
+        value = jalali_to_gregorian(message.text or "")
     except ValueError as exc:
         await message.answer(f"❌ {exc}")
         return
@@ -161,17 +230,25 @@ async def identity_companion_choice(message: Message, state: FSMContext) -> None
 
 @router.message(IdentityForm.companion_name)
 async def identity_companion_name(message: Message, state: FSMContext) -> None:
-    await state.update_data(pending_companion_name=message.text.strip())
+    value = (message.text or "").strip()
+    if len(value) < 3:
+        await message.answer("❌ نام همراه را کامل وارد کنید.")
+        return
+    await state.update_data(pending_companion_name=value)
     await state.set_state(IdentityForm.companion_mobile)
-    await message.answer("شماره همراه را وارد کنید:")
+    await message.answer("شماره موبایل همراه را وارد کنید:")
 
 
 @router.message(IdentityForm.companion_mobile)
 async def identity_companion_mobile(message: Message, state: FSMContext) -> None:
+    value = (message.text or "").strip()
+    if not valid_mobile(value):
+        await message.answer("❌ شماره موبایل معتبر نیست.")
+        return
     data = await state.get_data()
     companions = data.get("companions", [])
-    companions.append({"full_name": data["pending_companion_name"], "mobile": message.text.strip()})
-    await state.update_data(companions=companions)
+    companions.append({"full_name": data["pending_companion_name"], "mobile": value})
+    await state.update_data(companions=companions, pending_companion_name=None)
     await state.set_state(IdentityForm.companion_choice)
     await message.answer("آیا همراه دیگری دارید؟", reply_markup=yes_no_menu())
 
@@ -179,11 +256,9 @@ async def identity_companion_mobile(message: Message, state: FSMContext) -> None
 async def show_identity_summary(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     companions = data.get("companions", [])
-    companion_text = "ندارد"
-    if companions:
-        companion_text = "\n".join(
-            f"• {item['full_name']} — {item['mobile']}" for item in companions
-        )
+    companion_text = "ندارد" if not companions else "\n".join(
+        f"• {item['full_name']} — {item['mobile']}" for item in companions
+    )
     await state.set_state(IdentityForm.confirm)
     await message.answer(
         "📋 خلاصه درخواست\n\n"
@@ -193,7 +268,7 @@ async def show_identity_summary(message: Message, state: FSMContext) -> None:
         f"آخرین بازگشت: {data.get('return_date_gregorian')}\n"
         f"کنسولگری: {data.get('consulate')}\n"
         f"همراهان:\n{companion_text}\n\n"
-        "برای ادامه «تأیید» را ارسال کنید یا «🔄 شروع مجدد» را بزنید."
+        "برای ادامه «تأیید» را ارسال کنید یا «🔄 شروع مجدد» را بزنید.",
     )
 
 
@@ -202,11 +277,7 @@ async def identity_confirm(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     await save_order_data(data)
     await state.set_state(IdentityForm.receipt)
-    await message.answer(
-        "💳 پرداخت به‌صورت کارت‌به‌کارت انجام می‌شود.\n"
-        "پس از واریز، تصویر رسید را ارسال کنید.\n"
-        "شماره کارت و مبلغ از پنل مدیریت قابل تنظیم است."
-    )
+    await message.answer(await payment_instructions(ServiceCode.IDENTITY.value))
 
 
 @router.message(IdentityForm.receipt, F.photo)
@@ -219,22 +290,36 @@ async def identity_receipt(message: Message, state: FSMContext) -> None:
 @router.message(F.text == "📝 کد رهگیری خودنویس")
 async def khodnevis_start(message: Message, state: FSMContext) -> None:
     await state.clear()
-    order = await create_order(message, ServiceCode.KHODNEVIS)
-    await state.update_data(order_id=order.id, public_id=order.public_id, service_code=ServiceCode.KHODNEVIS.value)
+    try:
+        order = await create_order(message, ServiceCode.KHODNEVIS)
+    except ValueError as exc:
+        await message.answer(f"❌ {exc}", reply_markup=main_menu())
+        return
+    await state.update_data(
+        order_id=order.id, public_id=order.public_id, service_code=ServiceCode.KHODNEVIS.value
+    )
     await state.set_state(KhodnevisForm.full_name)
     await message.answer("۱/۷\nنام و نام خانوادگی را وارد کنید:")
 
 
 @router.message(KhodnevisForm.full_name)
 async def khodnevis_name(message: Message, state: FSMContext) -> None:
-    await state.update_data(full_name=message.text.strip())
+    value = (message.text or "").strip()
+    if len(value) < 3:
+        await message.answer("❌ نام و نام خانوادگی را کامل وارد کنید.")
+        return
+    await state.update_data(full_name=value)
     await state.set_state(KhodnevisForm.mobile)
     await message.answer("۲/۷\nشماره موبایل در دسترس را وارد کنید:")
 
 
 @router.message(KhodnevisForm.mobile)
 async def khodnevis_mobile(message: Message, state: FSMContext) -> None:
-    await state.update_data(mobile=message.text.strip())
+    value = (message.text or "").strip()
+    if not valid_mobile(value):
+        await message.answer("❌ شماره موبایل معتبر نیست. مثال: 09123456789")
+        return
+    await state.update_data(mobile=value)
     await state.set_state(KhodnevisForm.document_type)
     await message.answer("۳/۷\nمدرک را انتخاب کنید:", reply_markup=document_type_menu())
 
@@ -242,11 +327,11 @@ async def khodnevis_mobile(message: Message, state: FSMContext) -> None:
 @router.message(KhodnevisForm.document_type)
 async def khodnevis_document_type(message: Message, state: FSMContext) -> None:
     if message.text == "🪪 کارت آمایش":
-        await state.update_data(document_type="amayesh")
+        await state.update_data(document_type="کارت آمایش")
         await state.set_state(KhodnevisForm.amayesh)
         await message.answer("۴/۷\nعکس کارت آمایش را ارسال کنید.")
     elif message.text == "🛂 پاسپورت":
-        await state.update_data(document_type="passport")
+        await state.update_data(document_type="پاسپورت")
         await state.set_state(KhodnevisForm.passport_first)
         await message.answer("۴/۷\nعکس صفحه اول پاسپورت الزامی است.")
     else:
@@ -275,7 +360,6 @@ async def khodnevis_passport_renewal(message: Message, state: FSMContext) -> Non
         await message.answer("صفحه تمدید اقامت/ویزا را دارید؟", reply_markup=optional_document_menu())
     elif message.text == "📸 ارسال تصویر":
         await message.answer("حالا تصویر صفحه تمدید پاسپورت را ارسال کنید.")
-        return
     else:
         await message.answer("یکی از گزینه‌ها را انتخاب کنید.", reply_markup=optional_document_menu())
 
@@ -308,7 +392,11 @@ async def khodnevis_residence_renewal_photo(message: Message, state: FSMContext)
 
 @router.message(KhodnevisForm.own_mobile)
 async def khodnevis_own_mobile(message: Message, state: FSMContext) -> None:
-    await state.update_data(own_mobile=message.text.strip())
+    value = (message.text or "").strip()
+    if not valid_mobile(value):
+        await message.answer("❌ شماره موبایل معتبر نیست.")
+        return
+    await state.update_data(own_mobile=value)
     data = await state.get_data()
     await state.set_state(KhodnevisForm.confirm)
     await message.answer(
@@ -317,7 +405,7 @@ async def khodnevis_own_mobile(message: Message, state: FSMContext) -> None:
         f"موبایل در دسترس: {data.get('mobile')}\n"
         f"مدرک: {data.get('document_type')}\n"
         f"موبایل به نام شخص: {data.get('own_mobile')}\n\n"
-        "برای ادامه «تأیید» را ارسال کنید."
+        "برای ادامه «تأیید» را ارسال کنید.",
     )
 
 
@@ -326,9 +414,7 @@ async def khodnevis_confirm(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     await save_order_data(data)
     await state.set_state(KhodnevisForm.receipt)
-    await message.answer(
-        "💳 پرداخت کارت‌به‌کارت است. پس از واریز، تصویر رسید را ارسال کنید."
-    )
+    await message.answer(await payment_instructions(ServiceCode.KHODNEVIS.value))
 
 
 @router.message(KhodnevisForm.receipt, F.photo)
@@ -340,14 +426,30 @@ async def khodnevis_receipt(message: Message, state: FSMContext) -> None:
 
 async def save_order_data(data: dict) -> None:
     order_id = data["order_id"]
-    excluded = {"order_id", "public_id", "service_code"}
+    excluded = {"order_id", "public_id", "service_code", "pending_companion_name", "companions"}
     payload = {k: v for k, v in data.items() if k not in excluded}
     async with SessionLocal() as session:
         order = await session.get(Order, order_id)
         if order is None:
             return
         order.data_json = json.dumps(payload, ensure_ascii=False)
-        order.status = "waiting_receipt_review"
+        order.status = "waiting_payment"
+        session.add_all(
+            Companion(order_id=order.id, full_name=x["full_name"], mobile=x["mobile"])
+            for x in data.get("companions", [])
+        )
+        document_map = {
+            "identity_document": "مدرک شناسایی",
+            "tazkira": "تذکره",
+            "amayesh": "کارت آمایش",
+            "passport_first": "صفحه اول پاسپورت",
+            "passport_renewal": "تمدید پاسپورت",
+            "residence_renewal": "تمدید اقامت/ویزا",
+        }
+        for key, label in document_map.items():
+            file_id = data.get(key)
+            if file_id:
+                session.add(Document(order_id=order.id, document_type=label, telegram_file_id=file_id))
         await session.commit()
 
 
@@ -357,12 +459,13 @@ async def save_receipt(message: Message, state: FSMContext) -> None:
         order = await session.get(Order, data["order_id"])
         if order is None:
             return
-        from app.db.models import Payment
-
+        service = await session.get(Service, order.service_id)
+        if service is None:
+            return
         session.add(
             Payment(
                 order_id=order.id,
-                amount_toman=0,
+                amount_toman=service.price_toman,
                 receipt_file_id=message.photo[-1].file_id,
                 status="pending",
             )
@@ -387,7 +490,7 @@ async def track_orders(message: Message) -> None:
         return
     text = "📋 درخواست‌های شما:\n\n"
     for order, service in rows:
-        text += f"{order.public_id} — {service.name}\nوضعیت: {order.status}\n\n"
+        text += f"{order.public_id} — {service.name}\nوضعیت: {STATUS_TEXT.get(order.status, order.status)}\n\n"
     await message.answer(text, reply_markup=main_menu())
 
 
@@ -404,6 +507,13 @@ async def account(message: Message) -> None:
 @router.message(F.text == "📞 پشتیبانی")
 async def support(message: Message) -> None:
     await message.answer(
-        "📞 پشتیبانی\nبرای ارتباط با پشتیبانی، پیام خود را همینجا ارسال کنید.",
+        "📞 پشتیبانی\nپیام خود را ارسال کنید؛ اگر درخواست فعالی داشته باشید، برای مدیریت همان درخواست ارسال می‌شود.",
         reply_markup=main_menu(),
     )
+
+
+@router.message()
+async def unknown_message(message: Message) -> None:
+    if message.from_user.id in get_settings().admin_id_set:
+        return
+    await message.answer("لطفاً یکی از گزینه‌های منو را انتخاب کنید.", reply_markup=main_menu())
