@@ -77,6 +77,83 @@ def status_header(order: Order, service: Service) -> str:
 
 
 
+
+
+
+async def ensure_wallet_admin(session, user_id: int) -> Wallet:
+    wallet = (await session.execute(select(Wallet).where(Wallet.user_id == user_id))).scalar_one_or_none()
+    if wallet is None:
+        wallet = Wallet(user_id=user_id, balance_toman=0)
+        session.add(wallet)
+        await session.flush()
+    return wallet
+
+
+@router.callback_query(F.data == "adm:wallets")
+async def admin_wallets(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True); return
+    async with SessionLocal() as session:
+        rows = (await session.execute(
+            select(User, Wallet).join(Wallet, Wallet.user_id == User.id)
+            .where(Wallet.balance_toman > 0).order_by(Wallet.balance_toman.desc()).limit(50)
+        )).all()
+    text = "💰 اعتبار مشترکان\n\n" + ("\n".join(
+        f"👤 {u.first_name or ''} {u.last_name or ''} | {u.telegram_id} | 💳 {w.balance_toman:,} تومان"
+        for u, w in rows
+    ) if rows else "هیچ مشترکی اعتبار مثبت ندارد.")
+    await callback.answer()
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu:admin")]
+    ]))
+
+
+@router.callback_query(F.data == "adm:topups")
+async def admin_topups(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True); return
+    async with SessionLocal() as session:
+        rows = (await session.execute(
+            select(WalletTopup, User).join(User, WalletTopup.user_id == User.id)
+            .where(WalletTopup.status == "waiting_receipt_review")
+            .order_by(WalletTopup.created_at.asc()).limit(30)
+        )).all()
+    if not rows:
+        await callback.answer("شارژ در انتظار بررسی وجود ندارد.", show_alert=True); return
+    buttons = [[InlineKeyboardButton(text=f"#{t.id} | {t.amount_toman:,} تومان | {u.telegram_id}", callback_data=f"adm:topup:{t.id}")] for t,u in rows]
+    buttons.append([InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu:admin")])
+    await callback.answer()
+    await callback.message.edit_text("➕ شارژهای در انتظار بررسی:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+@router.callback_query(F.data.startswith("adm:topup:"))
+async def admin_topup_view(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True); return
+    topup_id = int(callback.data.rsplit(":", 1)[1])
+    async with SessionLocal() as session:
+        row = (await session.execute(
+            select(WalletTopup, User).join(User, WalletTopup.user_id == User.id).where(WalletTopup.id == topup_id)
+        )).one_or_none()
+    if not row:
+        await callback.answer("شارژ پیدا نشد.", show_alert=True); return
+    topup, user = row
+    await callback.answer()
+    await callback.message.edit_text(
+        f"➕ شارژ اعتبار #{topup.id}\n👤 {user.first_name or ''} {user.last_name or ''}\n🆔 {user.telegram_id}\n💰 {topup.amount_toman:,} تومان",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ تأیید و افزایش اعتبار", callback_data=f"adm:topup:approve:{topup.id}")],
+            [InlineKeyboardButton(text="❌ رد شارژ", callback_data=f"adm:topup:reject:{topup.id}")],
+            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:topups")],
+        ])
+    )
+    if topup.receipt_file_id:
+        if topup.receipt_type == "document":
+            await callback.message.answer_document(topup.receipt_file_id, caption=f"🧾 رسید شارژ #{topup.id}")
+        else:
+            await callback.message.answer_photo(topup.receipt_file_id, caption=f"🧾 رسید شارژ #{topup.id}")
+
+
 @router.callback_query(F.data == "adm:cancel")
 async def admin_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     if callback.from_user.id not in get_settings().admin_id_set:
