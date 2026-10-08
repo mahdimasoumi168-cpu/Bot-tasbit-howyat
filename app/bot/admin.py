@@ -50,12 +50,12 @@ def admin_menu() -> InlineKeyboardMarkup:
     )
 
 
-def order_actions(order_id: int, operator: Operator | None = None) -> InlineKeyboardMarkup:
+def order_actions(order_id: int, operator: Operator | None = None, payment_review: bool = True) -> InlineKeyboardMarkup:
     rows = []
-    if operator is None:
+    if payment_review and operator is None:
         rows.append([InlineKeyboardButton(text="✅ تأیید پرداخت", callback_data=f"adm:approve:{order_id}")])
         rows.append([InlineKeyboardButton(text="❌ رد پرداخت", callback_data=f"adm:reject:{order_id}")])
-    else:
+    elif payment_review:
         if can_operator(operator, "approve_payment"):
             rows.append([InlineKeyboardButton(text="✅ تأیید پرداخت", callback_data=f"adm:approve:{order_id}")])
         if can_operator(operator, "reject_payment"):
@@ -1048,7 +1048,7 @@ async def send_case_to_operator(bot, order_id: int) -> None:
         op = None
         if recipient_id not in settings.admin_id_set:
             op = next((x for x in operators if x.telegram_id == recipient_id), None)
-        await bot.send_message(recipient_id, text, reply_markup=order_actions(order.id, operator=op))
+        await bot.send_message(recipient_id, text, reply_markup=order_actions(order.id, operator=op, payment_review=bool(payment and payment.status == "pending")))
         if payment and payment.receipt_file_id:
             await send_payment_receipt(bot, recipient_id, payment, f"🧾 رسید پرداخت {order.public_id}")
         for doc in docs:
