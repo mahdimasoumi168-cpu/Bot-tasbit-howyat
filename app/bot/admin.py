@@ -4,7 +4,7 @@ from aiogram.types import CallbackQuery,InlineKeyboardButton,InlineKeyboardMarku
 from sqlalchemy import select
 from app.bot.states import AdminForm
 from app.core.config import get_settings
-from app.db.models import Companion,Document,Order,Payment,Service,Ticket,TicketMessage,User
+from app.db.models import Companion,Document,Order,Payment,Service,Setting,Ticket,TicketMessage,User
 from app.db.session import SessionLocal
 from app.bot.handlers import STATUS_TEXT
 
@@ -16,7 +16,7 @@ def is_admin(message:Message)->bool:
 def admin_menu():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔵 رسیدهای در انتظار بررسی",callback_data="adm:pending")],
-        [InlineKeyboardButton(text="📋 آخرین درخواست‌ها",callback_data="adm:orders")]
+        [InlineKeyboardButton(text="📋 آخرین درخواست‌ها",callback_data="adm:orders")],\n        [InlineKeyboardButton(text="💳 تنظیم کارت",callback_data="adm:setcard")],\n        [InlineKeyboardButton(text="💰 تنظیم قیمت‌ها",callback_data="adm:prices")]
     ])
 
 def order_actions(order_id:int):
@@ -33,6 +33,46 @@ def status_header(order:Order,service:Service)->str:
 async def admin_start(message:Message):
     if not is_admin(message):return
     await message.answer("🛠 پنل مدیریت",reply_markup=admin_menu())
+
+@router.callback_query(F.data=="adm:setcard")
+async def set_card_start(callback:CallbackQuery,state:FSMContext):
+    if callback.from_user.id not in get_settings().admin_id_set:return
+    await state.set_state(AdminForm.set_card);await callback.answer()
+    await callback.message.answer("شماره کارت و نام صاحب کارت را در یک پیام و با | جدا کنید. مثال:\\n6037991234567890 | نام صاحب کارت")
+
+@router.message(AdminForm.set_card)
+async def set_card_save(message:Message,state:FSMContext):
+    if not is_admin(message):return
+    parts=[x.strip() for x in (message.text or "").split("|",1)]
+    if len(parts)!=2 or len(parts[0])<16:
+        await message.answer("❌ قالب صحیح نیست. دوباره بفرستید: شماره کارت | نام صاحب کارت");return
+    async with SessionLocal() as session:
+        for key,value in (("card_number",parts[0]),("card_holder",parts[1])):
+            row=(await session.execute(select(Setting).where(Setting.key==key))).scalar_one_or_none()
+            if row is None:session.add(Setting(key=key,value=value))
+            else:row.value=value
+        await session.commit()
+    await state.clear();await message.answer("✅ اطلاعات کارت ذخیره شد.",reply_markup=admin_menu())
+
+@router.callback_query(F.data=="adm:prices")
+async def prices(callback:CallbackQuery):
+    if callback.from_user.id not in get_settings().admin_id_set:return
+    async with SessionLocal() as session:
+        rows=(await session.execute(select(Service).order_by(Service.id))).scalars().all()
+    text="💰 قیمت فعلی خدمات:\\n\\n"+"\\n".join(f"{s.code}: {s.price_toman:,} تومان" for s in rows)
+    await callback.message.answer(text+"\\n\\nبرای تغییر: /setprice identity 280000 یا /setprice khodnevis 1700000")
+
+@router.message(F.text.startswith("/setprice"))
+async def set_price(message:Message):
+    if not is_admin(message):return
+    parts=(message.text or "").split()
+    if len(parts)!=3 or parts[1] not in {"identity","khodnevis"} or not parts[2].isdigit():
+        await message.answer("فرمت: /setprice identity 280000");return
+    async with SessionLocal() as session:
+        service=(await session.execute(select(Service).where(Service.code==parts[1]))).scalar_one_or_none()
+        if service is None:await message.answer("❌ خدمت پیدا نشد.");return
+        service.price_toman=int(parts[2]);await session.commit()
+    await message.answer("✅ قیمت ذخیره شد.",reply_markup=admin_menu())
 
 @router.callback_query(F.data=="adm:pending")
 async def pending(callback:CallbackQuery):
