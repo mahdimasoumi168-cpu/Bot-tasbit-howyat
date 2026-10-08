@@ -154,6 +154,65 @@ async def admin_topup_view(callback: CallbackQuery) -> None:
             await callback.message.answer_photo(topup.receipt_file_id, caption=f"🧾 رسید شارژ #{topup.id}")
 
 
+
+
+
+@router.callback_query(F.data == "adm:coupons")
+async def admin_coupons(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True); return
+    async with SessionLocal() as session:
+        rows = (await session.execute(select(DiscountCode).order_by(DiscountCode.created_at.desc()).limit(30))).scalars().all()
+    lines = ["🏷️ کدهای تخفیف", ""]
+    lines += [f"{x.code} | {'درصدی' if x.kind == 'percent' else 'مبلغی'} {x.value}{'%' if x.kind == 'percent' else ' تومان'} | {'فعال' if x.active else 'غیرفعال'} | مصرف: {x.used_count}" for x in rows]
+    if not rows: lines.append("هنوز کدی ثبت نشده است.")
+    await callback.answer()
+    await callback.message.edit_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ ایجاد کد تخفیف", callback_data="adm:coupon:add")],
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu:admin")],
+    ]))
+
+
+@router.callback_query(F.data == "adm:coupon:add")
+async def admin_coupon_add(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set: return
+    await state.set_state(AdminForm.discount_code)
+    await callback.answer()
+    await callback.message.edit_text("🏷️ کد تخفیف را وارد کنید.\nمثال: RENA20", reply_markup=admin_cancel_menu())
+
+
+@router.message(AdminForm.discount_code)
+async def admin_coupon_code(message: Message, state: FSMContext) -> None:
+    if not is_admin(message): return
+    code = (message.text or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9_-]{3,64}", code):
+        await message.answer("❌ کد تخفیف معتبر نیست.", reply_markup=admin_cancel_menu()); return
+    await state.update_data(discount_code=code)
+    await state.set_state(AdminForm.discount_value)
+    await message.answer("💰 مقدار تخفیف را وارد کنید.\nمثال: 20%\nیا: 50000 تومان", reply_markup=admin_cancel_menu())
+
+
+@router.message(AdminForm.discount_value)
+async def admin_coupon_value(message: Message, state: FSMContext) -> None:
+    if not is_admin(message): return
+    raw = normalize_digits_admin(message.text or "").replace(",", "").replace("٬", "").strip()
+    kind = "percent" if raw.endswith("%") else "fixed"
+    raw = raw.rstrip("%").strip()
+    if not raw.isdigit() or int(raw) <= 0 or (kind == "percent" and int(raw) > 100):
+        await message.answer("❌ مقدار تخفیف معتبر نیست.", reply_markup=admin_cancel_menu()); return
+    data = await state.get_data()
+    code, value = data.get("discount_code"), int(raw)
+    async with SessionLocal() as session:
+        exists = (await session.execute(select(DiscountCode).where(DiscountCode.code == code))).scalar_one_or_none()
+        if exists:
+            exists.kind, exists.value, exists.active = kind, value, True
+        else:
+            session.add(DiscountCode(code=code, kind=kind, value=value, active=True))
+        await session.commit()
+    await state.clear()
+    await message.answer("✅ کد تخفیف ذخیره و فعال شد.", reply_markup=admin_menu())
+
+
 @router.callback_query(F.data == "adm:cancel")
 async def admin_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     if callback.from_user.id not in get_settings().admin_id_set:
