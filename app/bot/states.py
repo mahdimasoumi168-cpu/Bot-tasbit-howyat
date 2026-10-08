@@ -27,3 +27,7 @@ class KhodnevisForm(StatesGroup):
     own_mobile = State()
     confirm = State()
     receipt = State()
+
+
+class AdminForm(StatesGroup):
+    send_message = State()
