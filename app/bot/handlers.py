@@ -1254,12 +1254,12 @@ async def user_support_start(callback: CallbackQuery, state: FSMContext) -> None
                 .where(
                     Order.id == order_id,
                     User.telegram_id == callback.from_user.id,
-                    Order.status.in_(["payment_approved", "in_progress", "waiting_user"]),
+                    Order.status.not_in(["draft", "waiting_payment"]),
                 )
             )
         ).one_or_none()
         if not row:
-            await callback.answer("این درخواست در حال حاضر قابل پشتیبانی نیست.", show_alert=True)
+            await callback.answer("این درخواست فعلاً قابل پشتیبانی نیست.", show_alert=True)
             return
         order, service, user = row
         ticket = (
