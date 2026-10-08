@@ -2,6 +2,7 @@ import json
 import re
 
 from aiogram import F, Router
+from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -269,11 +270,11 @@ async def payment_instructions(order_id: int) -> str:
         f"📌 خدمت: {service.name}\n"
         f"🔢 شماره درخواست: {order.public_id}\n\n"
         "💰 مبلغ قابل پرداخت\n"
-        f"تومان: {amount_toman:,} تومان\n"
+        f"تومان: <code>{amount_toman:,}</code> تومان\n"
         + (f"🏷️ تخفیف: {discount:,} تومان\n" if discount else "")
-        + f"ریال: {amount_rial}\n\n"
+        + f"ریال: <code>{amount_rial}</code>\n\n"
         "💳 اطلاعات کارت\n"
-        f"شماره کارت: {card_number}\n"
+        f"شماره کارت: <code>{card_number}</code>\n"
         f"به نام: {card_holder}\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "📸 پس از واریز، تصویر رسید را ارسال کنید."
@@ -1054,7 +1055,7 @@ async def pay_card(callback: CallbackQuery, state: FSMContext) -> None:
         return
     await state.set_state(IdentityForm.receipt if data.get("service_code") == ServiceCode.IDENTITY.value else KhodnevisForm.receipt)
     await callback.answer()
-    await callback.message.edit_text(await payment_instructions(order_id), reply_markup=cancel_menu())
+    await callback.message.edit_text(await payment_instructions(order_id), reply_markup=cancel_menu(), parse_mode=ParseMode.HTML)
 
 
 @router.callback_query(F.data == "pay:coupon")
@@ -1130,16 +1131,18 @@ async def wallet_topup_amount(message: Message, state: FSMContext) -> None:
         await state.update_data(topup_id=topup.id)
         await session.commit()
     await state.set_state(WalletTopupForm.receipt)
-    await message.answer(await wallet_topup_invoice(amount), reply_markup=cancel_menu())
+    await message.answer(await wallet_topup_invoice(amount), reply_markup=cancel_menu(), parse_mode=ParseMode.HTML)
 
 
 async def wallet_topup_invoice(amount: int) -> str:
     async with SessionLocal() as session:
         number = (await session.execute(select(Setting).where(Setting.key == "card_number"))).scalar_one_or_none()
         holder = (await session.execute(select(Setting).where(Setting.key == "card_holder"))).scalar_one_or_none()
-    return (f"🧾 فاکتور افزایش اعتبار\n━━━━━━━━━━━━━━\nمبلغ: {amount:,} تومان\nریال: {amount*10}\n"
-            f"💳 شماره کارت: {number.value if number and number.value else 'تنظیم نشده'}\n"
-            f"👤 به نام: {holder.value if holder and holder.value else 'تنظیم نشده'}\n"
+    card_number = number.value if number and number.value else "تنظیم نشده"
+    card_holder = holder.value if holder and holder.value else "تنظیم نشده"
+    return (f"🧾 فاکتور افزایش اعتبار\n━━━━━━━━━━━━━━\nمبلغ: <code>{amount:,}</code> تومان\nریال: <code>{amount*10}</code>\n"
+            f"💳 شماره کارت: <code>{card_number}</code>\n"
+            f"👤 به نام: {card_holder}\n"
             "━━━━━━━━━━━━━━\n📸 رسید واریز را به صورت عکس یا فایل ارسال کنید.")
 
 
@@ -1341,25 +1344,34 @@ async def support(message: Message, telegram_id: int | None = None, show_direct:
             elif ticket.status != "open":
                 ticket.status = "open"
         await session.commit()
-    if not rows:
-        await message.answer(
-            "📞 پشتیبانی\n\nدر حال حاضر درخواست فعال و قابل پشتیبانی ندارید.",
-            reply_markup=await user_main_menu(uid),
-        )
-        return
-    buttons = [
-        [InlineKeyboardButton(text=f"📞 {order.public_id} | {service.name}", callback_data=f"user:support:{order.id}")]
-        for order, service in rows
-    ]
-    buttons.append([InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")])
     if show_direct:
-        await message.answer(
-            "📞 پشتیبانی\n\n"
-            "ارتباط مستقیم: @Good_ok_2000\n"
-            "یا برای پیگیری یک درخواست فعال، گزینه زیر را انتخاب کنید.",
-            reply_markup=support_menu(True),
-        )
+        if rows:
+            text = (
+                "📞 پشتیبانی\n\n"
+                "برای ارتباط مستقیم با پشتیبانی از دکمه زیر استفاده کنید.\n"
+                "برای پیگیری یکی از درخواست‌های فعال نیز می‌توانید گزینه مربوط به آن را انتخاب کنید."
+            )
+            markup = support_menu(True)
+        else:
+            text = (
+                "📞 پشتیبانی\n\n"
+                "در حال حاضر درخواست فعال و قابل پشتیبانی ندارید.\n\n"
+                "با این حال، برای راهنمایی و ارتباط مستقیم می‌توانید با پشتیبانی در ارتباط باشید."
+            )
+            markup = support_menu(False)
+        await message.answer(text, reply_markup=markup)
     else:
+        if not rows:
+            await message.answer(
+                "📞 پشتیبانی\n\nدر حال حاضر درخواست فعال و قابل پشتیبانی ندارید.",
+                reply_markup=await user_main_menu(uid),
+            )
+            return
+        buttons = [
+            [InlineKeyboardButton(text=f"📞 {order.public_id} | {service.name}", callback_data=f"user:support:{order.id}")]
+            for order, service in rows
+        ]
+        buttons.append([InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")])
         await message.answer("📞 درخواست موردنظر برای پشتیبانی را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
