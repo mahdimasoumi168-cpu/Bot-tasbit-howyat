@@ -72,12 +72,7 @@ def payment_invoice_menu(card_number: str, amount_rial: int) -> InlineKeyboardMa
     ])
 
 
-def payment_invoice_menu(card_number: str, amount_rial: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 کپی شماره کارت", copy_text=CopyTextButton(text=card_number))],
-        [InlineKeyboardButton(text="📋 کپی مبلغ ریالی", copy_text=CopyTextButton(text=str(amount_rial)))],
-        [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")],
-    ])
+
 
 def cancel_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
