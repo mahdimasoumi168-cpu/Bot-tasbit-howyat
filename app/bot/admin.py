@@ -608,7 +608,7 @@ async def set_price(message: Message) -> None:
         return
     parts = (message.text or "").split()
     if len(parts) != 3 or parts[1] not in {"identity", "khodnevis"} or not parts[2].isdigit():
-        await message.answer("فرمت: /setprice identity 280000")
+        await message.answer("برای تغییر قیمت، از بخش «💰 قیمت خدمات» در پنل مدیریت استفاده کنید.")
         return
     price = int(parts[2])
     if price <= 0:
@@ -1058,7 +1058,8 @@ async def operators_panel(callback: CallbackQuery, state: FSMContext) -> None:
     text = "👨‍💼 مدیریت اپراتورها\n\n"
     if rows:
         for op in rows:
-            flags = ", ".join(sorted(_operator_permissions(op))) or "بدون دسترسی"
+            permission_labels = {"view_orders": "مشاهده درخواست‌ها", "approve_payment": "تأیید پرداخت", "reject_payment": "رد پرداخت", "set_status": "تغییر وضعیت", "message_user": "پیام به مشترک"}
+            flags = "، ".join(permission_labels.get(x, x) for x in sorted(_operator_permissions(op))) or "بدون دسترسی"
             text += f"• {op.display_name or 'بدون نام'} | {op.telegram_id} | {'🟢' if op.active else '🔴'}\n  دسترسی: {flags}\n"
     else:
         text += "هنوز اپراتوری ثبت نشده است.\n"
@@ -1120,7 +1121,7 @@ async def operator_perm_start(callback: CallbackQuery, state: FSMContext) -> Non
     await callback.message.answer(
         "🔐 تنظیم دسترسی\nفرمت:\nID | permission1,permission2,...\n\n"
         "دسترسی‌ها: view_orders, approve_payment, reject_payment, set_status, message_user\n"
-        "مثال: 123456789 | view_orders,set_status,message_user"
+        ""
     )
 
 
