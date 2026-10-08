@@ -162,9 +162,9 @@ async def payment_instructions(order_id: int) -> str:
         f"🔢 شماره درخواست: {order.public_id}\n\n"
         "💰 مبلغ قابل پرداخت\n"
         f"تومان: {amount_toman:,} تومان\n"
-        f"ریال: <code>{amount_rial}</code>\n\n"
+        f"ریال: {amount_rial}\n\n"
         "💳 اطلاعات کارت\n"
-        f"شماره کارت: <code>{card_number}</code>\n"
+        f"شماره کارت: {card_number}\n"
         f"به نام: {card_holder}\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "📸 پس از واریز، تصویر رسید را ارسال کنید."
@@ -383,9 +383,9 @@ async def identity_mobile(message: Message, state: FSMContext) -> None:
     if not valid_mobile(value):
         await message.answer("❌ شماره موبایل معتبر نیست. مثال: 09123456789", reply_markup=cancel_menu())
         return
-    await state.update_data(mobile=value)
+    await state.update_data(mobile=normalize_mobile(value))
     await state.set_state(IdentityForm.birth_date)
-    await message.answer("۳/۸\nتاریخ تولد را به شمسی وارد کنید.\nمثال: ۱۳۷۵/۰۵/۲۰\nمحدودیت: تاریخ شمسی معتبر، سال بین ۱۳۰۰ تا ۱۵۰۰.", reply_markup=cancel_menu())
+    await message.answer("۳/۸\nتاریخ تولد را به شمسی وارد کنید.\nمثال: ۱۳۷۵/۰۵/۲۰", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.birth_date)
@@ -403,13 +403,19 @@ async def identity_birth(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(birth_date_gregorian=gregorian_display(value))
     await state.set_state(IdentityForm.return_date)
-    await message.answer("۴/۸\nآخرین تاریخ بازگشت به افغانستان را به شمسی وارد کنید.\nمثال: ۱۴۰۵/۰۱/۱۵\nمحدودیت: سال بین ۱۳۰۰ تا ۱۵۰۰.", reply_markup=cancel_menu())
+    await message.answer("۴/۸\nآخرین تاریخ بازگشت به افغانستان را به شمسی وارد کنید.\nمثال: ۱۴۰۵/۰۱/۱۵", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.return_date)
 async def identity_return(message: Message, state: FSMContext) -> None:
     try:
-        value = jalali_to_gregorian(message.text or "")
+        raw = normalize_digits(message.text or "").strip()
+        if not re.fullmatch(r"\d{4}[/-]\d{1,2}[/-]\d{1,2}", raw):
+            raise ValueError("فرمت تاریخ باید مانند ۱۴۰۵/۰۱/۱۵ باشد.")
+        year = int(re.split(r"[/-]", raw)[0])
+        if not 1300 <= year <= 1500:
+            raise ValueError("تاریخ واردشده معتبر نیست.")
+        value = jalali_to_gregorian(raw)
     except ValueError as exc:
         await message.answer(f"❌ {exc}", reply_markup=cancel_menu())
         return
@@ -472,7 +478,7 @@ async def identity_companion_mobile(message: Message, state: FSMContext) -> None
         return
     data = await state.get_data()
     companions = data.get("companions", [])
-    companions.append({"full_name": data["pending_companion_name"], "mobile": value})
+    companions.append({"full_name": data["pending_companion_name"], "mobile": normalize_mobile(value)})
     await state.update_data(companions=companions, pending_companion_name=None)
     await state.set_state(IdentityForm.companion_choice)
     await message.answer("آیا همراه دیگری دارید؟", reply_markup=yes_no_menu())
@@ -550,7 +556,7 @@ async def khodnevis_mobile(message: Message, state: FSMContext) -> None:
     if not valid_mobile(value):
         await message.answer("❌ شماره موبایل معتبر نیست. مثال: 09123456789", reply_markup=cancel_menu())
         return
-    await state.update_data(mobile=value)
+    await state.update_data(mobile=normalize_mobile(value))
     await state.set_state(KhodnevisForm.document_type)
     await message.answer("۳/۷\nمدرک را انتخاب کنید:", reply_markup=document_type_menu())
 
@@ -627,7 +633,7 @@ async def khodnevis_own_mobile(message: Message, state: FSMContext) -> None:
     if not valid_mobile(value):
         await message.answer("❌ شماره موبایل معتبر نیست.", reply_markup=cancel_menu())
         return
-    await state.update_data(own_mobile=value)
+    await state.update_data(own_mobile=normalize_mobile(value))
     data = await state.get_data()
     await state.set_state(KhodnevisForm.confirm)
     await message.answer(
@@ -693,13 +699,35 @@ async def save_order_data(data: dict) -> None:
 
 async def save_receipt(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
+    order_id = data.get("order_id")
+    if not order_id:
+        raise ValueError("درخواست پرداخت پیدا نشد. لطفاً دوباره از منوی اصلی شروع کنید.")
+    if not message.photo:
+        raise ValueError("لطفاً تصویر رسید را به صورت عکس ارسال کنید.")
+
     async with SessionLocal() as session:
-        order = await session.get(Order, data["order_id"])
-        if order is None:
-            raise ValueError("درخواست پیدا نشد.")
-        service = await session.get(Service, order.service_id)
-        if service is None:
-            raise ValueError("خدمت درخواست پیدا نشد.")
+        row = (
+            await session.execute(
+                select(Order, Service)
+                .join(Service, Order.service_id == Service.id)
+                .join(User, Order.user_id == User.id)
+                .where(
+                    Order.id == order_id,
+                    User.telegram_id == message.from_user.id,
+                )
+            )
+        ).one_or_none()
+        if not row:
+            raise ValueError("این درخواست متعلق به حساب شما نیست یا پیدا نشد.")
+
+        order, service = row
+        if order.status not in {"waiting_payment", "rejected"}:
+            if order.status == "waiting_receipt_review":
+                raise ValueError("رسید این درخواست قبلاً ثبت شده و در انتظار بررسی است.")
+            if order.status == "payment_approved":
+                raise ValueError("پرداخت این درخواست قبلاً تأیید شده است.")
+            raise ValueError("این درخواست در حال حاضر امکان دریافت رسید ندارد.")
+
         await session.execute(
             update(Payment)
             .where(Payment.order_id == order.id, Payment.status == "pending")
