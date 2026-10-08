@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Telegram bot for identity stabilization and Khodnevis tracking-code services."
 requires-python = ">=3.12"
 dependencies = [
-  "aiogram>=3.22,<4",
+  "aiogram>=3.25,<4",
   "SQLAlchemy[asyncio]>=2.0,<3",
   "aiosqlite>=0.20,<1",
   "asyncpg>=0.30,<1",
