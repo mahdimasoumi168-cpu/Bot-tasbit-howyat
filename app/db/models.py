@@ -87,6 +87,57 @@ class Payment(Base):
     order: Mapped["Order"] = relationship(back_populates="payments")
 
 
+class Wallet(Base):
+    __tablename__ = "wallets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    balance_toman: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class WalletTransaction(Base):
+    __tablename__ = "wallet_transactions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    amount_toman: Mapped[int] = mapped_column(Integer)
+    balance_after_toman: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    description: Mapped[str] = mapped_column(String(512))
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), index=True)
+    topup_id: Mapped[int | None] = mapped_column(ForeignKey("wallet_topups.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+
+
+class WalletTopup(Base):
+    __tablename__ = "wallet_topups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    amount_toman: Mapped[int] = mapped_column(Integer)
+    receipt_file_id: Mapped[str | None] = mapped_column(String(512))
+    receipt_type: Mapped[str] = mapped_column(String(16), default="photo")
+    status: Mapped[str] = mapped_column(String(32), default="waiting_receipt_review", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class DiscountCode(Base):
+    __tablename__ = "discount_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    kind: Mapped[str] = mapped_column(String(16), default="percent")
+    value: Mapped[int] = mapped_column(Integer)
+    active: Mapped[bool] = mapped_column(default=True, index=True)
+    max_uses: Mapped[int | None] = mapped_column(Integer)
+    used_count: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class Document(Base):
     __tablename__ = "documents"
 
