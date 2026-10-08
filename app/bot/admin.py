@@ -2,7 +2,7 @@ import json
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardRemove
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardRemove, ReplyKeyboardRemove
 from sqlalchemy import select
 
 from app.bot.handlers import STATUS_TEXT
@@ -44,21 +44,29 @@ def status_header(order: Order, service: Service) -> str:
 
 
 @router.message(F.text == "/admin")
-async def admin_start(message: Message) -> None:
+async def admin_start(message: Message, state: FSMContext) -> None:
     if not is_admin(message):
         return
-    await message.answer("🛠 پنل مدیریت", reply_markup=admin_menu())
+    await state.clear()
+    await message.answer("🛠 پنل مدیریت\n\nاز گزینه‌های زیر استفاده کنید:", reply_markup=admin_menu())
+
+
+@router.message(F.text == "🛠 پنل مدیریت")
+async def admin_button(message: Message, state: FSMContext) -> None:
+    await admin_start(message, state)
 
 
 @router.callback_query(F.data == "adm:setcard")
 async def set_card_start(callback: CallbackQuery, state: FSMContext) -> None:
     if callback.from_user.id not in get_settings().admin_id_set:
         return
+    await state.clear()
     await state.set_state(AdminForm.set_card)
     await callback.answer()
     await callback.message.answer(
         "شماره کارت و نام صاحب کارت را در یک پیام و با | جدا کنید.\n"
-        "مثال: 6037991234567890 | نام صاحب کارت"
+        "مثال: 6037991234567890 | نام صاحب کارت",
+        reply_markup=ReplyKeyboardRemove(),
     )
 
 
