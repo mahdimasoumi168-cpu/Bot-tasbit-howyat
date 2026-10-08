@@ -64,5 +64,5 @@ def single_action_menu(text: str = "🔄 شروع مجدد") -> InlineKeyboardMa
 def confirm_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ تأیید و ادامه", callback_data="order:confirm")],
-        [InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart")],
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")],
     ])
