@@ -4,7 +4,7 @@ import re
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message, ReplyKeyboardRemove
+from aiogram.types import CallbackQuery, Message
 from sqlalchemy import select
 
 from app.bot.keyboards import (
@@ -14,6 +14,7 @@ from app.bot.keyboards import (
     optional_document_menu,
     yes_no_menu,
     single_action_menu,
+    confirm_menu,
 )
 from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm
 from app.core.config import get_settings
@@ -263,11 +264,12 @@ async def show_identity_summary(message: Message, state: FSMContext) -> None:
         f"آخرین بازگشت: {data.get('return_date_gregorian')}\n"
         f"کنسولگری: {data.get('consulate')}\n"
         f"همراهان:\n{companion_text}\n\n"
-        "برای ادامه «تأیید» را ارسال کنید یا «🔄 شروع مجدد» را بزنید.",
+        "اگر اطلاعات درست است «تأیید و ادامه» را بزنید.",
+        reply_markup=confirm_menu(),
     )
 
 
-@router.message(IdentityForm.confirm, F.text == "تأیید")
+@router.message(IdentityForm.confirm, F.text == "✅ تأیید و ادامه")
 async def identity_confirm(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     await save_order_data(data)
@@ -279,7 +281,7 @@ async def identity_confirm(message: Message, state: FSMContext) -> None:
 async def identity_receipt(message: Message, state: FSMContext) -> None:
     await save_receipt(message, state)
     await state.clear()
-    await message.answer("✅ رسید شما ثبت شد و برای بررسی ارسال گردید.", reply_markup=main_menu())
+    await message.answer("✅ رسید شما ثبت شد و برای بررسی ارسال گردید.", reply_markup=main_menu(message.from_user.id in get_settings().admin_id_set))
 
 
 @router.message(F.text == "📝 کد رهگیری خودنویس")
@@ -400,11 +402,12 @@ async def khodnevis_own_mobile(message: Message, state: FSMContext) -> None:
         f"موبایل در دسترس: {data.get('mobile')}\n"
         f"مدرک: {data.get('document_type')}\n"
         f"موبایل به نام شخص: {data.get('own_mobile')}\n\n"
-        "برای ادامه «تأیید» را ارسال کنید.",
+        "اگر اطلاعات درست است «تأیید و ادامه» را بزنید.",
+        reply_markup=confirm_menu(),
     )
 
 
-@router.message(KhodnevisForm.confirm, F.text == "تأیید")
+@router.message(KhodnevisForm.confirm, F.text == "✅ تأیید و ادامه")
 async def khodnevis_confirm(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     await save_order_data(data)
