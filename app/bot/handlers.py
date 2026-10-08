@@ -15,7 +15,6 @@ from app.bot.keyboards import (
     main_menu,
     optional_document_menu,
     yes_no_menu,
-    single_action_menu,
     cancel_menu,
     confirm_menu,
     support_menu,
