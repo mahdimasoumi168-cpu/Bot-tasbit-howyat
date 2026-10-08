@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.db.models import AuditLog, Companion, Document, Order, Operator, Payment, Service, Setting, Ticket, TicketMessage, User
 from app.db.session import SessionLocal
 
-router = Router()  # نسخه پایدار پنل مدیریت
+router = Router()
 
 
 async def audit(actor_id: int, action: str, order_id: int | None = None, details: dict | None = None) -> None:
@@ -69,7 +69,7 @@ def order_actions(order_id: int, operator: Operator | None = None) -> InlineKeyb
 
 
 def status_header(order: Order, service: Service) -> str:
-    return f"{order.public_id} | {STATUS_TEXT.get(order.status, order.status)}\n🪪 خدمت: {service.name}"
+    return f"{order.public_id} | {STATUS_TEXT.get(order.status, "نامشخص")}\n🪪 خدمت: {service.name}"
 
 
 
@@ -121,7 +121,7 @@ async def operator_orders(callback: CallbackQuery) -> None:
         text = "📋 درخواستی برای رسیدگی وجود ندارد."
     else:
         text = "📋 درخواست‌های قابل رسیدگی\n\n" + "\n".join(
-            f"{o.public_id} | {STATUS_TEXT.get(o.status,o.status)} | {s.name}"
+            f"{o.public_id} | {STATUS_TEXT.get(o.status, "نامشخص")} | {s.name}"
             for o,s,u in rows
         )
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -456,7 +456,7 @@ def build_case_text(order: Order, service: Service, user: User, data: dict, comp
     lines.append("💳 سوابق پرداخت")
     if payments:
         for p in payments:
-            lines.append(f"• {PAYMENT_STATUS_TEXT.get(p.status, 'نامشخص')} — {p.amount_toman:,} تومان — {p.created_at.strftime('%Y/%m/%d %H:%M') if p.created_at else '—'}")
+            lines.append(f"• {p.status} — {p.amount_toman:,} تومان — {p.created_at.strftime('%Y/%m/%d %H:%M') if p.created_at else '—'}")
     else:
         lines.append("• پرداختی ثبت نشده است")
     lines.append("")
@@ -530,7 +530,7 @@ async def user_search(message: Message, state: FSMContext) -> None:
         "📋 آخرین درخواست‌ها:\n"
     )
     text += "\n".join(
-        f"{o.public_id} | {STATUS_TEXT.get(o.status, o.status)} | {s.name}" for o, s in orders
+        f"{o.public_id} | {STATUS_TEXT.get(o.status, "نامشخص")} | {s.name}" for o, s in orders
     ) or "درخواستی ندارد."
     await state.clear()
     await message.answer(text, reply_markup=admin_menu())
@@ -898,53 +898,6 @@ async def send_case_to_operator(bot, order_id: int) -> None:
             )
 
 
-@router.callback_query(F.data.startswith("adm:status:"))
-async def change_status(callback: CallbackQuery) -> None:
-    operator = await get_operator(callback.from_user.id)
-    is_main = callback.from_user.id in get_settings().admin_id_set
-    if not is_main and (operator is None or not can_operator(operator, "set_status")):
-        await callback.answer("دسترسی تغییر وضعیت ندارید.", show_alert=True)
-        return
-    parts = callback.data.split(":")
-    if len(parts) != 4 or parts[3] not in {"in_progress", "waiting_user", "completed", "rejected"}:
-        await callback.answer("وضعیت نامعتبر است.", show_alert=True)
-        return
-    try:
-        order_id = int(parts[2])
-    except ValueError:
-        await callback.answer("شناسه درخواست نامعتبر است.", show_alert=True)
-        return
-    new_status = parts[3]
-    async with SessionLocal() as session:
-        order = await session.get(Order, order_id)
-        if order is None:
-            await callback.answer("درخواست پیدا نشد.", show_alert=True)
-            return
-        old_status = order.status
-        order.status = new_status
-        await session.commit()
-        service = await session.get(Service, order.service_id)
-        user = await session.get(User, order.user_id)
-    await audit(callback.from_user.id, "status_changed", order_id, {"from": old_status, "to": new_status})
-    await callback.answer(f"وضعیت به «{STATUS_TEXT.get(new_status, new_status)}» تغییر کرد.")
-    if user:
-        try:
-            await callback.message.bot.send_message(
-                user.telegram_id,
-                f"📌 وضعیت درخواست {order.public_id} تغییر کرد.\nوضعیت جدید: {STATUS_TEXT.get(new_status, new_status)}",
-            )
-        except Exception:
-            pass
-    if service:
-        try:
-            await callback.message.edit_text(
-                status_header(order, service),
-                reply_markup=order_actions(order.id, operator=None if is_main else operator),
-            )
-        except Exception:
-            pass
-
-
 @router.callback_query(F.data.startswith("adm:approve:"))
 async def approve(callback: CallbackQuery) -> None:
     operator = await get_operator(callback.from_user.id)
@@ -1253,3 +1206,189 @@ async def operator_perm_select(callback: CallbackQuery, state: FSMContext) -> No
     await callback.answer()
     await callback.message.edit_text(
         f"🔐 تنظیم دسترسی همکار\n\n"
+        f"شناسه: {telegram_id}\n"
+        "دسترسی‌های فعال را با دکمه‌های زیر انتخاب کنید:",
+        reply_markup=operator_permission_keyboard(telegram_id, permissions),
+    )
+
+
+@router.callback_query(F.data.startswith("adm:operator:perm:toggle:"))
+async def operator_perm_toggle(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 6:
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    try:
+        telegram_id = int(parts[4])
+    except ValueError:
+        await callback.answer("شناسه همکار نامعتبر است.", show_alert=True)
+        return
+    key = parts[5]
+    if key not in PERMISSION_LABELS:
+        await callback.answer("دسترسی نامعتبر است.", show_alert=True)
+        return
+    data = await state.get_data()
+    if data.get("operator_permission_id") != telegram_id:
+        await callback.answer("این تنظیمات منقضی شده است. دوباره وارد شوید.", show_alert=True)
+        return
+    permissions = set(data.get("operator_permissions") or [])
+    if key in permissions:
+        permissions.remove(key)
+    else:
+        permissions.add(key)
+    await state.update_data(operator_permissions=list(permissions))
+    await callback.message.edit_reply_markup(
+        reply_markup=operator_permission_keyboard(telegram_id, permissions)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("adm:operator:perm:save:"))
+async def operator_perm_save(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    try:
+        telegram_id = int(callback.data.rsplit(":", 1)[1])
+    except ValueError:
+        await callback.answer("شناسه همکار نامعتبر است.", show_alert=True)
+        return
+    data = await state.get_data()
+    if data.get("operator_permission_id") != telegram_id:
+        await callback.answer("این تنظیمات منقضی شده است. دوباره وارد شوید.", show_alert=True)
+        return
+    permissions = set(data.get("operator_permissions") or [])
+    async with SessionLocal() as session:
+        op = (await session.execute(
+            select(Operator).where(Operator.telegram_id == telegram_id)
+        )).scalar_one_or_none()
+        if op is None:
+            await state.clear()
+            await callback.answer("همکار پیدا نشد.", show_alert=True)
+            return
+        op.permissions_json = json.dumps(
+            {key: key in permissions for key in PERMISSION_LABELS},
+            ensure_ascii=False,
+        )
+        await session.commit()
+    await state.clear()
+    await callback.answer("دسترسی‌ها ذخیره شد.")
+    await callback.message.edit_text(
+        "✅ دسترسی‌های همکار با موفقیت ذخیره شد.",
+        reply_markup=admin_menu(),
+    )
+
+
+@router.callback_query(F.data == "adm:operator:remove")
+async def operator_remove_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    await state.clear()
+    await state.set_state(AdminForm.operator_remove)
+    await callback.answer()
+    await callback.message.answer("🚫 شناسه عددی اپراتور را برای غیرفعال‌سازی ارسال کنید:")
+
+
+@router.message(AdminForm.operator_remove)
+async def operator_remove_save(message: Message, state: FSMContext) -> None:
+    if not is_admin(message):
+        return
+    raw = (message.text or "").strip()
+    if not raw.isdigit():
+        await message.answer("❌ شناسه نامعتبر است.")
+        return
+    async with SessionLocal() as session:
+        op = (await session.execute(select(Operator).where(Operator.telegram_id == int(raw))).scalar_one_or_none()
+              if False else None)
+        # Keep this query explicit for SQLAlchemy async compatibility.
+        result = await session.execute(select(Operator).where(Operator.telegram_id == int(raw)))
+        op = result.scalar_one_or_none()
+        if op is None:
+            await state.clear()
+            await message.answer("❌ اپراتور پیدا نشد.", reply_markup=admin_menu())
+            return
+        op.active = False
+        await session.commit()
+    await state.clear()
+    await message.answer("✅ اپراتور غیرفعال شد.", reply_markup=admin_menu())
+
+
+@router.callback_query(F.data.startswith("adm:status:"))
+async def operator_status_change(callback: CallbackQuery) -> None:
+    operator = await get_operator(callback.from_user.id)
+    is_main = callback.from_user.id in get_settings().admin_id_set
+    if not is_main and (operator is None or not can_operator(operator, "set_status")):
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    _, _, order_id_raw, status = callback.data.split(":", 3)
+    try:
+        order_id = int(order_id_raw)
+    except ValueError:
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    allowed_statuses = {"in_progress", "waiting_user", "completed", "rejected"}
+    if status not in allowed_statuses:
+        await callback.answer("وضعیت نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        order = await session.get(Order, order_id)
+        if order is None:
+            await callback.answer("درخواست پیدا نشد.", show_alert=True)
+            return
+        order.status = status
+        user = await session.get(User, order.user_id)
+        await session.commit()
+    await audit(callback.from_user.id, "status_changed", order_id, {"status": status})
+    labels = {"in_progress":"🟡 در حال انجام","waiting_user":"⏳ منتظر مشترک","completed":"✅ تکمیل شده","rejected":"🔴 رد شده"}
+    await callback.answer("وضعیت تغییر کرد.")
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.bot.send_message(user.telegram_id, f"🔔 وضعیت درخواست {order.public_id} تغییر کرد.\n\nوضعیت جدید: {labels[status]}")
+
+
+@router.message()
+async def user_ticket_reply(message: Message) -> None:
+    if message.from_user.id in get_settings().admin_id_set:
+        return
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(
+                select(Ticket, Order, Service)
+                .join(Order, Ticket.order_id == Order.id)
+                .join(Service, Order.service_id == Service.id)
+                .join(User, Order.user_id == User.id)
+                .where(
+                    User.telegram_id == message.from_user.id,
+                    Ticket.status == "open",
+                )
+                .order_by(Ticket.id.desc())
+            )
+        ).first()
+        if not row:
+            return
+        ticket, order, service = row
+        session.add(
+            TicketMessage(
+                ticket_id=ticket.id,
+                sender_type="user",
+                sender_telegram_id=message.from_user.id,
+                content_type=message.content_type,
+                text=message.text or message.caption,
+            )
+        )
+        await session.commit()
+    recipients = set(get_settings().admin_id_set)
+    async with SessionLocal() as session:
+        operators = (await session.execute(
+            select(Operator).where(Operator.active.is_(True))
+        )).scalars().all()
+        recipients.update(
+            op.telegram_id
+            for op in operators
+            if can_operator(op, "view_orders") and can_operator(op, "message_user")
+        )
+    for recipient_id in recipients:
+        await message.bot.send_message(
+            recipient_id, status_header(order, service) + f"\n👤 پاسخ مشترک: {message.from_user.id}"
+        )
+        await message.copy_to(recipient_id)
