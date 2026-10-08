@@ -28,7 +28,7 @@ async def main() -> None:
 
     if settings.database_url.startswith("sqlite"):
         raw_db_path = settings.database_url.split(":///", 1)[-1]
-        db_path = Path(raw_db_path if raw_db_path.startswith("/") else "/" + raw_db_path)
+        db_path = Path(raw_db_path)
         fsm_path = db_path.with_name("fsm.db")
     else:
         fsm_path = Path("data/fsm.db")
