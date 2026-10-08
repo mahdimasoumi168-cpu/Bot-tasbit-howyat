@@ -153,6 +153,114 @@ async def restart(message: Message, state: FSMContext) -> None:
     await start(message, state)
 
 
+@router.callback_query(F.data == "menu:restart")
+async def inline_restart(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await restart(callback.message, state)
+
+@router.callback_query(F.data == "menu:identity")
+async def inline_identity(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await identity_start(callback.message, state)
+
+@router.callback_query(F.data == "menu:khodnevis")
+async def inline_khodnevis(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await khodnevis_start(callback.message, state)
+
+@router.callback_query(F.data == "menu:tracking")
+async def inline_tracking(callback: CallbackQuery) -> None:
+    await callback.answer()
+    await track_orders(callback.message)
+
+@router.callback_query(F.data == "menu:account")
+async def inline_account(callback: CallbackQuery) -> None:
+    await callback.answer()
+    await account(callback.message)
+
+@router.callback_query(F.data == "menu:support")
+async def inline_support(callback: CallbackQuery) -> None:
+    await callback.answer()
+    await support(callback.message)
+
+@router.callback_query(F.data == "menu:admin")
+async def inline_admin_placeholder(callback: CallbackQuery) -> None:
+    await callback.answer()
+    await callback.message.answer("🛠 پنل مدیریت\n\nبرای ورود، /admin را ارسال کنید.")
+
+@router.callback_query(F.data == "menu:operator")
+async def inline_operator_placeholder(callback: CallbackQuery) -> None:
+    await callback.answer()
+    await callback.message.answer("👨‍💼 پنل اپراتور\n\nبرای ورود، منوی ربات را باز کنید.")
+
+@router.callback_query(F.data == "identity:consulate:z")
+async def inline_consulate_z(callback: CallbackQuery, state: FSMContext) -> None:
+    if await state.get_state() != IdentityForm.consulate:
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
+    await callback.answer(); await state.update_data(consulate="🇦🇫 زاهدان"); await state.set_state(IdentityForm.identity_document)
+    await callback.message.edit_text("۶/۸\n📸 تصویر مدرک شناسایی را ارسال کنید.", reply_markup=single_action_menu())
+
+@router.callback_query(F.data == "identity:consulate:m")
+async def inline_consulate_m(callback: CallbackQuery, state: FSMContext) -> None:
+    if await state.get_state() != IdentityForm.consulate:
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
+    await callback.answer(); await state.update_data(consulate="🇦🇫 مشهد"); await state.set_state(IdentityForm.identity_document)
+    await callback.message.edit_text("۶/۸\n📸 تصویر مدرک شناسایی را ارسال کنید.", reply_markup=single_action_menu())
+
+@router.callback_query(F.data == "identity:companion:y")
+async def inline_companion_yes(callback: CallbackQuery, state: FSMContext) -> None:
+    if await state.get_state() != IdentityForm.companion_choice:
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
+    await callback.answer(); await state.set_state(IdentityForm.companion_name)
+    await callback.message.edit_text("✍️ نام و نام خانوادگی همراه را وارد کنید.", reply_markup=single_action_menu())
+
+@router.callback_query(F.data == "identity:companion:n")
+async def inline_companion_no(callback: CallbackQuery, state: FSMContext) -> None:
+    if await state.get_state() != IdentityForm.companion_choice:
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
+    await callback.answer(); await show_identity_summary(callback.message, state)
+
+@router.callback_query(F.data == "khodnevis:doc:amayesh")
+async def inline_doc_amayesh(callback: CallbackQuery, state: FSMContext) -> None:
+    if await state.get_state() != KhodnevisForm.document_type:
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
+    await callback.answer(); await state.update_data(document_type="کارت آمایش"); await state.set_state(KhodnevisForm.amayesh)
+    await callback.message.edit_text("۴/۷\n📸 تصویر کارت آمایش را ارسال کنید.", reply_markup=single_action_menu())
+
+@router.callback_query(F.data == "khodnevis:doc:passport")
+async def inline_doc_passport(callback: CallbackQuery, state: FSMContext) -> None:
+    if await state.get_state() != KhodnevisForm.document_type:
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
+    await callback.answer(); await state.update_data(document_type="پاسپورت"); await state.set_state(KhodnevisForm.passport_first)
+    await callback.message.edit_text("۴/۷\n📸 تصویر صفحه اول پاسپورت الزامی است.", reply_markup=single_action_menu())
+
+@router.callback_query(F.data.startswith("khodnevis:optional:"))
+async def inline_optional_document(callback: CallbackQuery, state: FSMContext) -> None:
+    current = await state.get_state(); action = callback.data.rsplit(":", 1)[1]
+    if current not in {KhodnevisForm.passport_renewal, KhodnevisForm.residence_renewal}:
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
+    await callback.answer()
+    if action == "send":
+        target = "صفحه تمدید پاسپورت" if current == KhodnevisForm.passport_renewal else "صفحه تمدید اقامت/ویزا"
+        await callback.message.edit_text(f"📸 تصویر {target} را ارسال کنید.", reply_markup=single_action_menu()); return
+    if current == KhodnevisForm.passport_renewal:
+        await state.update_data(passport_renewal=None); await state.set_state(KhodnevisForm.residence_renewal)
+        await callback.message.edit_text("صفحه تمدید اقامت/ویزا را دارید؟", reply_markup=optional_document_menu())
+    else:
+        await state.update_data(residence_renewal=None); await state.set_state(KhodnevisForm.own_mobile)
+        await callback.message.edit_text("📱 شماره موبایل به نام خود شخص را ارسال کنید.", reply_markup=single_action_menu())
+
+@router.callback_query(F.data == "order:confirm")
+async def inline_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    current = await state.get_state()
+    if current == IdentityForm.confirm:
+        await callback.answer(); await identity_confirm(callback.message, state)
+    elif current == KhodnevisForm.confirm:
+        await callback.answer(); await khodnevis_confirm(callback.message, state)
+    else:
+        await callback.answer("این تأیید دیگر فعال نیست.", show_alert=True)
+
+
 @router.message(F.text == "🪪 تثبیت هویت")
 async def identity_start(message: Message, state: FSMContext) -> None:
     await state.clear()
