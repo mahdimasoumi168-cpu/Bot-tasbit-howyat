@@ -70,3 +70,8 @@ async def init_db() -> None:
                     "(SELECT price_toman FROM services WHERE services.id = orders.service_id) "
                     "WHERE price_snapshot_toman IS NULL"
                 ))
+            payment_columns = await conn.execute(text("PRAGMA table_info(payments)"))
+            payment_names = {row[1] for row in payment_columns.fetchall()}
+            if "receipt_type" not in payment_names:
+                await conn.execute(text("ALTER TABLE payments ADD COLUMN receipt_type VARCHAR(16) DEFAULT 'photo'"))
+                await conn.execute(text("UPDATE payments SET receipt_type = 'photo' WHERE receipt_type IS NULL"))
