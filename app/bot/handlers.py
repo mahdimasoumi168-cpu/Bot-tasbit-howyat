@@ -832,10 +832,18 @@ async def save_receipt(message: Message, state: FSMContext) -> None:
             .where(Payment.order_id == order.id, Payment.status == "pending")
             .values(status="superseded")
         )
+        payload = json.loads(order.data_json or "{}")
+        base_amount = int(order.price_snapshot_toman or service.price_toman)
+        coupon = None
+        if payload.get("discount_code"):
+            coupon = (await session.execute(
+                select(DiscountCode).where(DiscountCode.code == payload["discount_code"])
+            )).scalar_one_or_none()
+        final_amount = max(0, base_amount - calculate_discount(base_amount, coupon))
         session.add(
             Payment(
                 order_id=order.id,
-                amount_toman=(lambda base, payload: max(0, base - calculate_discount(base, next((x for x in [None] if False), None))))(order.price_snapshot_toman or service.price_toman, json.loads(order.data_json or "{}")),
+                amount_toman=final_amount,
                 receipt_file_id=(message.photo[-1].file_id if message.photo else message.document.file_id),
                 receipt_type=("photo" if message.photo else "document"),
                 status="pending",
