@@ -18,12 +18,33 @@ from app.bot.keyboards import (
 )
 from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm
 from app.core.config import get_settings
-from app.db.models import Companion, Document, Order, Payment, Service, ServiceCode, Setting, User
+from app.db.models import Companion, Document, Operator, Order, Payment, Service, ServiceCode, Setting, User
 from app.db.session import SessionLocal
 from app.utils.dates import gregorian_display, jalali_to_gregorian
 from app.utils.ids import public_order_id
 
 router = Router()
+
+async def is_active_operator(telegram_id: int) -> bool:
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(
+                select(Operator).where(
+                    Operator.telegram_id == telegram_id,
+                    Operator.active.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+        return row is not None
+
+
+async def user_main_menu(telegram_id: int):
+    return main_menu(
+        telegram_id in get_settings().admin_id_set,
+        await is_active_operator(telegram_id),
+    )
+
+
 STATUS_TEXT = {
     "draft": "پیش‌نویس",
     "waiting_payment": "در انتظار پرداخت",
@@ -118,7 +139,7 @@ async def start(message: Message, state: FSMContext) -> None:
     await get_or_create_user(message)
     await message.answer(
         "سلام 🌷\nبه «رنا یار بات» خوش آمدید.\n\nخدمت موردنظر را انتخاب کنید:",
-        reply_markup=main_menu(message.from_user.id in get_settings().admin_id_set),
+        reply_markup=await user_main_menu(message.from_user.id),
     )
 
 
@@ -134,7 +155,7 @@ async def identity_start(message: Message, state: FSMContext) -> None:
     try:
         order = await create_order(message, ServiceCode.IDENTITY)
     except ValueError as exc:
-        await message.answer(f"❌ {exc}", reply_markup=main_menu(message.from_user.id in get_settings().admin_id_set))
+        await message.answer(f"❌ {exc}", reply_markup=await user_main_menu(message.from_user.id))
         return
     await state.update_data(
         order_id=order.id, public_id=order.public_id, service_code=ServiceCode.IDENTITY.value
@@ -281,7 +302,7 @@ async def identity_confirm(message: Message, state: FSMContext) -> None:
 async def identity_receipt(message: Message, state: FSMContext) -> None:
     await save_receipt(message, state)
     await state.clear()
-    await message.answer("✅ رسید شما ثبت شد و برای بررسی ارسال گردید.", reply_markup=main_menu(message.from_user.id in get_settings().admin_id_set))
+    await message.answer("✅ رسید شما ثبت شد و برای بررسی ارسال گردید.", reply_markup=await user_main_menu(message.from_user.id))
 
 
 @router.message(F.text == "📝 کد رهگیری خودنویس")
@@ -290,7 +311,7 @@ async def khodnevis_start(message: Message, state: FSMContext) -> None:
     try:
         order = await create_order(message, ServiceCode.KHODNEVIS)
     except ValueError as exc:
-        await message.answer(f"❌ {exc}", reply_markup=main_menu())
+        await message.answer(f"❌ {exc}", reply_markup=await user_main_menu(message.from_user.id))
         return
     await state.update_data(
         order_id=order.id, public_id=order.public_id, service_code=ServiceCode.KHODNEVIS.value
