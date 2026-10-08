@@ -5,7 +5,7 @@ from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.bot.keyboards import (
     consulate_menu,
@@ -454,6 +454,8 @@ async def save_order_data(data: dict) -> None:
             return
         order.data_json = json.dumps(payload, ensure_ascii=False)
         order.status = "waiting_payment"
+        await session.execute(delete(Companion).where(Companion.order_id == order.id))
+        await session.execute(delete(Document).where(Document.order_id == order.id))
         session.add_all(
             Companion(order_id=order.id, full_name=x["full_name"], mobile=x["mobile"])
             for x in data.get("companions", [])
@@ -482,6 +484,11 @@ async def save_receipt(message: Message, state: FSMContext) -> None:
         service = await session.get(Service, order.service_id)
         if service is None:
             return
+        await session.execute(
+            __import__("sqlalchemy").update(Payment)
+            .where(Payment.order_id == order.id, Payment.status == "pending")
+            .values(status="superseded")
+        )
         session.add(
             Payment(
                 order_id=order.id,
