@@ -97,6 +97,34 @@ class Document(Base):
     order: Mapped["Order"] = relationship(back_populates="documents")
 
 
+class Ticket(Base):
+    __tablename__="tickets"
+    id: Mapped[int]=mapped_column(Integer,primary_key=True)
+    order_id: Mapped[int]=mapped_column(ForeignKey("orders.id"),unique=True,index=True)
+    status: Mapped[str]=mapped_column(String(32),default="open",index=True)
+    created_at: Mapped[datetime]=mapped_column(DateTime,server_default=func.now())
+    updated_at: Mapped[datetime]=mapped_column(DateTime,server_default=func.now(),onupdate=func.now())
+    order: Mapped["Order"]=relationship()
+    messages: Mapped[list["TicketMessage"]]=relationship(back_populates="ticket",cascade="all, delete-orphan")
+
+class TicketMessage(Base):
+    __tablename__="ticket_messages"
+    id: Mapped[int]=mapped_column(Integer,primary_key=True)
+    ticket_id: Mapped[int]=mapped_column(ForeignKey("tickets.id"),index=True)
+    sender_type: Mapped[str]=mapped_column(String(16))
+    sender_telegram_id: Mapped[int]=mapped_column(BigInteger)
+    content_type: Mapped[str]=mapped_column(String(32))
+    text: Mapped[str|None]=mapped_column(Text)
+    file_id: Mapped[str|None]=mapped_column(String(512))
+    created_at: Mapped[datetime]=mapped_column(DateTime,server_default=func.now())
+    ticket: Mapped["Ticket"]=relationship(back_populates="messages")
+
+class Setting(Base):
+    __tablename__="settings"
+    id: Mapped[int]=mapped_column(Integer,primary_key=True)
+    key: Mapped[str]=mapped_column(String(128),unique=True,index=True)
+    value: Mapped[str]=mapped_column(Text,default="")
+
 class Companion(Base):
     __tablename__ = "companions"
 
