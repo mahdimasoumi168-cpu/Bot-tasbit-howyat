@@ -30,6 +30,7 @@ class KhodnevisForm(StatesGroup):
 
 
 class AdminForm(StatesGroup):
+    case_lookup = State()
     send_message = State()
     set_card_number = State()
     set_card_holder = State()
