@@ -52,7 +52,117 @@ def status_header(order: Order, service: Service) -> str:
     return f"{order.public_id} | {STATUS_TEXT.get(order.status, order.status)}\n🪪 خدمت: {service.name}"
 
 
-@router.message(F.text == "/admin")
+
+@router.message(F.text == "👨‍💼 پنل اپراتور")
+async def operator_button(message: Message, state: FSMContext) -> None:
+    if message.from_user.id in get_settings().admin_id_set:
+        await admin_start(message, state)
+        return
+    operator = await get_operator(message.from_user.id)
+    if operator is None:
+        return
+    await state.clear()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
+        [InlineKeyboardButton(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="op:back")],
+    ])
+    await message.answer("👨‍💼 پنل اپراتور\n\nدسترسی‌های شما بر اساس تنظیمات مدیریت نمایش داده می‌شود.", reply_markup=keyboard)
+
+
+@router.callback_query(F.data == "op:back")
+async def operator_back(callback: CallbackQuery) -> None:
+    operator = await get_operator(callback.from_user.id)
+    if operator is None:
+        return
+    await callback.message.edit_text("👨‍💼 پنل اپراتور", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
+        [InlineKeyboardButton(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
+    ]))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "op:orders")
+async def operator_orders(callback: CallbackQuery) -> None:
+    operator = await get_operator(callback.from_user.id)
+    if operator is None or not can_operator(operator, "view_orders"):
+        await callback.answer("دسترسی مشاهده درخواست‌ها را ندارید.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        rows = (await session.execute(
+            select(Order, Service, User)
+            .join(Service, Order.service_id == Service.id)
+            .join(User, Order.user_id == User.id)
+            .where(Order.status.in_(["payment_approved", "in_progress", "waiting_user"]))
+            .order_by(Order.updated_at.desc())
+            .limit(30)
+        )).all()
+    if not rows:
+        text = "📋 درخواستی برای رسیدگی وجود ندارد."
+    else:
+        text = "📋 درخواست‌های قابل رسیدگی\n\n" + "\n".join(
+            f"{o.public_id} | {STATUS_TEXT.get(o.status,o.status)} | {s.name}"
+            for o,s,u in rows
+        )
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=o.public_id, callback_data=f"op:order:{o.id}")]
+        for o,s,u in rows
+    ] + [[InlineKeyboardButton(text="🔙 بازگشت", callback_data="op:back")]]))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("op:order:"))
+async def operator_order_detail(callback: CallbackQuery) -> None:
+    operator = await get_operator(callback.from_user.id)
+    if operator is None or not can_operator(operator, "view_orders"):
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    order_id = int(callback.data.rsplit(":",1)[1])
+    async with SessionLocal() as session:
+        row = (await session.execute(
+            select(Order, Service, User).join(Service, Order.service_id==Service.id).join(User, Order.user_id==User.id).where(Order.id==order_id)
+        )).one_or_none()
+    if not row:
+        await callback.answer("درخواست پیدا نشد.", show_alert=True)
+        return
+    order, service, user = row
+    await callback.message.edit_text(
+        f"{status_header(order,service)}\n"
+        f"👤 {user.first_name or ''} {user.last_name or ''}\n"
+        f"🆔 {user.telegram_id}\n"
+        f"💰 مبلغ خدمت: {service.price_toman:,} تومان",
+        reply_markup=order_actions(order.id, operator=True),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "op:pending")
+async def operator_pending(callback: CallbackQuery) -> None:
+    operator = await get_operator(callback.from_user.id)
+    if operator is None or not can_operator(operator, "view_orders"):
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        rows=(await session.execute(
+            select(Payment,Order,Service,User)
+            .join(Order,Payment.order_id==Order.id)
+            .join(Service,Order.service_id==Service.id)
+            .join(User,Order.user_id==User.id)
+            .where(Payment.status=="pending")
+            .order_by(Payment.id.desc()).limit(20)
+        )).all()
+    if not rows:
+        await callback.message.edit_text("🔵 رسید در انتظار بررسی وجود ندارد.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 بازگشت",callback_data="op:back")]
+        ]))
+        await callback.answer()
+        return
+    await callback.message.edit_text("🔵 رسیدهای در انتظار بررسی:", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"{o.public_id} | {s.name}",callback_data=f"op:order:{o.id}")]
+        for p,o,s,u in rows
+    ]))
+    await callback.answer()
+\n\n@router.message(F.text == "/admin")
 async def admin_start(message: Message, state: FSMContext) -> None:
     if not is_admin(message):
         return
@@ -452,7 +562,10 @@ async def send_case_to_operator(bot, order_id: int) -> None:
 
 @router.callback_query(F.data.startswith("adm:approve:"))
 async def approve(callback: CallbackQuery) -> None:
-    if callback.from_user.id not in get_settings().admin_id_set:
+    operator = await get_operator(callback.from_user.id)
+    is_main = callback.from_user.id in get_settings().admin_id_set
+    if not is_main and (operator is None or not can_operator(operator, "approve_payment")):
+        await callback.answer("دسترسی تأیید پرداخت ندارید.", show_alert=True)
         return
     order_id = int(callback.data.rsplit(":", 1)[1])
     async with SessionLocal() as session:
@@ -487,7 +600,10 @@ async def approve(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("adm:reject:"))
 async def reject(callback: CallbackQuery) -> None:
-    if callback.from_user.id not in get_settings().admin_id_set:
+    operator = await get_operator(callback.from_user.id)
+    is_main = callback.from_user.id in get_settings().admin_id_set
+    if not is_main and (operator is None or not can_operator(operator, "reject_payment")):
+        await callback.answer("دسترسی رد پرداخت ندارید.", show_alert=True)
         return
     order_id = int(callback.data.rsplit(":", 1)[1])
     async with SessionLocal() as session:
@@ -523,7 +639,9 @@ async def reject(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("adm:msg:"))
 async def start_message(callback: CallbackQuery, state: FSMContext) -> None:
-    if callback.from_user.id not in get_settings().admin_id_set:
+    operator = await get_operator(callback.from_user.id)
+    if callback.from_user.id not in get_settings().admin_id_set and (operator is None or not can_operator(operator, "message_user")):
+        await callback.answer("دسترسی پیام به مشترک ندارید.", show_alert=True)
         return
     order_id = int(callback.data.rsplit(":", 1)[1])
     await state.update_data(admin_order_id=order_id)
@@ -534,8 +652,10 @@ async def start_message(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(AdminForm.send_message)
 async def send_message_to_user(message: Message, state: FSMContext) -> None:
-    if not is_admin(message):
-        return
+    if message.from_user.id not in get_settings().admin_id_set:
+        operator = await get_operator(message.from_user.id)
+        if operator is None or not can_operator(operator, "message_user"):
+            return
     data = await state.get_data()
     order_id = data.get("admin_order_id")
     if not order_id:
