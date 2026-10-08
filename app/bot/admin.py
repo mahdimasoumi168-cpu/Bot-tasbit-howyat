@@ -191,7 +191,9 @@ async def operator_pending(callback: CallbackQuery) -> None:
                 caption=f"🧾 رسید {order.public_id}",
             )
     await callback.answer()
-\n\n@router.message(F.text == "/admin")
+
+
+@router.message(F.text == "/admin")
 async def admin_start(message: Message, state: FSMContext) -> None:
     if not is_admin(message):
         return
