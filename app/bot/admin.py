@@ -202,10 +202,7 @@ async def operator_pending(callback: CallbackQuery) -> None:
             reply_markup=order_actions(order.id, operator=operator),
         )
         if payment.receipt_file_id:
-            await callback.message.answer_photo(
-                payment.receipt_file_id,
-                caption=f"🧾 رسید {order.public_id}",
-            )
+            await send_payment_receipt(callback.bot, callback.from_user.id, payment, f"🧾 رسید {order.public_id}")
     await callback.answer()
 
 
@@ -425,6 +422,15 @@ async def case_lookup(message: Message, state: FSMContext) -> None:
             await message.answer(f"⚠️ تصویر «{doc.document_type}» قابل ارسال مجدد نبود.")
     if not documents:
         await message.answer("📎 برای این پرونده تصویری در سیستم ثبت نشده است.")
+
+
+async def send_payment_receipt(bot, chat_id: int, payment: Payment, caption: str) -> None:
+    if not payment.receipt_file_id:
+        return
+    if getattr(payment, "receipt_type", "photo") == "document":
+        await bot.send_document(chat_id, payment.receipt_file_id, caption=caption)
+    else:
+        await bot.send_photo(chat_id, payment.receipt_file_id, caption=caption)
 
 
 PAYMENT_STATUS_TEXT = {
@@ -773,10 +779,7 @@ async def admin_order_payments(callback: CallbackQuery) -> None:
         return
     for payment in payments:
         if payment.receipt_file_id:
-            await callback.message.answer_photo(
-                payment.receipt_file_id,
-                caption=f"💳 {payment.amount_toman:,} تومان | وضعیت: {PAYMENT_STATUS_TEXT.get(payment.status, 'نامشخص')}"
-            )
+            await send_payment_receipt(callback.bot, callback.from_user.id, payment, f"💳 {payment.amount_toman:,} تومان | وضعیت: {PAYMENT_STATUS_TEXT.get(payment.status, 'نامشخص')}")
     await callback.answer("رسیدها ارسال شد.")
 
 
@@ -790,7 +793,7 @@ async def pending(callback: CallbackQuery) -> None:
             .join(Order, Payment.order_id == Order.id)
             .join(Service, Order.service_id == Service.id)
             .join(User, Order.user_id == User.id)
-            .where(Payment.status == "pending")
+            .where(Payment.status == "pending", Order.status == "waiting_receipt_review")
             .order_by(Payment.id.desc())
             .limit(20)
         )
@@ -809,9 +812,7 @@ async def pending(callback: CallbackQuery) -> None:
             reply_markup=order_actions(order.id),
         )
         if payment.receipt_file_id:
-            await callback.message.answer_photo(
-                payment.receipt_file_id, caption=f"🧾 رسید {order.public_id}"
-            )
+            await send_payment_receipt(callback.bot, callback.from_user.id, payment, f"🧾 رسید {order.public_id}")
     await callback.answer()
 
 
@@ -910,9 +911,7 @@ async def send_case_to_operator(bot, order_id: int) -> None:
             op = next((x for x in operators if x.telegram_id == recipient_id), None)
         await bot.send_message(recipient_id, text, reply_markup=order_actions(order.id, operator=op))
         if payment and payment.receipt_file_id:
-            await bot.send_photo(
-                recipient_id, payment.receipt_file_id, caption=f"🧾 رسید پرداخت {order.public_id}"
-            )
+            await send_payment_receipt(bot, recipient_id, payment, f"🧾 رسید پرداخت {order.public_id}")
         for doc in docs:
             await bot.send_photo(
                 recipient_id, doc.telegram_file_id, caption=f"📎 {doc.document_type} | {order.public_id}"
