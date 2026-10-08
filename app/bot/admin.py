@@ -303,10 +303,16 @@ async def reject(callback: CallbackQuery) -> None:
         await session.commit()
     await callback.answer("رسید رد شد.")
     await callback.message.edit_reply_markup(reply_markup=None)
+    retry_keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🧾 ارسال مجدد رسید", callback_data=f"retry_receipt:{order.id}")]
+        ]
+    )
     await callback.message.bot.send_message(
         user.telegram_id,
         f"❌ رسید درخواست {order.public_id} تأیید نشد.\n"
-        "لطفاً از منوی پیگیری درخواست‌ها برای ارسال رسید جدید استفاده کنید.",
+        "می‌توانید رسید صحیح را همین حالا دوباره ارسال کنید.",
+        reply_markup=retry_keyboard,
     )
 
 
