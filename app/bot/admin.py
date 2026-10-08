@@ -1,15 +1,16 @@
 import json
+import re
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy import or_, select
 
-from app.bot.handlers import STATUS_TEXT
+from app.bot.handlers import STATUS_TEXT, normalize_digits as normalize_digits_admin
 from app.bot.states import AdminForm
 from app.bot.keyboards import admin_cancel_menu
 from app.core.config import get_settings
-from app.db.models import AuditLog, Companion, Document, Order, Operator, Payment, Service, Setting, Ticket, TicketMessage, User
+from app.db.models import AuditLog, Companion, Document, Order, Operator, Payment, Service, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode
 from app.db.session import SessionLocal
 
 router = Router()
@@ -42,6 +43,8 @@ def admin_menu() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🧩 خدمات", callback_data="adm:services")],
             [InlineKeyboardButton(text="💰 قیمت خدمات", callback_data="adm:prices")],
             [InlineKeyboardButton(text="💳 اطلاعات کارت", callback_data="adm:card")],
+            [InlineKeyboardButton(text="💰 اعتبار مشترکان", callback_data="adm:wallets"), InlineKeyboardButton(text="➕ شارژهای در انتظار", callback_data="adm:topups")],
+            [InlineKeyboardButton(text="🏷️ کدهای تخفیف", callback_data="adm:coupons")],
             [InlineKeyboardButton(text="⚙️ تنظیمات", callback_data="adm:settings")],
         ]
     )
