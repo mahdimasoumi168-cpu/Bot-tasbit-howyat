@@ -520,7 +520,11 @@ async def user_search(message: Message, state: FSMContext) -> None:
             return
         orders = (await session.execute(
             select(Order, Service).join(Service, Order.service_id == Service.id)
-            .where(Order.user_id == user.id).order_by(Order.id.desc()).limit(30)
+            .where(
+                Order.user_id == user.id,
+                Order.status.notin_(["draft", "waiting_payment"]),
+            )
+            .order_by(Order.id.desc()).limit(30)
         )).all()
     text = (
         "👤 اطلاعات مشترک\n\n"
@@ -804,11 +808,12 @@ async def orders(callback: CallbackQuery) -> None:
             select(Order, Service, User)
             .join(Service, Order.service_id == Service.id)
             .join(User, Order.user_id == User.id)
+            .where(Order.status.notin_(["draft", "waiting_payment"]))
             .order_by(Order.id.desc())
             .limit(20)
         )
         rows = result.all()
-    text = "📋 آخرین درخواست‌ها:\n\n"
+    text = "📋 آخرین درخواست‌های قابل رسیدگی:\n\n"
     text += "\n".join(
         f"{o.public_id} | {STATUS_TEXT.get(o.status, o.status)} | {s.name} | {u.telegram_id}"
         for o, s, u in rows
