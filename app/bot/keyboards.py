@@ -3,16 +3,16 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 def main_menu(is_admin: bool = False, is_operator: bool = False) -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(text="🪪 تثبیت هویت", callback_data="menu:identity")],
-        [InlineKeyboardButton(text="📝 کد رهگیری خودنویس", callback_data="menu:khodnevis")],
-        [InlineKeyboardButton(text="📋 پیگیری درخواست‌ها", callback_data="menu:tracking")],
-        [InlineKeyboardButton(text="👤 حساب من", callback_data="menu:account"), InlineKeyboardButton(text="📞 پشتیبانی", callback_data="menu:support")],
-        [InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart")],
+        [InlineKeyboardButton(text="🪪 تثبیت هویت", callback_data="menu:identity"), InlineKeyboardButton(text="📝 کد رهگیری خودنویس", callback_data="menu:khodnevis")],
+        [InlineKeyboardButton(text="📋 پیگیری درخواست‌ها", callback_data="menu:tracking"), InlineKeyboardButton(text="👤 حساب من", callback_data="menu:account")],
+        [InlineKeyboardButton(text="📞 پشتیبانی", callback_data="menu:support"), InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart")],
     ]
-    if is_operator:
-        rows.insert(-1, [InlineKeyboardButton(text="👨‍💼 پنل اپراتور", callback_data="menu:operator")])
-    if is_admin:
-        rows.insert(-1, [InlineKeyboardButton(text="🛠 پنل مدیریت", callback_data="menu:admin")])
+    if is_operator and is_admin:
+        rows.append([InlineKeyboardButton(text="👨‍💼 پنل اپراتور", callback_data="menu:operator"), InlineKeyboardButton(text="🛠 پنل مدیریت", callback_data="menu:admin")])
+    elif is_operator:
+        rows.append([InlineKeyboardButton(text="👨‍💼 پنل اپراتور", callback_data="menu:operator")])
+    elif is_admin:
+        rows.append([InlineKeyboardButton(text="🛠 پنل مدیریت", callback_data="menu:admin")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
