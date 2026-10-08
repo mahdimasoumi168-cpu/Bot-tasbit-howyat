@@ -215,7 +215,13 @@ async def inline_account(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "menu:support")
 async def inline_support(callback: CallbackQuery) -> None:
     await callback.answer()
-    await support(callback.message, telegram_id=callback.from_user.id)
+    await support(callback.message, telegram_id=callback.from_user.id, show_direct=True)
+
+
+@router.callback_query(F.data == "menu:support_orders")
+async def inline_support_orders(callback: CallbackQuery) -> None:
+    await callback.answer()
+    await support(callback.message, telegram_id=callback.from_user.id, show_direct=False)
 
 @router.callback_query(F.data == "identity:consulate:z")
 async def inline_consulate_z(callback: CallbackQuery, state: FSMContext) -> None:
@@ -920,7 +926,7 @@ async def user_support_message(message: Message, state: FSMContext) -> None:
     await message.answer("✅ پیام شما برای پشتیبانی ارسال شد.", reply_markup=await user_main_menu(message.from_user.id))
 
 @router.message(F.text == "📞 پشتیبانی")
-async def support(message: Message, telegram_id: int | None = None) -> None:
+async def support(message: Message, telegram_id: int | None = None, show_direct: bool = True) -> None:
     uid = telegram_id or message.from_user.id
     async with SessionLocal() as session:
         rows = (await session.execute(
@@ -954,7 +960,18 @@ async def support(message: Message, telegram_id: int | None = None) -> None:
         for order, service in rows
     ]
     buttons.append([InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")])
-    await message.answer("📞 درخواست موردنظر برای پشتیبانی را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    if show_direct:
+        await message.answer(
+            "📞 پشتیبانی
+
+"
+            "ارتباط مستقیم: @Good_ok_2000
+"
+            "یا برای پیگیری یک درخواست فعال، گزینه زیر را انتخاب کنید.",
+            reply_markup=support_menu(True),
+        )
+    else:
+        await message.answer("📞 درخواست موردنظر برای پشتیبانی را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
 
 
 # راهنمایی برای ورودی‌های نامعتبر در مراحل دریافت تصویر و رسید
