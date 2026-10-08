@@ -376,7 +376,7 @@ async def case_lookup_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.answer(
         "🔎 مشاهده پرونده کامل\n\n"
         "کد پیگیری را وارد کنید. مثال: #10001 یا 10001",
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=admin_cancel_menu(),
     )
 
 
@@ -489,7 +489,7 @@ async def users_panel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await callback.message.answer(
         "👥 جستجوی مشترک\n\nنام، نام کاربری، شناسه تلگرام یا شماره درخواست را وارد کنید:",
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=admin_cancel_menu(),
     )
 
 
@@ -599,7 +599,7 @@ async def set_price_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await callback.message.answer(
         "💰 مبلغ جدید را فقط به تومان و به صورت عددی ارسال کنید.",
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=admin_cancel_menu(),
     )
 
 
