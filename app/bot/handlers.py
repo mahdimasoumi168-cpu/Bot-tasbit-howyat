@@ -407,7 +407,11 @@ async def identity_confirm(message: Message, state: FSMContext) -> None:
 
 @router.message(IdentityForm.receipt, F.photo)
 async def identity_receipt(message: Message, state: FSMContext) -> None:
-    await save_receipt(message, state)
+    try:
+        await save_receipt(message, state)
+    except ValueError as exc:
+        await message.answer(f"❌ {exc}")
+        return
     await state.clear()
     await message.answer("✅ رسید شما ثبت شد و برای بررسی ارسال گردید.", reply_markup=await user_main_menu(message.from_user.id))
 
@@ -546,7 +550,11 @@ async def khodnevis_confirm(message: Message, state: FSMContext) -> None:
 
 @router.message(KhodnevisForm.receipt, F.photo)
 async def khodnevis_receipt(message: Message, state: FSMContext) -> None:
-    await save_receipt(message, state)
+    try:
+        await save_receipt(message, state)
+    except ValueError as exc:
+        await message.answer(f"❌ {exc}")
+        return
     await state.clear()
     await message.answer("✅ رسید ثبت شد و در انتظار بررسی است.", reply_markup=await user_main_menu(message.from_user.id))
 
@@ -558,7 +566,7 @@ async def save_order_data(data: dict) -> None:
     async with SessionLocal() as session:
         order = await session.get(Order, order_id)
         if order is None:
-            return
+            raise ValueError("درخواست پیدا نشد.")
         order.data_json = json.dumps(payload, ensure_ascii=False)
         order.status = "waiting_payment"
         await session.execute(delete(Companion).where(Companion.order_id == order.id))
@@ -587,10 +595,10 @@ async def save_receipt(message: Message, state: FSMContext) -> None:
     async with SessionLocal() as session:
         order = await session.get(Order, data["order_id"])
         if order is None:
-            return
+            raise ValueError("درخواست پیدا نشد.")
         service = await session.get(Service, order.service_id)
         if service is None:
-            return
+            raise ValueError("خدمت درخواست پیدا نشد.")
         await session.execute(
             update(Payment)
             .where(Payment.order_id == order.id, Payment.status == "pending")
@@ -637,7 +645,11 @@ async def retry_receipt_start(callback: CallbackQuery, state: FSMContext) -> Non
 
 @router.message(RetryReceiptForm.receipt, F.photo)
 async def retry_receipt_save(message: Message, state: FSMContext) -> None:
-    await save_receipt(message, state)
+    try:
+        await save_receipt(message, state)
+    except ValueError as exc:
+        await message.answer(f"❌ {exc}")
+        return
     await state.clear()
     await message.answer("✅ رسید جدید ثبت شد و دوباره برای بررسی ارسال گردید.", reply_markup=await user_main_menu(message.from_user.id))
 
