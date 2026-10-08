@@ -34,6 +34,7 @@ def admin_menu() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="🔵 رسیدهای در انتظار بررسی", callback_data="adm:pending")],
             [InlineKeyboardButton(text="📋 درخواست‌ها", callback_data="adm:orders")],
+            [InlineKeyboardButton(text="🔎 پرونده با کد پیگیری", callback_data="adm:case")],
             [InlineKeyboardButton(text="📊 گزارش‌ها", callback_data="adm:stats")],
             [InlineKeyboardButton(text="👥 مشترکان", callback_data="adm:users")],
             [InlineKeyboardButton(text="👨‍💼 اپراتورها", callback_data="adm:operators")],
@@ -320,6 +321,112 @@ async def toggle_service(callback: CallbackQuery) -> None:
         await session.commit()
         state_text = "فعال" if service.enabled else "غیرفعال"
     await services_panel(callback)
+
+
+@router.callback_query(F.data == "adm:case")
+async def case_lookup_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    await state.clear()
+    await state.set_state(AdminForm.case_lookup)
+    await callback.answer()
+    await callback.message.answer(
+        "🔎 مشاهده پرونده کامل\n\n"
+        "کد پیگیری را وارد کنید. مثال: #10001 یا 10001",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
+@router.message(AdminForm.case_lookup)
+async def case_lookup(message: Message, state: FSMContext) -> None:
+    if not is_admin(message):
+        return
+    raw = (message.text or "").strip().lstrip("#").strip()
+    if not raw.isdigit():
+        await message.answer("❌ کد پیگیری نامعتبر است. مثال: #10001")
+        return
+    public_id = f"#{raw}"
+    async with SessionLocal() as session:
+        row = (await session.execute(
+            select(Order, Service, User)
+            .join(Service, Order.service_id == Service.id)
+            .join(User, Order.user_id == User.id)
+            .where(Order.public_id == public_id)
+        )).one_or_none()
+        if not row:
+            await message.answer("❌ پرونده‌ای با این کد پیگیری پیدا نشد. دوباره وارد کنید:")
+            return
+        order, service, user = row
+        data = json.loads(order.data_json or "{}")
+        companions = (await session.execute(
+            select(Companion).where(Companion.order_id == order.id).order_by(Companion.id)
+        )).scalars().all()
+        documents = (await session.execute(
+            select(Document).where(Document.order_id == order.id).order_by(Document.id)
+        )).scalars().all()
+        payments = (await session.execute(
+            select(Payment).where(Payment.order_id == order.id).order_by(Payment.id.desc())
+        )).scalars().all()
+    await state.clear()
+    await message.answer(
+        build_case_text(order, service, user, data, companions, payments),
+        reply_markup=order_actions(order.id),
+    )
+    for doc in documents:
+        try:
+            await message.answer_photo(
+                doc.telegram_file_id,
+                caption=f"📎 {doc.document_type} | {order.public_id}",
+            )
+        except Exception:
+            await message.answer(f"⚠️ تصویر «{doc.document_type}» قابل ارسال مجدد نبود.")
+    if not documents:
+        await message.answer("📎 برای این پرونده تصویری در سیستم ثبت نشده است.")
+
+
+def build_case_text(order: Order, service: Service, user: User, data: dict, companions, payments) -> str:
+    name = data.get("full_name") or f"{user.first_name or ''} {user.last_name or ''}".strip() or "—"
+    mobile = data.get("mobile") or "—"
+    lines = [
+        "📁 پرونده کامل مشترک",
+        "",
+        f"🔖 کد پیگیری: {order.public_id}",
+        f"🧾 خدمت: {service.name}",
+        f"📌 وضعیت: {STATUS_TEXT.get(order.status, order.status)}",
+        f"💰 مبلغ پرونده: {(order.price_snapshot_toman or service.price_toman):,} تومان",
+        f"📅 ثبت: {order.created_at.strftime('%Y/%m/%d %H:%M') if order.created_at else '—'}",
+        "",
+        "👤 اطلاعات شخص",
+        f"نام و نام خانوادگی: {name}",
+        f"📱 موبایل: {mobile}",
+    ]
+    skip = {"full_name", "mobile", "identity_document", "tazkira", "amayesh", "passport_first", "passport_renewal", "residence_renewal"}
+    for key, value in data.items():
+        if key in skip or value in (None, "", [], {}):
+            continue
+        label = {
+            "birth_date_gregorian": "تاریخ تولد",
+            "return_date_gregorian": "آخرین بازگشت به افغانستان",
+            "consulate": "کنسولگری",
+            "document_type": "نوع مدرک",
+            "own_mobile": "موبایل به نام شخص",
+        }.get(key, key.replace("_", " "))
+        if isinstance(value, list):
+            continue
+        lines.append(f"• {label}: {value}")
+    lines.append("")
+    lines.append("👨‍👩‍👧 همراهان")
+    lines.extend([f"• {x.full_name} — {x.mobile}" for x in companions] or ["ندارد"])
+    lines.append("")
+    lines.append("💳 سوابق پرداخت")
+    if payments:
+        for p in payments:
+            lines.append(f"• {p.status} — {p.amount_toman:,} تومان — {p.created_at.strftime('%Y/%m/%d %H:%M') if p.created_at else '—'}")
+    else:
+        lines.append("• پرداختی ثبت نشده است")
+    lines.append("")
+    lines.append("📎 مدارک: " + (", ".join(d.document_type for d in documents) if documents else "ندارد"))
+    return "\n".join(lines)
 
 
 @router.callback_query(F.data == "adm:users")
