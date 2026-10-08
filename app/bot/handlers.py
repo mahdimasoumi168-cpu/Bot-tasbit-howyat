@@ -1334,7 +1334,12 @@ async def user_support_message(message: Message, state: FSMContext) -> None:
     sent_any = False
     for recipient_id in recipients:
         try:
-            await message.bot.send_message(recipient_id, f"📞 پشتیبانی | {order.public_id} | {service.name}")
+            # ابتدا نوتیفیکیشن مستقل ارسال می‌شود تا دریافت پیام تیکت برای پشتیبان/اپراتور قطعی و قابل مشاهده باشد.
+            await message.bot.send_message(
+                recipient_id,
+                f"🔔 پیام جدید تیکت پشتیبانی\n📋 درخواست: {order.public_id}\n🪪 خدمت: {service.name}\n\n"
+                "مشترک پیام جدیدی برای شما ارسال کرده است.",
+            )
             await message.copy_to(recipient_id)
             sent_any = True
         except Exception:
