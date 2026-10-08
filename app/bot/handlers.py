@@ -5,7 +5,7 @@ import re
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, Message
 from sqlalchemy import select
 
 from app.bot.keyboards import (
@@ -15,7 +15,7 @@ from app.bot.keyboards import (
     optional_document_menu,
     yes_no_menu,
 )
-from app.bot.states import IdentityForm, KhodnevisForm
+from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm
 from app.core.config import get_settings
 from app.db.models import Companion, Document, Order, Payment, Service, ServiceCode, Setting, User
 from app.db.session import SessionLocal
@@ -472,6 +472,40 @@ async def save_receipt(message: Message, state: FSMContext) -> None:
         )
         order.status = "waiting_receipt_review"
         await session.commit()
+
+
+@router.callback_query(F.data.startswith("retry_receipt:"))
+async def retry_receipt_start(callback: CallbackQuery, state: FSMContext) -> None:
+    order_id = int(callback.data.rsplit(":", 1)[1])
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(
+                select(Order, Service)
+                .join(Service, Order.service_id == Service.id)
+                .join(User, Order.user_id == User.id)
+                .where(Order.id == order_id, User.telegram_id == callback.from_user.id)
+            )
+        ).one_or_none()
+    if not row or row[0].status != "rejected":
+        await callback.answer("این درخواست برای ارسال مجدد رسید آماده نیست.", show_alert=True)
+        return
+    order, service = row
+    await state.clear()
+    await state.update_data(order_id=order.id, public_id=order.public_id, service_code=service.code)
+    await state.set_state(RetryReceiptForm.receipt)
+    await callback.answer()
+    await callback.message.answer(
+        f"🧾 ارسال مجدد رسید {order.public_id}\n"
+        f"مبلغ: {service.price_toman:,} تومان\n"
+        "لطفاً تصویر رسید جدید را ارسال کنید."
+    )
+
+
+@router.message(RetryReceiptForm.receipt, F.photo)
+async def retry_receipt_save(message: Message, state: FSMContext) -> None:
+    await save_receipt(message, state)
+    await state.clear()
+    await message.answer("✅ رسید جدید ثبت شد و دوباره برای بررسی ارسال گردید.", reply_markup=main_menu())
 
 
 @router.message(F.text == "📋 پیگیری درخواست‌ها")
