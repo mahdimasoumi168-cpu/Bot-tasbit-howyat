@@ -125,7 +125,7 @@ async def restart(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(
         "فرآیند فعلی لغو شد. درخواست ثبت‌شده حذف نشده است.\nاز منوی اصلی یک خدمت را انتخاب کنید.",
-        reply_markup=main_menu(),
+        reply_markup=main_menu(message.from_user.id in get_settings().admin_id_set),
     )
 
 
@@ -531,7 +531,7 @@ async def account(message: Message) -> None:
     await message.answer(
         f"👤 حساب شما\nشناسه تلگرام: {user.telegram_id}\n"
         f"نام: {user.first_name or ''} {user.last_name or ''}".strip(),
-        reply_markup=main_menu(),
+        reply_markup=main_menu(message.from_user.id in get_settings().admin_id_set),
     )
 
 
@@ -539,6 +539,6 @@ async def account(message: Message) -> None:
 async def support(message: Message) -> None:
     await message.answer(
         "📞 پشتیبانی\nپیام خود را ارسال کنید؛ اگر درخواست فعالی داشته باشید، برای مدیریت همان درخواست ارسال می‌شود.",
-        reply_markup=main_menu(),
+        reply_markup=main_menu(message.from_user.id in get_settings().admin_id_set),
     )
 
