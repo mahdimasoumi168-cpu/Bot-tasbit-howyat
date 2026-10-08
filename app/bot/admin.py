@@ -553,15 +553,26 @@ async def send_case_to_operator(bot, order_id: int) -> None:
             f"📱 موبایل به نام شخص: {data.get('own_mobile', '')}\n"
         )
 
-    for admin_id in settings.admin_id_set:
-        await bot.send_message(admin_id, text, reply_markup=order_actions(order.id))
+    recipients = set(settings.admin_id_set)
+    async with SessionLocal() as session:
+        operators = (await session.execute(
+            select(Operator).where(Operator.active.is_(True))
+        )).scalars().all()
+    for op in operators:
+        if can_operator(op, "view_orders"):
+            recipients.add(op.telegram_id)
+    for recipient_id in recipients:
+        op = None
+        if recipient_id not in settings.admin_id_set:
+            op = next((x for x in operators if x.telegram_id == recipient_id), None)
+        await bot.send_message(recipient_id, text, reply_markup=order_actions(order.id, operator=op))
         if payment and payment.receipt_file_id:
             await bot.send_photo(
-                admin_id, payment.receipt_file_id, caption=f"🧾 رسید پرداخت {order.public_id}"
+                recipient_id, payment.receipt_file_id, caption=f"🧾 رسید پرداخت {order.public_id}"
             )
         for doc in docs:
             await bot.send_photo(
-                admin_id, doc.telegram_file_id, caption=f"📎 {doc.document_type} | {order.public_id}"
+                recipient_id, doc.telegram_file_id, caption=f"📎 {doc.document_type} | {order.public_id}"
             )
 
 
