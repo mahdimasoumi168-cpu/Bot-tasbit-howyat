@@ -154,7 +154,7 @@ async def start(message: Message, state: FSMContext, telegram_id: int | None = N
 @router.message(F.text == "🔄 شروع مجدد")
 async def restart(message: Message, state: FSMContext, telegram_id: int | None = None) -> None:
     # «شروع مجدد» دقیقاً همان رفتار /start را اجرا می‌کند.
-    await start(message, state)
+    await start(message, state, telegram_id=telegram_id)
 
 
 @router.callback_query(F.data == "menu:restart")
@@ -845,8 +845,27 @@ async def user_support_message(message: Message, state: FSMContext) -> None:
 
 @router.message(F.text == "📞 پشتیبانی")
 async def support(message: Message, telegram_id: int | None = None) -> None:
-    await message.answer(
-        "📞 پشتیبانی\nپیام خود را ارسال کنید؛ اگر درخواست فعالی داشته باشید، برای مدیریت همان درخواست ارسال می‌شود.",
-        reply_markup=await user_main_menu(message.from_user.id),
-    )
-
+    uid = telegram_id or message.from_user.id
+    async with SessionLocal() as session:
+        rows = (await session.execute(
+            select(Ticket, Order, Service)
+            .join(Order, Ticket.order_id == Order.id)
+            .join(Service, Order.service_id == Service.id)
+            .join(User, Order.user_id == User.id)
+            .where(User.telegram_id == uid, Ticket.status == "open")
+            .order_by(Order.id.desc())
+            .limit(20)
+        )).all()
+    if not rows:
+        await message.answer(
+            "📞 پشتیبانی\n\nبرای درخواست‌های فعال شما هنوز گفت‌وگوی پشتیبانی ایجاد نشده است.\nپس از تأیید پرداخت، امکان گفت‌وگو برای همان درخواست فعال می‌شود.",
+            reply_markup=await user_main_menu(uid),
+        )
+        return
+    buttons = [
+        [InlineKeyboardButton(text=f"📞 {order.public_id} | {service.name}", callback_data=f"user:support:{order.id}")]
+        for _, order, service in rows
+    ]
+    buttons.append([InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart")])
+    await message.answer("📞 درخواست موردنظر برای پشتیبانی را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+\n\n# راهنمایی برای ورودی‌های نامعتبر در مراحل دریافت تصویر و رسید\n@router.message(IdentityForm.identity_document)\nasync def identity_document_invalid(message: Message, state: FSMContext) -> None:\n    await message.answer("📸 لطفاً تصویر مدرک شناسایی را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())\n\n\n@router.message(IdentityForm.tazkira)\nasync def identity_tazkira_invalid(message: Message, state: FSMContext) -> None:\n    await message.answer("📸 لطفاً تصویر تذکره را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())\n\n\n@router.message(KhodnevisForm.amayesh)\nasync def khodnevis_amayesh_invalid(message: Message, state: FSMContext) -> None:\n    await message.answer("📸 لطفاً تصویر کارت آمایش را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())\n\n\n@router.message(KhodnevisForm.passport_first)\nasync def khodnevis_passport_first_invalid(message: Message, state: FSMContext) -> None:\n    await message.answer("📸 لطفاً تصویر صفحه اول پاسپورت را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())\n\n\n@router.message(KhodnevisForm.receipt)\nasync def khodnevis_receipt_invalid(message: Message, state: FSMContext) -> None:\n    await message.answer("🧾 لطفاً تصویر رسید پرداخت را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())\n\n\n@router.message(RetryReceiptForm.receipt)\nasync def retry_receipt_invalid(message: Message, state: FSMContext) -> None:\n    await message.answer("🧾 لطفاً تصویر رسید جدید را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())\n
