@@ -44,6 +44,18 @@ def optional_document_menu() -> InlineKeyboardMarkup:
     ])
 
 
+def cancel_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")],
+    ])
+
+
+def admin_cancel_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="adm:cancel")],
+    ])
+
+
 def single_action_menu(text: str = "🔄 شروع مجدد") -> InlineKeyboardMarkup:
     callback = "menu:restart" if text == "🔄 شروع مجدد" else "noop"
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=callback)]])
