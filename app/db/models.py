@@ -59,6 +59,7 @@ class Order(Base):
     public_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     service_id: Mapped[int] = mapped_column(ForeignKey("services.id"))
+    price_snapshot_toman: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(32), default=OrderStatus.DRAFT.value, index=True)
     data_json: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
