@@ -16,8 +16,6 @@ def _sqlite_path(url: str) -> Path | None:
     if marker not in url:
         return None
     raw = url.split(marker, 1)[1]
-    if not raw.startswith("/"):
-        raw = "/" + raw
     return Path(raw)
 
 
