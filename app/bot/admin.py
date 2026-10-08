@@ -175,7 +175,6 @@ async def toggle_service(callback: CallbackQuery) -> None:
         service.enabled = not service.enabled
         await session.commit()
         state_text = "فعال" if service.enabled else "غیرفعال"
-    await callback.answer(f"خدمت {state_text} شد.")
     await services_panel(callback)
 
 
