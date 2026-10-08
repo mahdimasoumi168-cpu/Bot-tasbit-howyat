@@ -920,8 +920,8 @@ async def approve(callback: CallbackQuery) -> None:
                 .order_by(Payment.id.desc())
             )
         ).scalars().first()
-        if not order or not payment:
-            await callback.answer("درخواست یا رسید در انتظار بررسی پیدا نشد.", show_alert=True)
+        if not order or not payment or order.status != "waiting_receipt_review":
+            await callback.answer("این رسید دیگر در انتظار بررسی نیست.", show_alert=True)
             return
         payment.status = "approved"
         order.status = "payment_approved"
@@ -959,8 +959,8 @@ async def reject(callback: CallbackQuery) -> None:
                 .order_by(Payment.id.desc())
             )
         ).scalars().first()
-        if not order or not payment:
-            await callback.answer("رسید پیدا نشد.", show_alert=True)
+        if not order or not payment or order.status != "waiting_receipt_review":
+            await callback.answer("این رسید دیگر در انتظار بررسی نیست.", show_alert=True)
             return
         payment.status = "rejected"
         order.status = "rejected"
@@ -1341,6 +1341,9 @@ async def operator_status_change(callback: CallbackQuery) -> None:
         if order is None:
             await callback.answer("درخواست پیدا نشد.", show_alert=True)
             return
+        if order.status not in {"payment_approved", "in_progress", "waiting_user"}:
+            await callback.answer("این درخواست هنوز پرداخت تأییدشده ندارد یا قبلاً بسته شده است.", show_alert=True)
+            return
         order.status = status
         user = await session.get(User, order.user_id)
         await session.commit()
@@ -1349,51 +1352,3 @@ async def operator_status_change(callback: CallbackQuery) -> None:
     await callback.answer("وضعیت تغییر کرد.")
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.bot.send_message(user.telegram_id, f"🔔 وضعیت درخواست {order.public_id} تغییر کرد.\n\nوضعیت جدید: {labels[status]}")
-
-
-@router.message()
-async def user_ticket_reply(message: Message) -> None:
-    if message.from_user.id in get_settings().admin_id_set:
-        return
-    async with SessionLocal() as session:
-        row = (
-            await session.execute(
-                select(Ticket, Order, Service)
-                .join(Order, Ticket.order_id == Order.id)
-                .join(Service, Order.service_id == Service.id)
-                .join(User, Order.user_id == User.id)
-                .where(
-                    User.telegram_id == message.from_user.id,
-                    Ticket.status == "open",
-                )
-                .order_by(Ticket.id.desc())
-            )
-        ).first()
-        if not row:
-            return
-        ticket, order, service = row
-        session.add(
-            TicketMessage(
-                ticket_id=ticket.id,
-                sender_type="user",
-                sender_telegram_id=message.from_user.id,
-                content_type=message.content_type,
-                text=message.text or message.caption,
-            )
-        )
-        await session.commit()
-    recipients = set(get_settings().admin_id_set)
-    async with SessionLocal() as session:
-        operators = (await session.execute(
-            select(Operator).where(Operator.active.is_(True))
-        )).scalars().all()
-        recipients.update(
-            op.telegram_id
-            for op in operators
-            if can_operator(op, "view_orders") and can_operator(op, "message_user")
-        )
-    for recipient_id in recipients:
-        await message.bot.send_message(
-            recipient_id, status_header(order, service) + f"\n👤 پاسخ مشترک: {message.from_user.id}"
-        )
-        await message.copy_to(recipient_id)
