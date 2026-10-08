@@ -411,7 +411,7 @@ async def case_lookup(message: Message, state: FSMContext) -> None:
         await message.answer("📎 برای این پرونده تصویری در سیستم ثبت نشده است.")
 
 
-def build_case_text(order: Order, service: Service, user: User, data: dict, companions, documents, payments) -> str:
+PAYMENT_STATUS_TEXT = {\n    "pending": "در انتظار بررسی",\n    "approved": "تأیید شده",\n    "rejected": "رد شده",\n    "superseded": "جایگزین شده",\n}\n\n\ndef build_case_text(order: Order, service: Service, user: User, data: dict, companions, documents, payments) -> str:
     name = data.get("full_name") or f"{user.first_name or ''} {user.last_name or ''}".strip() or "—"
     mobile = data.get("mobile") or "—"
     lines = [
@@ -448,7 +448,7 @@ def build_case_text(order: Order, service: Service, user: User, data: dict, comp
     lines.append("💳 سوابق پرداخت")
     if payments:
         for p in payments:
-            lines.append(f"• {p.status} — {p.amount_toman:,} تومان — {p.created_at.strftime('%Y/%m/%d %H:%M') if p.created_at else '—'}")
+            lines.append(f"• {PAYMENT_STATUS_TEXT.get(p.status, "نامشخص")} — {p.amount_toman:,} تومان — {p.created_at.strftime('%Y/%m/%d %H:%M') if p.created_at else '—'}")
     else:
         lines.append("• پرداختی ثبت نشده است")
     lines.append("")
