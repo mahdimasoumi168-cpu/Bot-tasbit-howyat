@@ -3,7 +3,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 def main_menu(is_admin: bool = False, is_operator: bool = False) -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(text="🪪 تثبیت هویت", callback_data="menu:identity"), InlineKeyboardButton(text="📝 کد رهگیری خودنویس", callback_data="menu:khodnevis")],
+        [InlineKeyboardButton(text="💰 اعتبار من", callback_data="menu:wallet"), InlineKeyboardButton(text="🪪 تثبیت هویت",, callback_data="menu:identity"), InlineKeyboardButton(text="📝 کد رهگیری خودنویس", callback_data="menu:khodnevis")],
         [InlineKeyboardButton(text="📋 پیگیری درخواست‌ها", callback_data="menu:tracking"), InlineKeyboardButton(text="👤 حساب من", callback_data="menu:account")],
         [InlineKeyboardButton(text="📞 پشتیبانی", callback_data="menu:support"), InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart")],
     ]
@@ -82,5 +82,29 @@ def single_action_menu(text: str = "🔄 شروع مجدد") -> InlineKeyboardMa
 def confirm_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ تأیید و ادامه", callback_data="order:confirm")],
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")],
+    ])
+
+
+
+def payment_choice_menu(credit: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"💰 استفاده از اعتبار | {credit:,} تومان", callback_data="pay:wallet")],
+        [InlineKeyboardButton(text="💳 کارت به کارت", callback_data="pay:card")],
+        [InlineKeyboardButton(text="🏷️ کد تخفیف", callback_data="pay:coupon")],
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")],
+    ])
+
+
+def wallet_menu(balance: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ افزایش اعتبار", callback_data="wallet:topup")],
+        [InlineKeyboardButton(text="📜 تاریخچه اعتبار", callback_data="wallet:history")],
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="flow:cancel")],
+    ])
+
+
+def wallet_topup_cancel_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")],
     ])
