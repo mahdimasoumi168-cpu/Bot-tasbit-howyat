@@ -183,16 +183,6 @@ async def inline_support(callback: CallbackQuery) -> None:
     await callback.answer()
     await support(callback.message)
 
-@router.callback_query(F.data == "menu:admin")
-async def inline_admin_placeholder(callback: CallbackQuery) -> None:
-    await callback.answer()
-    await callback.message.answer("🛠 پنل مدیریت\n\nبرای ورود، /admin را ارسال کنید.")
-
-@router.callback_query(F.data == "menu:operator")
-async def inline_operator_placeholder(callback: CallbackQuery) -> None:
-    await callback.answer()
-    await callback.message.answer("👨‍💼 پنل اپراتور\n\nبرای ورود، منوی ربات را باز کنید.")
-
 @router.callback_query(F.data == "identity:consulate:z")
 async def inline_consulate_z(callback: CallbackQuery, state: FSMContext) -> None:
     if await state.get_state() != IdentityForm.consulate:
