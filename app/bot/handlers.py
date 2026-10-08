@@ -209,14 +209,14 @@ async def inline_consulate_m(callback: CallbackQuery, state: FSMContext) -> None
     if await state.get_state() != IdentityForm.consulate:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
     await callback.answer(); await state.update_data(consulate="🇦🇫 مشهد"); await state.set_state(IdentityForm.identity_document)
-    await callback.message.edit_text("۶/۸\n📸 تصویر مدرک شناسایی را ارسال کنید.", reply_markup=single_action_menu())
+    await callback.message.edit_text("۶/۸\n📸 تصویر مدرک شناسایی را ارسال کنید.", reply_markup=cancel_menu())
 
 @router.callback_query(F.data == "identity:companion:y")
 async def inline_companion_yes(callback: CallbackQuery, state: FSMContext) -> None:
     if await state.get_state() != IdentityForm.companion_choice:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
     await callback.answer(); await state.set_state(IdentityForm.companion_name)
-    await callback.message.edit_text("✍️ نام و نام خانوادگی همراه را وارد کنید.", reply_markup=single_action_menu())
+    await callback.message.edit_text("✍️ نام و نام خانوادگی همراه را وارد کنید.", reply_markup=cancel_menu())
 
 @router.callback_query(F.data == "identity:companion:n")
 async def inline_companion_no(callback: CallbackQuery, state: FSMContext) -> None:
@@ -229,14 +229,14 @@ async def inline_doc_amayesh(callback: CallbackQuery, state: FSMContext) -> None
     if await state.get_state() != KhodnevisForm.document_type:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
     await callback.answer(); await state.update_data(document_type="کارت آمایش"); await state.set_state(KhodnevisForm.amayesh)
-    await callback.message.edit_text("۴/۷\n📸 تصویر کارت آمایش را ارسال کنید.", reply_markup=single_action_menu())
+    await callback.message.edit_text("۴/۷\n📸 تصویر کارت آمایش را ارسال کنید.", reply_markup=cancel_menu())
 
 @router.callback_query(F.data == "khodnevis:doc:passport")
 async def inline_doc_passport(callback: CallbackQuery, state: FSMContext) -> None:
     if await state.get_state() != KhodnevisForm.document_type:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
     await callback.answer(); await state.update_data(document_type="پاسپورت"); await state.set_state(KhodnevisForm.passport_first)
-    await callback.message.edit_text("۴/۷\n📸 تصویر صفحه اول پاسپورت الزامی است.", reply_markup=single_action_menu())
+    await callback.message.edit_text("۴/۷\n📸 تصویر صفحه اول پاسپورت الزامی است.", reply_markup=cancel_menu())
 
 @router.callback_query(F.data.startswith("khodnevis:optional:"))
 async def inline_optional_document(callback: CallbackQuery, state: FSMContext) -> None:
@@ -246,13 +246,13 @@ async def inline_optional_document(callback: CallbackQuery, state: FSMContext) -
     await callback.answer()
     if action == "send":
         target = "صفحه تمدید پاسپورت" if current == KhodnevisForm.passport_renewal else "صفحه تمدید اقامت/ویزا"
-        await callback.message.edit_text(f"📸 تصویر {target} را ارسال کنید.", reply_markup=single_action_menu()); return
+        await callback.message.edit_text(f"📸 تصویر {target} را ارسال کنید.", reply_markup=cancel_menu()); return
     if current == KhodnevisForm.passport_renewal:
         await state.update_data(passport_renewal=None); await state.set_state(KhodnevisForm.residence_renewal)
         await callback.message.edit_text("صفحه تمدید اقامت/ویزا را دارید؟", reply_markup=optional_document_menu())
     else:
         await state.update_data(residence_renewal=None); await state.set_state(KhodnevisForm.own_mobile)
-        await callback.message.edit_text("📱 شماره موبایل به نام خود شخص را ارسال کنید.", reply_markup=single_action_menu())
+        await callback.message.edit_text("📱 شماره موبایل به نام خود شخص را ارسال کنید.", reply_markup=cancel_menu())
 
 @router.callback_query(F.data == "order:confirm")
 async def inline_confirm(callback: CallbackQuery, state: FSMContext) -> None:
@@ -285,22 +285,22 @@ async def identity_start(message: Message, state: FSMContext, telegram_id: int |
 async def identity_name(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     if len(value) < 3:
-        await message.answer("❌ نام و نام خانوادگی را کامل وارد کنید.")
+        await message.answer("❌ نام و نام خانوادگی را کامل وارد کنید.", reply_markup=cancel_menu())
         return
     await state.update_data(full_name=value)
     await state.set_state(IdentityForm.mobile)
-    await message.answer("۲/۸\nشماره موبایل در دسترس را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
+    await message.answer("۲/۸\nشماره موبایل در دسترس را وارد کنید:", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.mobile)
 async def identity_mobile(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     if not valid_mobile(value):
-        await message.answer("❌ شماره موبایل معتبر نیست. مثال: 09123456789")
+        await message.answer("❌ شماره موبایل معتبر نیست. مثال: 09123456789", reply_markup=cancel_menu())
         return
     await state.update_data(mobile=value)
     await state.set_state(IdentityForm.birth_date)
-    await message.answer("۳/۸\nتاریخ تولد را به شمسی وارد کنید. مثال: ۱۴۰۵/۰۱/۱۵", reply_markup=single_action_menu("🔄 شروع مجدد"))
+    await message.answer("۳/۸\nتاریخ تولد را به شمسی وارد کنید. مثال: ۱۴۰۵/۰۱/۱۵", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.birth_date)
@@ -308,11 +308,11 @@ async def identity_birth(message: Message, state: FSMContext) -> None:
     try:
         value = jalali_to_gregorian(message.text or "")
     except ValueError as exc:
-        await message.answer(f"❌ {exc}")
+        await message.answer(f"❌ {exc}", reply_markup=cancel_menu())
         return
     await state.update_data(birth_date_gregorian=gregorian_display(value))
     await state.set_state(IdentityForm.return_date)
-    await message.answer("۴/۸\nآخرین تاریخ بازگشت به افغانستان را به شمسی وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
+    await message.answer("۴/۸\nآخرین تاریخ بازگشت به افغانستان را به شمسی وارد کنید:", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.return_date)
@@ -320,7 +320,7 @@ async def identity_return(message: Message, state: FSMContext) -> None:
     try:
         value = jalali_to_gregorian(message.text or "")
     except ValueError as exc:
-        await message.answer(f"❌ {exc}")
+        await message.answer(f"❌ {exc}", reply_markup=cancel_menu())
         return
     await state.update_data(return_date_gregorian=gregorian_display(value))
     await state.set_state(IdentityForm.consulate)
@@ -334,14 +334,14 @@ async def identity_consulate(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(consulate=message.text)
     await state.set_state(IdentityForm.identity_document)
-    await message.answer("۶/۸\nعکس مدرک شناسایی را ارسال کنید.", reply_markup=single_action_menu("🔄 شروع مجدد"))
+    await message.answer("۶/۸\nعکس مدرک شناسایی را ارسال کنید.", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.identity_document, F.photo)
 async def identity_document(message: Message, state: FSMContext) -> None:
     await state.update_data(identity_document=message.photo[-1].file_id)
     await state.set_state(IdentityForm.tazkira)
-    await message.answer("۷/۸\nعکس تذکره را ارسال کنید.", reply_markup=single_action_menu("🔄 شروع مجدد"))
+    await message.answer("۷/۸\nعکس تذکره را ارسال کنید.", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.tazkira, F.photo)
@@ -355,7 +355,7 @@ async def identity_tazkira(message: Message, state: FSMContext) -> None:
 async def identity_companion_choice(message: Message, state: FSMContext) -> None:
     if message.text == "✅ بله":
         await state.set_state(IdentityForm.companion_name)
-        await message.answer("نام و نام خانوادگی همراه را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
+        await message.answer("نام و نام خانوادگی همراه را وارد کنید:", reply_markup=cancel_menu())
     elif message.text == "❌ خیر":
         await show_identity_summary(message, state)
     else:
@@ -366,18 +366,18 @@ async def identity_companion_choice(message: Message, state: FSMContext) -> None
 async def identity_companion_name(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     if len(value) < 3:
-        await message.answer("❌ نام همراه را کامل وارد کنید.")
+        await message.answer("❌ نام همراه را کامل وارد کنید.", reply_markup=cancel_menu())
         return
     await state.update_data(pending_companion_name=value)
     await state.set_state(IdentityForm.companion_mobile)
-    await message.answer("شماره موبایل همراه را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
+    await message.answer("شماره موبایل همراه را وارد کنید:", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.companion_mobile)
 async def identity_companion_mobile(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     if not valid_mobile(value):
-        await message.answer("❌ شماره موبایل معتبر نیست.")
+        await message.answer("❌ شماره موبایل معتبر نیست.", reply_markup=cancel_menu())
         return
     data = await state.get_data()
     companions = data.get("companions", [])
@@ -412,7 +412,7 @@ async def identity_confirm(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     await save_order_data(data)
     await state.set_state(IdentityForm.receipt)
-    await message.answer(await payment_instructions(data["order_id"]))
+    await message.answer(await payment_instructions(data["order_id"]), reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.receipt, F.photo)
@@ -420,7 +420,7 @@ async def identity_receipt(message: Message, state: FSMContext) -> None:
     try:
         await save_receipt(message, state)
     except ValueError as exc:
-        await message.answer(f"❌ {exc}")
+        await message.answer(f"❌ {exc}", reply_markup=cancel_menu())
         return
     await state.clear()
     await message.answer("✅ رسید شما ثبت شد و برای بررسی ارسال گردید.", reply_markup=await user_main_menu(message.from_user.id))
@@ -439,25 +439,25 @@ async def khodnevis_start(message: Message, state: FSMContext, telegram_id: int 
         order_id=order.id, public_id=order.public_id, service_code=ServiceCode.KHODNEVIS.value
     )
     await state.set_state(KhodnevisForm.full_name)
-    await message.answer("۱/۷\nنام و نام خانوادگی را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
+    await message.answer("۱/۷\nنام و نام خانوادگی را وارد کنید:", reply_markup=cancel_menu())
 
 
 @router.message(KhodnevisForm.full_name)
 async def khodnevis_name(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     if len(value) < 3:
-        await message.answer("❌ نام و نام خانوادگی را کامل وارد کنید.")
+        await message.answer("❌ نام و نام خانوادگی را کامل وارد کنید.", reply_markup=cancel_menu())
         return
     await state.update_data(full_name=value)
     await state.set_state(KhodnevisForm.mobile)
-    await message.answer("۲/۷\nشماره موبایل در دسترس را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
+    await message.answer("۲/۷\nشماره موبایل در دسترس را وارد کنید:", reply_markup=cancel_menu())
 
 
 @router.message(KhodnevisForm.mobile)
 async def khodnevis_mobile(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     if not valid_mobile(value):
-        await message.answer("❌ شماره موبایل معتبر نیست. مثال: 09123456789")
+        await message.answer("❌ شماره موبایل معتبر نیست. مثال: 09123456789", reply_markup=cancel_menu())
         return
     await state.update_data(mobile=value)
     await state.set_state(KhodnevisForm.document_type)
@@ -469,11 +469,11 @@ async def khodnevis_document_type(message: Message, state: FSMContext) -> None:
     if message.text == "🪪 کارت آمایش":
         await state.update_data(document_type="کارت آمایش")
         await state.set_state(KhodnevisForm.amayesh)
-        await message.answer("۴/۷\nعکس کارت آمایش را ارسال کنید.", reply_markup=single_action_menu("🔄 شروع مجدد"))
+        await message.answer("۴/۷\nعکس کارت آمایش را ارسال کنید.", reply_markup=cancel_menu())
     elif message.text == "🛂 پاسپورت":
         await state.update_data(document_type="پاسپورت")
         await state.set_state(KhodnevisForm.passport_first)
-        await message.answer("۴/۷\nعکس صفحه اول پاسپورت الزامی است.", reply_markup=single_action_menu("🔄 شروع مجدد"))
+        await message.answer("۴/۷\nعکس صفحه اول پاسپورت الزامی است.", reply_markup=cancel_menu())
     else:
         await message.answer("یکی از دو گزینه را انتخاب کنید.", reply_markup=document_type_menu())
 
@@ -482,7 +482,7 @@ async def khodnevis_document_type(message: Message, state: FSMContext) -> None:
 async def khodnevis_amayesh(message: Message, state: FSMContext) -> None:
     await state.update_data(amayesh=message.photo[-1].file_id)
     await state.set_state(KhodnevisForm.own_mobile)
-    await message.answer("شماره موبایل به نام خود شخص را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
+    await message.answer("شماره موبایل به نام خود شخص را وارد کنید:", reply_markup=cancel_menu())
 
 
 @router.message(KhodnevisForm.passport_first, F.photo)
@@ -499,7 +499,7 @@ async def khodnevis_passport_renewal(message: Message, state: FSMContext) -> Non
         await state.set_state(KhodnevisForm.residence_renewal)
         await message.answer("صفحه تمدید اقامت/ویزا را دارید؟", reply_markup=optional_document_menu())
     elif message.text == "📸 ارسال تصویر":
-        await message.answer("حالا تصویر صفحه تمدید پاسپورت را ارسال کنید.", reply_markup=single_action_menu("🔄 شروع مجدد"))
+        await message.answer("حالا تصویر صفحه تمدید پاسپورت را ارسال کنید.", reply_markup=cancel_menu())
     else:
         await message.answer("یکی از گزینه‌ها را انتخاب کنید.", reply_markup=optional_document_menu())
 
@@ -516,9 +516,9 @@ async def khodnevis_residence_renewal(message: Message, state: FSMContext) -> No
     if message.text == "⏭️ ندارم / رد کردن":
         await state.update_data(residence_renewal=None)
         await state.set_state(KhodnevisForm.own_mobile)
-        await message.answer("شماره موبایل به نام خود شخص را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
+        await message.answer("شماره موبایل به نام خود شخص را وارد کنید:", reply_markup=cancel_menu())
     elif message.text == "📸 ارسال تصویر":
-        await message.answer("حالا تصویر صفحه تمدید اقامت/ویزا را ارسال کنید.", reply_markup=single_action_menu("🔄 شروع مجدد"))
+        await message.answer("حالا تصویر صفحه تمدید اقامت/ویزا را ارسال کنید.", reply_markup=cancel_menu())
     else:
         await message.answer("یکی از گزینه‌ها را انتخاب کنید.", reply_markup=optional_document_menu())
 
@@ -527,14 +527,14 @@ async def khodnevis_residence_renewal(message: Message, state: FSMContext) -> No
 async def khodnevis_residence_renewal_photo(message: Message, state: FSMContext) -> None:
     await state.update_data(residence_renewal=message.photo[-1].file_id)
     await state.set_state(KhodnevisForm.own_mobile)
-    await message.answer("شماره موبایل به نام خود شخص را وارد کنید:", reply_markup=single_action_menu("🔄 شروع مجدد"))
+    await message.answer("شماره موبایل به نام خود شخص را وارد کنید:", reply_markup=cancel_menu())
 
 
 @router.message(KhodnevisForm.own_mobile)
 async def khodnevis_own_mobile(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     if not valid_mobile(value):
-        await message.answer("❌ شماره موبایل معتبر نیست.")
+        await message.answer("❌ شماره موبایل معتبر نیست.", reply_markup=cancel_menu())
         return
     await state.update_data(own_mobile=value)
     data = await state.get_data()
@@ -563,7 +563,7 @@ async def khodnevis_receipt(message: Message, state: FSMContext) -> None:
     try:
         await save_receipt(message, state)
     except ValueError as exc:
-        await message.answer(f"❌ {exc}")
+        await message.answer(f"❌ {exc}", reply_markup=cancel_menu())
         return
     await state.clear()
     await message.answer("✅ رسید ثبت شد و در انتظار بررسی است.", reply_markup=await user_main_menu(message.from_user.id))
@@ -664,7 +664,8 @@ async def retry_receipt_start(callback: CallbackQuery, state: FSMContext) -> Non
     await callback.message.answer(
         f"🧾 ارسال مجدد رسید {order.public_id}\n"
         f"مبلغ: {(order.price_snapshot_toman or service.price_toman):,} تومان\n"
-        "لطفاً تصویر رسید جدید را ارسال کنید."
+        "لطفاً تصویر رسید جدید را ارسال کنید.",
+        reply_markup=cancel_menu(),
     )
 
 
@@ -673,7 +674,7 @@ async def retry_receipt_save(message: Message, state: FSMContext) -> None:
     try:
         await save_receipt(message, state)
     except ValueError as exc:
-        await message.answer(f"❌ {exc}")
+        await message.answer(f"❌ {exc}", reply_markup=cancel_menu())
         return
     await state.clear()
     await message.answer("✅ رسید جدید ثبت شد و دوباره برای بررسی ارسال گردید.", reply_markup=await user_main_menu(message.from_user.id))
@@ -825,7 +826,7 @@ async def user_support_start(callback: CallbackQuery, state: FSMContext) -> None
         f"📞 پشتیبانی درخواست {order.public_id}\n\n"
         "پیام، عکس، فایل، ویدیو یا صوت خود را ارسال کنید.\n"
         "پیام شما مستقیم برای مدیریت و اپراتورهای مجاز ارسال می‌شود.",
-        reply_markup=single_action_menu("🔄 شروع مجدد"),
+        reply_markup=cancel_menu(),
     )
 
 
@@ -933,29 +934,29 @@ async def support(message: Message, telegram_id: int | None = None) -> None:
 # راهنمایی برای ورودی‌های نامعتبر در مراحل دریافت تصویر و رسید
 @router.message(IdentityForm.identity_document)
 async def identity_document_invalid(message: Message, state: FSMContext) -> None:
-    await message.answer("📸 لطفاً تصویر مدرک شناسایی را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())
+    await message.answer("📸 لطفاً تصویر مدرک شناسایی را به صورت عکس ارسال کنید.", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.tazkira)
 async def identity_tazkira_invalid(message: Message, state: FSMContext) -> None:
-    await message.answer("📸 لطفاً تصویر تذکره را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())
+    await message.answer("📸 لطفاً تصویر تذکره را به صورت عکس ارسال کنید.", reply_markup=cancel_menu())
 
 
 @router.message(KhodnevisForm.amayesh)
 async def khodnevis_amayesh_invalid(message: Message, state: FSMContext) -> None:
-    await message.answer("📸 لطفاً تصویر کارت آمایش را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())
+    await message.answer("📸 لطفاً تصویر کارت آمایش را به صورت عکس ارسال کنید.", reply_markup=cancel_menu())
 
 
 @router.message(KhodnevisForm.passport_first)
 async def khodnevis_passport_first_invalid(message: Message, state: FSMContext) -> None:
-    await message.answer("📸 لطفاً تصویر صفحه اول پاسپورت را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())
+    await message.answer("📸 لطفاً تصویر صفحه اول پاسپورت را به صورت عکس ارسال کنید.", reply_markup=cancel_menu())
 
 
 @router.message(KhodnevisForm.receipt)
 async def khodnevis_receipt_invalid(message: Message, state: FSMContext) -> None:
-    await message.answer("🧾 لطفاً تصویر رسید پرداخت را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())
+    await message.answer("🧾 لطفاً تصویر رسید پرداخت را به صورت عکس ارسال کنید.", reply_markup=cancel_menu())
 
 
 @router.message(RetryReceiptForm.receipt)
 async def retry_receipt_invalid(message: Message, state: FSMContext) -> None:
-    await message.answer("🧾 لطفاً تصویر رسید جدید را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())
+    await message.answer("🧾 لطفاً تصویر رسید جدید را به صورت عکس ارسال کنید.", reply_markup=cancel_menu())
