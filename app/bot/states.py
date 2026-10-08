@@ -35,6 +35,9 @@ class AdminForm(StatesGroup):
     set_card_holder = State()
     set_price = State()
     user_search = State()
+    operator_add = State()
+    operator_permission = State()
+    operator_remove = State()
 
 
 class RetryReceiptForm(StatesGroup):
