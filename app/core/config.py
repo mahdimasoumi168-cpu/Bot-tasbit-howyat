@@ -10,6 +10,7 @@ class Settings(BaseSettings):
         validation_alias="DATABASE_URL",
     )
     admin_ids: str = Field(default="", validation_alias="ADMIN_IDS")
+    support_telegram_id: int | None = Field(default=None, validation_alias="SUPPORT_TELEGRAM_ID")
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
 
     model_config = SettingsConfigDict(
