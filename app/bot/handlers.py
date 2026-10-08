@@ -256,8 +256,9 @@ async def payment_instructions(order_id: int) -> str:
         f"📌 خدمت: {service.name}\n"
         f"🔢 شماره درخواست: {order.public_id}\n\n"
         "💰 مبلغ قابل پرداخت\n"
-        f"تومان: {amount_toman:,} تومان\n" + (f"🏷️ تخفیف: {discount:,} تومان\n" if discount else "")
-        f"ریال: {amount_rial}\n\n"
+        f"تومان: {amount_toman:,} تومان\n"
+        + (f"🏷️ تخفیف: {discount:,} تومان\n" if discount else "")
+        + f"ریال: {amount_rial}\n\n"
         "💳 اطلاعات کارت\n"
         f"شماره کارت: {card_number}\n"
         f"به نام: {card_holder}\n"
