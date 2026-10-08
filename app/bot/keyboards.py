@@ -19,28 +19,28 @@ def main_menu(is_admin: bool = False, is_operator: bool = False) -> InlineKeyboa
 def consulate_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🇦🇫 زاهدان", callback_data="identity:consulate:z"), InlineKeyboardButton(text="🇦🇫 مشهد", callback_data="identity:consulate:m")],
-        [InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart")],
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")],
     ])
 
 
 def yes_no_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ بله", callback_data="identity:companion:y"), InlineKeyboardButton(text="❌ خیر", callback_data="identity:companion:n")],
-        [InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart")],
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")],
     ])
 
 
 def document_type_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🪪 کارت آمایش", callback_data="khodnevis:doc:amayesh"), InlineKeyboardButton(text="🛂 پاسپورت", callback_data="khodnevis:doc:passport")],
-        [InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart")],
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")],
     ])
 
 
 def optional_document_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📸 ارسال تصویر", callback_data="khodnevis:optional:send"), InlineKeyboardButton(text="⏭️ ندارم / رد کردن", callback_data="khodnevis:optional:skip")],
-        [InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart")],
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")],
     ])
 
 
