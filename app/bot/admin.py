@@ -1111,47 +1111,165 @@ async def operator_add_save(message: Message, state: FSMContext) -> None:
     await message.answer(msg, reply_markup=admin_menu())
 
 
+PERMISSION_LABELS = {
+    "view_orders": "مشاهده درخواست‌ها",
+    "approve_payment": "تأیید پرداخت",
+    "reject_payment": "رد پرداخت",
+    "set_status": "تغییر وضعیت درخواست",
+    "message_user": "ارسال پیام به مشترک",
+}
+
+PERMISSION_ICONS = {
+    "view_orders": "👁",
+    "approve_payment": "💳",
+    "reject_payment": "❌",
+    "set_status": "🔄",
+    "message_user": "💬",
+}
+
+
+def operator_permission_keyboard(telegram_id: int, permissions: set[str]) -> InlineKeyboardMarkup:
+    rows = []
+    for key in ("view_orders", "approve_payment", "reject_payment", "set_status", "message_user"):
+        mark = "✅" if key in permissions else "⬜"
+        rows.append([InlineKeyboardButton(
+            text=f"{mark} {PERMISSION_ICONS[key]} {PERMISSION_LABELS[key]}",
+            callback_data=f"adm:operator:perm:toggle:{telegram_id}:{key}",
+        )])
+    rows.append([
+        InlineKeyboardButton(text="💾 ذخیره دسترسی‌ها", callback_data=f"adm:operator:perm:save:{telegram_id}"),
+        InlineKeyboardButton(text="❌ انصراف", callback_data="adm:operators"),
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 @router.callback_query(F.data == "adm:operator:perm")
 async def operator_perm_start(callback: CallbackQuery, state: FSMContext) -> None:
     if callback.from_user.id not in get_settings().admin_id_set:
         return
     await state.clear()
     await state.set_state(AdminForm.operator_permission)
+    async with SessionLocal() as session:
+        operators = (await session.execute(
+            select(Operator).order_by(Operator.active.desc(), Operator.id)
+        )).scalars().all()
+    if not operators:
+        await callback.answer("هنوز اپراتوری ثبت نشده است.", show_alert=True)
+        await callback.message.edit_text("👨‍💼 مدیریت اپراتورها", reply_markup=admin_menu())
+        return
+    buttons = [
+        [InlineKeyboardButton(
+            text=f"{'🟢' if op.active else '🔴'} {op.display_name or 'بدون نام'} | {op.telegram_id}",
+            callback_data=f"adm:operator:perm:select:{op.telegram_id}",
+        )]
+        for op in operators
+    ]
+    buttons.append([InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:operators")])
     await callback.answer()
-    await callback.message.answer(
-        "🔐 تنظیم دسترسی\nفرمت:\nID | permission1,permission2,...\n\n"
-        "دسترسی‌ها: view_orders, approve_payment, reject_payment, set_status, message_user\n"
-        ""
+    await callback.message.edit_text(
+        "🔐 تنظیم دسترسی همکار\n\nلطفاً همکار موردنظر را انتخاب کنید:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
 
 
-@router.message(AdminForm.operator_permission)
-async def operator_perm_save(message: Message, state: FSMContext) -> None:
-    if not is_admin(message):
+@router.callback_query(F.data.startswith("adm:operator:perm:select:"))
+async def operator_perm_select(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
         return
-    raw = (message.text or "").strip()
-    if "|" not in raw:
-        await message.answer("❌ فرمت نادرست است.")
-        return
-    left, right = [x.strip() for x in raw.split("|", 1)]
-    if not left.isdigit():
-        await message.answer("❌ شناسه تلگرام نامعتبر است.")
-        return
-    allowed = {"view_orders", "approve_payment", "reject_payment", "set_status", "message_user"}
-    permissions = {x.strip() for x in right.split(",") if x.strip()}
-    if not permissions.issubset(allowed):
-        await message.answer("❌ یکی از دسترسی‌ها نامعتبر است.")
+    try:
+        telegram_id = int(callback.data.rsplit(":", 1)[1])
+    except (TypeError, ValueError):
+        await callback.answer("شناسه همکار نامعتبر است.", show_alert=True)
         return
     async with SessionLocal() as session:
-        op = (await session.execute(select(Operator).where(Operator.telegram_id == int(left)))).scalar_one_or_none()
+        op = (await session.execute(
+            select(Operator).where(Operator.telegram_id == telegram_id)
+        )).scalar_one_or_none()
+    if op is None:
+        await callback.answer("همکار پیدا نشد.", show_alert=True)
+        return
+    try:
+        permissions_data = json.loads(op.permissions_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        permissions_data = {}
+    permissions = {key for key in PERMISSION_LABELS if permissions_data.get(key)}
+    await state.set_state(AdminForm.operator_permission)
+    await state.update_data(operator_permission_id=telegram_id, operator_permissions=list(permissions))
+    await callback.answer()
+    await callback.message.edit_text(
+        f"🔐 تنظیم دسترسی همکار\n\n"
+        f"شناسه: {telegram_id}\n"
+        "دسترسی‌های فعال را با دکمه‌های زیر انتخاب کنید:",
+        reply_markup=operator_permission_keyboard(telegram_id, permissions),
+    )
+
+
+@router.callback_query(F.data.startswith("adm:operator:perm:toggle:"))
+async def operator_perm_toggle(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 6:
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    try:
+        telegram_id = int(parts[4])
+    except ValueError:
+        await callback.answer("شناسه همکار نامعتبر است.", show_alert=True)
+        return
+    key = parts[5]
+    if key not in PERMISSION_LABELS:
+        await callback.answer("دسترسی نامعتبر است.", show_alert=True)
+        return
+    data = await state.get_data()
+    if data.get("operator_permission_id") != telegram_id:
+        await callback.answer("این تنظیمات منقضی شده است. دوباره وارد شوید.", show_alert=True)
+        return
+    permissions = set(data.get("operator_permissions") or [])
+    if key in permissions:
+        permissions.remove(key)
+    else:
+        permissions.add(key)
+    await state.update_data(operator_permissions=list(permissions))
+    await callback.message.edit_reply_markup(
+        reply_markup=operator_permission_keyboard(telegram_id, permissions)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("adm:operator:perm:save:"))
+async def operator_perm_save(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    try:
+        telegram_id = int(callback.data.rsplit(":", 1)[1])
+    except ValueError:
+        await callback.answer("شناسه همکار نامعتبر است.", show_alert=True)
+        return
+    data = await state.get_data()
+    if data.get("operator_permission_id") != telegram_id:
+        await callback.answer("این تنظیمات منقضی شده است. دوباره وارد شوید.", show_alert=True)
+        return
+    permissions = set(data.get("operator_permissions") or [])
+    async with SessionLocal() as session:
+        op = (await session.execute(
+            select(Operator).where(Operator.telegram_id == telegram_id)
+        )).scalar_one_or_none()
         if op is None:
             await state.clear()
-            await message.answer("❌ اپراتور پیدا نشد.", reply_markup=admin_menu())
+            await callback.answer("همکار پیدا نشد.", show_alert=True)
             return
-        op.permissions_json = json.dumps({k: k in permissions for k in allowed}, ensure_ascii=False)
+        op.permissions_json = json.dumps(
+            {key: key in permissions for key in PERMISSION_LABELS},
+            ensure_ascii=False,
+        )
         await session.commit()
     await state.clear()
-    await message.answer("✅ دسترسی اپراتور ذخیره شد.", reply_markup=admin_menu())
+    await callback.answer("دسترسی‌ها ذخیره شد.")
+    await callback.message.edit_text(
+        "✅ دسترسی‌های همکار با موفقیت ذخیره شد.",
+        reply_markup=admin_menu(),
+    )
 
 
 @router.callback_query(F.data == "adm:operator:remove")
