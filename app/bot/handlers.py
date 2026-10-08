@@ -153,12 +153,21 @@ async def payment_instructions(order_id: int) -> str:
         ).scalar_one_or_none()
     card_number = number.value if number and number.value else "هنوز توسط مدیریت تنظیم نشده است"
     card_holder = holder.value if holder and holder.value else "هنوز توسط مدیریت تنظیم نشده است"
+    amount_toman = int(order.price_snapshot_toman or service.price_toman)
+    amount_rial = amount_toman * 10
     return (
-        "💳 پرداخت کارت‌به‌کارت\n\n"
-        f"مبلغ: {(order.price_snapshot_toman or service.price_toman):,} تومان\n"
-        f"شماره کارت: {card_number}\n"
-        f"به نام: {card_holder}\n\n"
-        "پس از واریز، تصویر رسید را ارسال کنید."
+        "🧾 فاکتور پرداخت\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"📌 خدمت: {service.name}\n"
+        f"🔢 شماره درخواست: {order.public_id}\n\n"
+        "💰 مبلغ قابل پرداخت\n"
+        f"تومان: {amount_toman:,} تومان\n"
+        f"ریال: <code>{amount_rial}</code>\n\n"
+        "💳 اطلاعات کارت\n"
+        f"شماره کارت: <code>{card_number}</code>\n"
+        f"به نام: {card_holder}\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "📸 پس از واریز، تصویر رسید را ارسال کنید."
     )
 
 
