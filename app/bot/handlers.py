@@ -868,4 +868,34 @@ async def support(message: Message, telegram_id: int | None = None) -> None:
     ]
     buttons.append([InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart")])
     await message.answer("📞 درخواست موردنظر برای پشتیبانی را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-\n\n# راهنمایی برای ورودی‌های نامعتبر در مراحل دریافت تصویر و رسید\n@router.message(IdentityForm.identity_document)\nasync def identity_document_invalid(message: Message, state: FSMContext) -> None:\n    await message.answer("📸 لطفاً تصویر مدرک شناسایی را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())\n\n\n@router.message(IdentityForm.tazkira)\nasync def identity_tazkira_invalid(message: Message, state: FSMContext) -> None:\n    await message.answer("📸 لطفاً تصویر تذکره را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())\n\n\n@router.message(KhodnevisForm.amayesh)\nasync def khodnevis_amayesh_invalid(message: Message, state: FSMContext) -> None:\n    await message.answer("📸 لطفاً تصویر کارت آمایش را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())\n\n\n@router.message(KhodnevisForm.passport_first)\nasync def khodnevis_passport_first_invalid(message: Message, state: FSMContext) -> None:\n    await message.answer("📸 لطفاً تصویر صفحه اول پاسپورت را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())\n\n\n@router.message(KhodnevisForm.receipt)\nasync def khodnevis_receipt_invalid(message: Message, state: FSMContext) -> None:\n    await message.answer("🧾 لطفاً تصویر رسید پرداخت را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())\n\n\n@router.message(RetryReceiptForm.receipt)\nasync def retry_receipt_invalid(message: Message, state: FSMContext) -> None:\n    await message.answer("🧾 لطفاً تصویر رسید جدید را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())\n
+
+
+# راهنمایی برای ورودی‌های نامعتبر در مراحل دریافت تصویر و رسید
+@router.message(IdentityForm.identity_document)
+async def identity_document_invalid(message: Message, state: FSMContext) -> None:
+    await message.answer("📸 لطفاً تصویر مدرک شناسایی را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())
+
+
+@router.message(IdentityForm.tazkira)
+async def identity_tazkira_invalid(message: Message, state: FSMContext) -> None:
+    await message.answer("📸 لطفاً تصویر تذکره را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())
+
+
+@router.message(KhodnevisForm.amayesh)
+async def khodnevis_amayesh_invalid(message: Message, state: FSMContext) -> None:
+    await message.answer("📸 لطفاً تصویر کارت آمایش را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())
+
+
+@router.message(KhodnevisForm.passport_first)
+async def khodnevis_passport_first_invalid(message: Message, state: FSMContext) -> None:
+    await message.answer("📸 لطفاً تصویر صفحه اول پاسپورت را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())
+
+
+@router.message(KhodnevisForm.receipt)
+async def khodnevis_receipt_invalid(message: Message, state: FSMContext) -> None:
+    await message.answer("🧾 لطفاً تصویر رسید پرداخت را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())
+
+
+@router.message(RetryReceiptForm.receipt)
+async def retry_receipt_invalid(message: Message, state: FSMContext) -> None:
+    await message.answer("🧾 لطفاً تصویر رسید جدید را به صورت عکس ارسال کنید.", reply_markup=single_action_menu())
