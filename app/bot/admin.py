@@ -2,7 +2,7 @@ import json
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardRemove
 from sqlalchemy import select
 
 from app.bot.handlers import STATUS_TEXT
@@ -92,10 +92,70 @@ async def prices(callback: CallbackQuery) -> None:
         rows = (await session.execute(select(Service).order_by(Service.id))).scalars().all()
     text = "💰 قیمت فعلی خدمات:\n\n" + "\n".join(
         f"{s.name}: {s.price_toman:,} تومان" for s in rows
+    ) or "خدمتی ثبت نشده است."
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🪪 تغییر قیمت تثبیت هویت", callback_data="adm:setprice:identity")],
+            [InlineKeyboardButton(text="📝 تغییر قیمت کد رهگیری خودنویس", callback_data="adm:setprice:khodnevis")],
+            [InlineKeyboardButton(text="🔙 بازگشت به پنل", callback_data="adm:home")],
+        ]
     )
-    text += "\n\nتغییر قیمت با دستور:\n/setprice identity 280000\n/setprice khodnevis 1700000"
-    await callback.message.answer(text)
+    await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
+
+
+@router.callback_query(F.data == "adm:home")
+async def admin_home(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    await state.clear()
+    await callback.message.edit_text("🛠 پنل مدیریت\n\nاز گزینه‌های زیر استفاده کنید:", reply_markup=admin_menu())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("adm:setprice:"))
+async def set_price_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    service_code = callback.data.rsplit(":", 1)[1]
+    if service_code not in {"identity", "khodnevis"}:
+        await callback.answer("خدمت نامعتبر است.", show_alert=True)
+        return
+    await state.clear()
+    await state.update_data(price_service=service_code)
+    await state.set_state(AdminForm.set_price)
+    await callback.answer()
+    await callback.message.answer(
+        "💰 مبلغ جدید را فقط به تومان و به صورت عددی ارسال کنید.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
+@router.message(AdminForm.set_price)
+async def set_price_from_panel(message: Message, state: FSMContext) -> None:
+    if not is_admin(message):
+        return
+    raw = (message.text or "").replace(",", "").replace("٬", "").strip()
+    if not raw.isdigit() or int(raw) <= 0:
+        await message.answer("❌ مبلغ نامعتبر است. فقط عدد مثبت را ارسال کنید.")
+        return
+    data = await state.get_data()
+    service_code = data.get("price_service")
+    if service_code not in {"identity", "khodnevis"}:
+        await state.clear()
+        await message.answer("❌ خدمت مشخص نیست.", reply_markup=admin_menu())
+        return
+    async with SessionLocal() as session:
+        service = (await session.execute(select(Service).where(Service.code == service_code))).scalar_one_or_none()
+        if service is None:
+            await state.clear()
+            await message.answer("❌ خدمت پیدا نشد.", reply_markup=admin_menu())
+            return
+        service.price_toman = int(raw)
+        name = service.name
+        await session.commit()
+    await state.clear()
+    await message.answer(f"✅ قیمت «{name}» به {int(raw):,} تومان تغییر کرد.", reply_markup=admin_menu())
 
 
 @router.message(F.text.startswith("/setprice"))
