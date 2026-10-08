@@ -696,7 +696,7 @@ async def admin_order_detail(callback: CallbackQuery) -> None:
         f"{status_header(order,service)}\n\n"
         f"👤 {data.get('full_name') or ((user.first_name or '')+' '+(user.last_name or '')).strip()}\n"
         f"📱 {data.get('mobile','')}\n"
-        f"🆔 Telegram: {user.telegram_id}\n"
+        f"🆔 شناسه کاربری: {user.telegram_id}\n"
         f"💰 قیمت ثبت‌شده: {(order.price_snapshot_toman or service.price_toman):,} تومان\n"
         f"📎 مدارک: {len(docs)}\n"
         f"💳 پرداخت‌ها: {len(payments)}"
@@ -747,7 +747,7 @@ async def admin_order_payments(callback: CallbackQuery) -> None:
         if payment.receipt_file_id:
             await callback.message.answer_photo(
                 payment.receipt_file_id,
-                caption=f"💳 {payment.amount_toman:,} تومان | وضعیت: {payment.status}"
+                caption=f"💳 {payment.amount_toman:,} تومان | وضعیت: {PAYMENT_STATUS_TEXT.get(payment.status, 'نامشخص')}"
             )
     await callback.answer("رسیدها ارسال شد.")
 
@@ -888,6 +888,53 @@ async def send_case_to_operator(bot, order_id: int) -> None:
             await bot.send_photo(
                 recipient_id, doc.telegram_file_id, caption=f"📎 {doc.document_type} | {order.public_id}"
             )
+
+
+@router.callback_query(F.data.startswith("adm:status:"))
+async def change_status(callback: CallbackQuery) -> None:
+    operator = await get_operator(callback.from_user.id)
+    is_main = callback.from_user.id in get_settings().admin_id_set
+    if not is_main and (operator is None or not can_operator(operator, "set_status")):
+        await callback.answer("دسترسی تغییر وضعیت ندارید.", show_alert=True)
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 4 or parts[3] not in {"in_progress", "waiting_user", "completed", "rejected"}:
+        await callback.answer("وضعیت نامعتبر است.", show_alert=True)
+        return
+    try:
+        order_id = int(parts[2])
+    except ValueError:
+        await callback.answer("شناسه درخواست نامعتبر است.", show_alert=True)
+        return
+    new_status = parts[3]
+    async with SessionLocal() as session:
+        order = await session.get(Order, order_id)
+        if order is None:
+            await callback.answer("درخواست پیدا نشد.", show_alert=True)
+            return
+        old_status = order.status
+        order.status = new_status
+        await session.commit()
+        service = await session.get(Service, order.service_id)
+        user = await session.get(User, order.user_id)
+    await audit(callback.from_user.id, "status_changed", order_id, {"from": old_status, "to": new_status})
+    await callback.answer(f"وضعیت به «{STATUS_TEXT.get(new_status, new_status)}» تغییر کرد.")
+    if user:
+        try:
+            await callback.message.bot.send_message(
+                user.telegram_id,
+                f"📌 وضعیت درخواست {order.public_id} تغییر کرد.\nوضعیت جدید: {STATUS_TEXT.get(new_status, new_status)}",
+            )
+        except Exception:
+            pass
+    if service:
+        try:
+            await callback.message.edit_text(
+                status_header(order, service),
+                reply_markup=order_actions(order.id, operator=None if is_main else operator),
+            )
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data.startswith("adm:approve:"))
