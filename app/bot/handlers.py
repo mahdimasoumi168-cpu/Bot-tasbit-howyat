@@ -10,6 +10,7 @@ from sqlalchemy import delete, select, update
 from app.bot.keyboards import (
     consulate_menu,
     document_type_menu,
+    identity_document_type_menu,
     main_menu,
     optional_document_menu,
     yes_no_menu,
@@ -223,6 +224,55 @@ async def inline_support_orders(callback: CallbackQuery) -> None:
     await callback.answer()
     await support(callback.message, telegram_id=callback.from_user.id, show_direct=False)
 
+@router.callback_query(F.data == "identity:doc:amayesh")
+async def inline_identity_doc_amayesh(callback: CallbackQuery, state: FSMContext) -> None:
+    if await state.get_state() != IdentityForm.identity_document_type:
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
+    await callback.answer()
+    await state.update_data(identity_document_type="کارت آمایش")
+    await state.set_state(IdentityForm.identity_document)
+    await callback.message.edit_text("📸 عکس کارت آمایش را ارسال کنید.\nمثال: عکس واضح و کامل از کارت.", reply_markup=cancel_menu())
+
+
+@router.callback_query(F.data == "identity:doc:passport")
+async def inline_identity_doc_passport(callback: CallbackQuery, state: FSMContext) -> None:
+    if await state.get_state() != IdentityForm.identity_document_type:
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
+    await callback.answer()
+    await state.update_data(identity_document_type="پاسپورت")
+    await state.set_state(IdentityForm.identity_document)
+    await callback.message.edit_text("📸 عکس صفحه اول پاسپورت را ارسال کنید.\nمثال: عکس واضح و کامل از صفحه مشخصات.", reply_markup=cancel_menu())
+
+
+@router.callback_query(F.data == "identity:doc:other")
+async def inline_identity_doc_other(callback: CallbackQuery, state: FSMContext) -> None:
+    if await state.get_state() != IdentityForm.identity_document_type:
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
+    await callback.answer()
+    await callback.message.edit_text("✍️ نوع مدرک را وارد کنید.\nمثال: کارت اقامت", reply_markup=cancel_menu())
+
+
+@router.callback_query(F.data == "identity:doc:none")
+async def inline_identity_doc_none(callback: CallbackQuery, state: FSMContext) -> None:
+    if await state.get_state() != IdentityForm.identity_document_type:
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
+    await callback.answer()
+    await state.update_data(identity_document_type="ندارد", identity_document=None)
+    await state.set_state(IdentityForm.tazkira)
+    await callback.message.edit_text("۷/۸\n📸 عکس تذکره را ارسال کنید.\nمثال: عکس واضح از تمام صفحه تذکره.", reply_markup=cancel_menu())
+
+
+@router.message(IdentityForm.identity_document_type)
+async def identity_document_type_text(message: Message, state: FSMContext) -> None:
+    value = " ".join((message.text or "").split())
+    if not value or len(value) > 80:
+        await message.answer("❌ نوع مدرک را وارد کنید.", reply_markup=cancel_menu())
+        return
+    await state.update_data(identity_document_type=value)
+    await state.set_state(IdentityForm.identity_document)
+    await message.answer("📸 عکس این مدرک را ارسال کنید.\nمثال: عکس واضح و کامل از مدرک.", reply_markup=cancel_menu())
+
+
 @router.callback_query(F.data == "identity:consulate:z")
 async def inline_consulate_z(callback: CallbackQuery, state: FSMContext) -> None:
     if await state.get_state() != IdentityForm.consulate:
@@ -365,8 +415,8 @@ async def identity_consulate(message: Message, state: FSMContext) -> None:
         await message.answer("لطفاً یکی از دو گزینه را انتخاب کنید.", reply_markup=consulate_menu())
         return
     await state.update_data(consulate=message.text)
-    await state.set_state(IdentityForm.identity_document)
-    await message.answer("۶/۸\n📸 عکس مدرک شناسایی را ارسال کنید.\nمثال: عکس واضح و کامل از کارت/مدرک.\nمحدودیت: فقط عکس، واضح و خوانا.", reply_markup=cancel_menu())
+    await state.set_state(IdentityForm.identity_document_type)
+    await message.answer("۶/۸\nمدرک شناسایی شما چیست؟", reply_markup=identity_document_type_menu())
 
 
 @router.message(IdentityForm.identity_document, F.photo)
