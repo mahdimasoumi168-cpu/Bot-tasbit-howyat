@@ -16,9 +16,9 @@ from app.bot.keyboards import (
     single_action_menu,
     confirm_menu,
 )
-from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm
+from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm, SupportForm
 from app.core.config import get_settings
-from app.db.models import Companion, Document, Operator, Order, Payment, Service, ServiceCode, Setting, User
+from app.db.models import Companion, Document, Operator, Order, Payment, Service, ServiceCode, Setting, Ticket, TicketMessage, User
 from app.db.session import SessionLocal
 from app.utils.dates import gregorian_display, jalali_to_gregorian
 from app.utils.ids import public_order_id
@@ -611,6 +611,103 @@ async def account(message: Message) -> None:
         reply_markup=await user_main_menu(message.from_user.id),
     )
 
+
+
+@router.callback_query(F.data.startswith("user:support:"))
+async def user_support_start(callback: CallbackQuery, state: FSMContext) -> None:
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(
+                select(Ticket, Order, Service)
+                .join(Order, Ticket.order_id == Order.id)
+                .join(Service, Order.service_id == Service.id)
+                .join(User, Order.user_id == User.id)
+                .where(
+                    Order.id == order_id,
+                    User.telegram_id == callback.from_user.id,
+                    Ticket.status == "open",
+                )
+            )
+        ).one_or_none()
+    if not row:
+        await callback.answer("برای این درخواست هنوز گفت‌وگوی پشتیبانی فعال نیست.", show_alert=True)
+        return
+    await state.clear()
+    await state.update_data(support_order_id=order_id)
+    await state.set_state(SupportForm.message)
+    await callback.answer()
+    await callback.message.answer(
+        f"📞 پشتیبانی درخواست {row[1].public_id}\n\n"
+        "پیام، عکس، فایل، ویدیو یا صوت خود را ارسال کنید.\n"
+        "پیام شما مستقیم برای مدیریت و اپراتورهای مجاز ارسال می‌شود.",
+        reply_markup=single_action_menu("🔄 شروع مجدد"),
+    )
+
+
+@router.message(SupportForm.message)
+async def user_support_message(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    order_id = data.get("support_order_id")
+    if not order_id:
+        await state.clear()
+        await start(message, state)
+        return
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(
+                select(Ticket, Order, Service)
+                .join(Order, Ticket.order_id == Order.id)
+                .join(Service, Order.service_id == Service.id)
+                .join(User, Order.user_id == User.id)
+                .where(
+                    Order.id == order_id,
+                    User.telegram_id == message.from_user.id,
+                    Ticket.status == "open",
+                )
+            )
+        ).one_or_none()
+        if not row:
+            await state.clear()
+            await message.answer("❌ گفت‌وگوی پشتیبانی فعال نیست.", reply_markup=await user_main_menu(message.from_user.id))
+            return
+        ticket, order, service = row
+        file_id = None
+        if message.photo:
+            file_id = message.photo[-1].file_id
+        elif message.document:
+            file_id = message.document.file_id
+        elif message.video:
+            file_id = message.video.file_id
+        elif message.audio:
+            file_id = message.audio.file_id
+        elif message.voice:
+            file_id = message.voice.file_id
+        session.add(TicketMessage(
+            ticket_id=ticket.id,
+            sender_type="user",
+            sender_telegram_id=message.from_user.id,
+            content_type=message.content_type,
+            text=message.text or message.caption,
+            file_id=file_id,
+        ))
+        await session.commit()
+    recipients = set(get_settings().admin_id_set)
+    async with SessionLocal() as session:
+        operators = (await session.execute(select(Operator).where(Operator.active.is_(True)))).scalars().all()
+    recipients.update(
+        op.telegram_id for op in operators
+        if can_operator(op, "view_orders") and can_operator(op, "message_user")
+    )
+    for recipient_id in recipients:
+        await message.bot.send_message(recipient_id, f"📞 پشتیبانی | {order.public_id} | {service.name}")
+        await message.copy_to(recipient_id)
+    await state.clear()
+    await message.answer("✅ پیام شما برای پشتیبانی ارسال شد.", reply_markup=await user_main_menu(message.from_user.id))
 
 @router.message(F.text == "📞 پشتیبانی")
 async def support(message: Message) -> None:
