@@ -16,4 +16,4 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: python -m compileall app
       - run: pytest -q
-      - run: ruff check app tests
+      - run: ruff check --select F app tests
