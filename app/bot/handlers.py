@@ -131,6 +131,10 @@ async def apply_wallet_payment(telegram_id: int, order_id: int) -> bool:
         if not row:
             raise ValueError("درخواست پیدا نشد.")
         order, service, user = row
+        if order.status != "waiting_payment":
+            if order.status == "payment_approved":
+                raise ValueError("پرداخت این درخواست قبلاً انجام شده است.")
+            raise ValueError("این درخواست در حال حاضر قابل پرداخت نیست.")
         amount, discount, code = await order_amount_and_coupon(order_id)
         wallet = await ensure_wallet(session, user.id)
         if wallet.balance_toman < amount:
@@ -846,10 +850,15 @@ async def save_receipt(message: Message, state: FSMContext) -> None:
         payload = json.loads(order.data_json or "{}")
         base_amount = int(order.price_snapshot_toman or service.price_toman)
         coupon = None
-        if payload.get("discount_code"):
+        coupon_code = payload.get("discount_code")
+        if coupon_code:
             coupon = (await session.execute(
-                select(DiscountCode).where(DiscountCode.code == payload["discount_code"])
+                select(DiscountCode).where(DiscountCode.code == coupon_code)
             )).scalar_one_or_none()
+            if not coupon or not coupon.active or (
+                coupon.expires_at and coupon.expires_at <= __import__("datetime").datetime.now()
+            ) or (coupon.max_uses is not None and coupon.used_count >= coupon.max_uses):
+                coupon = None
         final_amount = max(0, base_amount - calculate_discount(base_amount, coupon))
         session.add(
             Payment(
