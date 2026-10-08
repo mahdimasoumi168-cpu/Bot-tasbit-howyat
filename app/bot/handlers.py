@@ -618,7 +618,11 @@ async def save_receipt(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data.startswith("retry_receipt:"))
 async def retry_receipt_start(callback: CallbackQuery, state: FSMContext) -> None:
-    order_id = int(callback.data.rsplit(":", 1)[1])
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
     async with SessionLocal() as session:
         row = (
             await session.execute(
@@ -632,6 +636,17 @@ async def retry_receipt_start(callback: CallbackQuery, state: FSMContext) -> Non
         await callback.answer("این درخواست برای ارسال مجدد رسید آماده نیست.", show_alert=True)
         return
     order, service = row
+    async with SessionLocal() as session:
+        latest_payment = (
+            await session.execute(
+                select(Payment)
+                .where(Payment.order_id == order.id)
+                .order_by(Payment.id.desc())
+            )
+        ).scalars().first()
+    if latest_payment and latest_payment.status == "approved":
+        await callback.answer("این درخواست قبلاً پرداخت تأییدشده دارد و امکان ارسال مجدد رسید ندارد.", show_alert=True)
+        return
     await state.clear()
     await state.update_data(order_id=order.id, public_id=order.public_id, service_code=service.code)
     await state.set_state(RetryReceiptForm.receipt)
