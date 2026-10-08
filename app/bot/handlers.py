@@ -1,5 +1,4 @@
 import json
-import logging
 import re
 
 from aiogram import F, Router
@@ -16,15 +15,12 @@ from app.bot.keyboards import (
     yes_no_menu,
 )
 from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm
-from app.core.config import get_settings
 from app.db.models import Companion, Document, Order, Payment, Service, ServiceCode, Setting, User
 from app.db.session import SessionLocal
 from app.utils.dates import gregorian_display, jalali_to_gregorian
 from app.utils.ids import public_order_id
 
 router = Router()
-logger = logging.getLogger(__name__)
-
 STATUS_TEXT = {
     "draft": "پیش‌نویس",
     "waiting_payment": "در انتظار پرداخت",
