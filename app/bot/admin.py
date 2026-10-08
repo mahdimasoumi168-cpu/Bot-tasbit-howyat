@@ -448,7 +448,7 @@ PAYMENT_STATUS_TEXT = {\n    "pending": "در انتظار بررسی",\n    "ap
     lines.append("💳 سوابق پرداخت")
     if payments:
         for p in payments:
-            lines.append(f"• {PAYMENT_STATUS_TEXT.get(p.status, "نامشخص")} — {p.amount_toman:,} تومان — {p.created_at.strftime('%Y/%m/%d %H:%M') if p.created_at else '—'}")
+            lines.append(f"• {PAYMENT_STATUS_TEXT.get(p.status, 'نامشخص')} — {p.amount_toman:,} تومان — {p.created_at.strftime('%Y/%m/%d %H:%M') if p.created_at else '—'}")
     else:
         lines.append("• پرداختی ثبت نشده است")
     lines.append("")
