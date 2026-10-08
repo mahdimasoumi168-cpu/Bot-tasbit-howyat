@@ -7,9 +7,9 @@ def main_menu(is_admin: bool = False, is_operator: bool = False) -> InlineKeyboa
          InlineKeyboardButton(text="📝 کد رهگیری خودنویس", callback_data="menu:khodnevis", style="primary")],
         [InlineKeyboardButton(text="💰 اعتبار من", callback_data="menu:wallet", style="primary")],
         [InlineKeyboardButton(text="📋 پیگیری درخواست‌ها", callback_data="menu:tracking", style="primary"),
-         InlineKeyboardButton(text="👤 حساب من", callback_data="menu:account")],
+         InlineKeyboardButton(text="👤 حساب من", callback_data="menu:account", style="primary")],
         [InlineKeyboardButton(text="📞 پشتیبانی", callback_data="menu:support", style="primary"),
-         InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart")],
+         InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart", style="primary")],
     ]
     if is_operator and is_admin:
         rows.append([
@@ -60,7 +60,7 @@ def identity_document_type_menu() -> InlineKeyboardMarkup:
 def optional_document_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📸 ارسال تصویر", callback_data="khodnevis:optional:send", style="primary"),
-         InlineKeyboardButton(text="⏭️ ندارم / رد کردن", callback_data="khodnevis:optional:skip")],
+         InlineKeyboardButton(text="⏭️ ندارم / رد کردن", callback_data="khodnevis:optional:skip", style="primary")],
         [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
     ])
 
@@ -71,7 +71,7 @@ def support_menu(active_orders: bool = False) -> InlineKeyboardMarkup:
     ]
     if active_orders:
         rows.append([InlineKeyboardButton(text="📋 پشتیبانی درخواست‌های من", callback_data="menu:support_orders", style="primary")])
-    rows.append([InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="flow:cancel")])
+    rows.append([InlineKeyboardButton(text="🔙 بازگشت به منوی اصلی", callback_data="flow:cancel", style="danger")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -97,7 +97,7 @@ def admin_cancel_menu() -> InlineKeyboardMarkup:
 
 def single_action_menu(text: str = "🔄 شروع مجدد") -> InlineKeyboardMarkup:
     callback = "menu:restart" if text == "🔄 شروع مجدد" else "noop"
-    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=callback)]])
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=callback, style="primary")]])
 
 
 def confirm_menu() -> InlineKeyboardMarkup:
@@ -119,7 +119,7 @@ def payment_choice_menu(credit: int) -> InlineKeyboardMarkup:
 def wallet_menu(balance: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ افزایش اعتبار", callback_data="wallet:topup", style="primary")],
-        [InlineKeyboardButton(text="📜 تاریخچه اعتبار", callback_data="wallet:history")],
+        [InlineKeyboardButton(text="📜 تاریخچه اعتبار", callback_data="wallet:history", style="primary")],
         [InlineKeyboardButton(text="🔙 بازگشت", callback_data="flow:cancel")],
     ])
 
