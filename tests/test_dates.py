@@ -7,3 +7,7 @@ def test_invalid_date():
     try:jalali_to_gregorian("1405/13/01")
     except ValueError:pass
     else:raise AssertionError("Expected invalid Jalali date")
+
+
+def test_jalali_persian_digits():
+    assert gregorian_display(jalali_to_gregorian("۱۴۰۵/۰۱/۱۰")) == "2026/03/30"
