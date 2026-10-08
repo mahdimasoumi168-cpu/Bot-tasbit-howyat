@@ -73,7 +73,7 @@ def order_actions(order_id: int, operator: Operator | None = None, payment_revie
 
 
 def status_header(order: Order, service: Service) -> str:
-    return f"{order.public_id} | {STATUS_TEXT.get(order.status, "نامشخص")}\n🪪 خدمت: {service.name}"
+    return f"{order.public_id} | {STATUS_TEXT.get(order.status, 'نامشخص')}\n🪪 خدمت: {service.name}"
 
 
 
