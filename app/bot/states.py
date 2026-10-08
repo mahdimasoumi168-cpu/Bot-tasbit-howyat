@@ -42,3 +42,7 @@ class AdminForm(StatesGroup):
 
 class RetryReceiptForm(StatesGroup):
     receipt = State()
+
+
+class SupportForm(StatesGroup):
+    message = State()
