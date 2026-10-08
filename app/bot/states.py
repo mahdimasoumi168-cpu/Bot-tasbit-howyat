@@ -30,7 +30,10 @@ class KhodnevisForm(StatesGroup):
 
 
 class AdminForm(StatesGroup):
-    send_message = State()\n    set_card = State()\n    set_price = State()
+    send_message = State()
+    set_card = State()
+    set_price = State()
+
 
 class RetryReceiptForm(StatesGroup):
     receipt = State()
