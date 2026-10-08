@@ -23,6 +23,7 @@ def admin_menu() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="🔵 رسیدهای در انتظار بررسی", callback_data="adm:pending")],
             [InlineKeyboardButton(text="📋 درخواست‌ها", callback_data="adm:orders")],
+            [InlineKeyboardButton(text="📊 گزارش‌ها", callback_data="adm:stats")],
             [InlineKeyboardButton(text="👥 مشترکان", callback_data="adm:users")],
             [InlineKeyboardButton(text="👨‍💼 اپراتورها", callback_data="adm:operators")],
             [InlineKeyboardButton(text="🧩 خدمات", callback_data="adm:services")],
@@ -442,6 +443,132 @@ async def set_price(message: Message) -> None:
     await message.answer("✅ قیمت ذخیره شد.", reply_markup=admin_menu())
 
 
+
+@router.callback_query(F.data == "adm:stats")
+async def admin_stats(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    async with SessionLocal() as session:
+        total = (await session.execute(select(Order))).scalars().all()
+        counts = {}
+        for order in total:
+            counts[order.status] = counts.get(order.status, 0) + 1
+        approved = (await session.execute(
+            select(Payment).where(Payment.status == "approved")
+        )).scalars().all()
+        revenue = sum(p.amount_toman for p in approved)
+        users_count = len((await session.execute(select(User))).scalars().all())
+    lines = [
+        "📊 گزارش کلی رنا یار بات",
+        "",
+        f"👥 مشترکان: {users_count}",
+        f"📋 کل درخواست‌ها: {len(total)}",
+        f"🔵 رسیدهای تأییدشده: {len(approved)}",
+        f"💰 مبلغ پرداخت‌های تأییدشده: {revenue:,} تومان",
+        "",
+    ]
+    for key, label in [
+        ("waiting_payment","در انتظار پرداخت"),
+        ("waiting_receipt_review","در انتظار بررسی رسید"),
+        ("payment_approved","پرداخت تأیید شده"),
+        ("in_progress","در حال انجام"),
+        ("waiting_user","منتظر مشترک"),
+        ("completed","تکمیل شده"),
+        ("rejected","رد شده"),
+    ]:
+        lines.append(f"{label}: {counts.get(key,0)}")
+    await callback.message.edit_text(
+        "\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:home")]
+        ])
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("adm:order:"))
+async def admin_order_detail(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    order_id = int(callback.data.rsplit(":",1)[1])
+    async with SessionLocal() as session:
+        row = (await session.execute(
+            select(Order, Service, User)
+            .join(Service, Order.service_id == Service.id)
+            .join(User, Order.user_id == User.id)
+            .where(Order.id == order_id)
+        )).one_or_none()
+        if not row:
+            await callback.answer("درخواست پیدا نشد.", show_alert=True)
+            return
+        order, service, user = row
+        docs = (await session.execute(
+            select(Document).where(Document.order_id == order.id).order_by(Document.id)
+        )).scalars().all()
+        payments = (await session.execute(
+            select(Payment).where(Payment.order_id == order.id).order_by(Payment.id.desc())
+        )).scalars().all()
+        data = json.loads(order.data_json or "{}")
+    summary = (
+        f"{status_header(order,service)}\n\n"
+        f"👤 {data.get('full_name') or ((user.first_name or '')+' '+(user.last_name or '')).strip()}\n"
+        f"📱 {data.get('mobile','')}\n"
+        f"🆔 Telegram: {user.telegram_id}\n"
+        f"💰 قیمت خدمت: {service.price_toman:,} تومان\n"
+        f"📎 مدارک: {len(docs)}\n"
+        f"💳 پرداخت‌ها: {len(payments)}"
+    )
+    await callback.message.edit_text(summary, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📎 ارسال مدارک به من", callback_data=f"adm:docs:{order.id}")],
+        [InlineKeyboardButton(text="💳 رسیدها", callback_data=f"adm:payments:{order.id}")],
+        [InlineKeyboardButton(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order.id}")],
+        [InlineKeyboardButton(text="🟡 در حال انجام", callback_data=f"adm:status:{order.id}:in_progress")],
+        [InlineKeyboardButton(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order.id}:waiting_user")],
+        [InlineKeyboardButton(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order.id}:completed")],
+        [InlineKeyboardButton(text="🔴 رد درخواست", callback_data=f"adm:status:{order.id}:rejected")],
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:orders")],
+    ]))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("adm:docs:"))
+async def admin_order_docs(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    order_id = int(callback.data.rsplit(":",1)[1])
+    async with SessionLocal() as session:
+        docs = (await session.execute(
+            select(Document).where(Document.order_id == order_id).order_by(Document.id)
+        )).scalars().all()
+    if not docs:
+        await callback.answer("مدرکی ثبت نشده است.", show_alert=True)
+        return
+    for doc in docs:
+        await callback.message.answer_photo(doc.telegram_file_id, caption=f"📎 {doc.document_type}")
+    await callback.answer("مدارک ارسال شد.")
+
+
+@router.callback_query(F.data.startswith("adm:payments:"))
+async def admin_order_payments(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        return
+    order_id = int(callback.data.rsplit(":",1)[1])
+    async with SessionLocal() as session:
+        payments = (await session.execute(
+            select(Payment).where(Payment.order_id == order_id).order_by(Payment.id.desc())
+        )).scalars().all()
+    if not payments:
+        await callback.answer("رسیدی ثبت نشده است.", show_alert=True)
+        return
+    for payment in payments:
+        if payment.receipt_file_id:
+            await callback.message.answer_photo(
+                payment.receipt_file_id,
+                caption=f"💳 {payment.amount_toman:,} تومان | وضعیت: {payment.status}"
+            )
+    await callback.answer("رسیدها ارسال شد.")
+
+
 @router.callback_query(F.data == "adm:pending")
 async def pending(callback: CallbackQuery) -> None:
     if callback.from_user.id not in get_settings().admin_id_set:
@@ -495,7 +622,11 @@ async def orders(callback: CallbackQuery) -> None:
         f"{o.public_id} | {STATUS_TEXT.get(o.status, o.status)} | {s.name} | {u.telegram_id}"
         for o, s, u in rows
     )
-    await callback.message.edit_text(text or "درخواستی ثبت نشده است.", reply_markup=admin_menu())
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"{o.public_id} | {STATUS_TEXT.get(o.status,o.status)}", callback_data=f"adm:order:{o.id}")]
+        for o,s,u in rows
+    ] + [[InlineKeyboardButton(text="🔙 بازگشت", callback_data="adm:home")]])
+    await callback.message.edit_text(text or "درخواستی ثبت نشده است.", reply_markup=keyboard)
     await callback.answer()
 
 
