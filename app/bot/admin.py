@@ -369,7 +369,7 @@ async def case_lookup(message: Message, state: FSMContext) -> None:
         )).scalars().all()
     await state.clear()
     await message.answer(
-        build_case_text(order, service, user, data, companions, payments),
+        build_case_text(order, service, user, data, companions, documents, payments),
         reply_markup=order_actions(order.id),
     )
     for doc in documents:
@@ -384,7 +384,7 @@ async def case_lookup(message: Message, state: FSMContext) -> None:
         await message.answer("📎 برای این پرونده تصویری در سیستم ثبت نشده است.")
 
 
-def build_case_text(order: Order, service: Service, user: User, data: dict, companions, payments) -> str:
+def build_case_text(order: Order, service: Service, user: User, data: dict, companions, documents, payments) -> str:
     name = data.get("full_name") or f"{user.first_name or ''} {user.last_name or ''}".strip() or "—"
     mobile = data.get("mobile") or "—"
     lines = [
