@@ -266,11 +266,11 @@ async def set_card_number_save(message: Message, state: FSMContext) -> None:
         return
     value = (message.text or "").replace(" ", "").replace("-", "").strip()
     if not value.isdigit() or len(value) != 16:
-        await message.answer("❌ شماره کارت باید دقیقاً ۱۶ رقم باشد. دوباره وارد کنید:")
+        await message.answer("❌ شماره کارت باید دقیقاً ۱۶ رقم باشد. دوباره وارد کنید:", reply_markup=admin_cancel_menu())
         return
     await state.update_data(card_number=value)
     await state.set_state(AdminForm.set_card_holder)
-    await message.answer("💳 مرحله ۲ از ۲\nنام صاحب کارت را وارد کنید:")
+    await message.answer("💳 مرحله ۲ از ۲\nنام صاحب کارت را وارد کنید:", reply_markup=admin_cancel_menu())
 
 
 @router.message(AdminForm.set_card_holder)
@@ -279,7 +279,7 @@ async def set_card_holder_save(message: Message, state: FSMContext) -> None:
         return
     holder = (message.text or "").strip()
     if len(holder) < 2:
-        await message.answer("❌ نام صاحب کارت معتبر نیست. دوباره وارد کنید:")
+        await message.answer("❌ نام صاحب کارت معتبر نیست. دوباره وارد کنید:", reply_markup=admin_cancel_menu())
         return
     data = await state.get_data()
     async with SessionLocal() as session:
@@ -386,7 +386,7 @@ async def case_lookup(message: Message, state: FSMContext) -> None:
         return
     raw = (message.text or "").strip().lstrip("#").strip()
     if not raw.isdigit():
-        await message.answer("❌ کد پیگیری نامعتبر است. مثال: #10001")
+        await message.answer("❌ کد پیگیری نامعتبر است. مثال: #10001", reply_markup=admin_cancel_menu())
         return
     public_id = f"#{raw}"
     async with SessionLocal() as session:
@@ -397,7 +397,7 @@ async def case_lookup(message: Message, state: FSMContext) -> None:
             .where(Order.public_id == public_id)
         )).one_or_none()
         if not row:
-            await message.answer("❌ پرونده‌ای با این کد پیگیری پیدا نشد. دوباره وارد کنید:")
+            await message.answer("❌ پرونده‌ای با این کد پیگیری پیدا نشد. دوباره وارد کنید:", reply_markup=admin_cancel_menu())
             return
         order, service, user = row
         data = json.loads(order.data_json or "{}")
@@ -499,7 +499,7 @@ async def user_search(message: Message, state: FSMContext) -> None:
         return
     raw = (message.text or "").strip()
     if not raw:
-        await message.answer("❌ عبارت جستجو را وارد کنید.")
+        await message.answer("❌ عبارت جستجو را وارد کنید.", reply_markup=admin_cancel_menu())
         return
     async with SessionLocal() as session:
         user = None
@@ -532,7 +532,7 @@ async def user_search(message: Message, state: FSMContext) -> None:
             if order_match:
                 user = await session.get(User, order_match.user_id)
         if user is None:
-            await message.answer("❌ مشترک پیدا نشد. نام، نام کاربری، شناسه تلگرام یا شماره درخواست را امتحان کنید:")
+            await message.answer("❌ مشترک پیدا نشد. نام، نام کاربری، شناسه تلگرام یا شماره درخواست را امتحان کنید:", reply_markup=admin_cancel_menu())
             return
         orders = (await session.execute(
             select(Order, Service).join(Service, Order.service_id == Service.id)
@@ -609,7 +609,7 @@ async def set_price_from_panel(message: Message, state: FSMContext) -> None:
         return
     raw = (message.text or "").replace(",", "").replace("٬", "").strip()
     if not raw.isdigit() or int(raw) <= 0:
-        await message.answer("❌ مبلغ نامعتبر است. فقط عدد مثبت را ارسال کنید.")
+        await message.answer("❌ مبلغ نامعتبر است. فقط عدد مثبت را ارسال کنید.", reply_markup=admin_cancel_menu())
         return
     data = await state.get_data()
     service_code = data.get("price_service")
@@ -640,7 +640,7 @@ async def set_price(message: Message) -> None:
         return
     price = int(parts[2])
     if price <= 0:
-        await message.answer("❌ مبلغ باید بیشتر از صفر باشد.")
+        await message.answer("❌ مبلغ باید بیشتر از صفر باشد.", reply_markup=admin_cancel_menu())
         return
     async with SessionLocal() as session:
         service = (
@@ -1118,7 +1118,7 @@ async def operator_add_save(message: Message, state: FSMContext) -> None:
         return
     raw = (message.text or "").strip()
     if not raw.isdigit():
-        await message.answer("❌ شناسه باید فقط عدد باشد.")
+        await message.answer("❌ شناسه باید فقط عدد باشد.", reply_markup=admin_cancel_menu())
         return
     telegram_id = int(raw)
     async with SessionLocal() as session:
@@ -1317,7 +1317,7 @@ async def operator_remove_save(message: Message, state: FSMContext) -> None:
         return
     raw = (message.text or "").strip()
     if not raw.isdigit():
-        await message.answer("❌ شناسه نامعتبر است.")
+        await message.answer("❌ شناسه نامعتبر است.", reply_markup=admin_cancel_menu())
         return
     async with SessionLocal() as session:
         op = (await session.execute(select(Operator).where(Operator.telegram_id == int(raw))).scalar_one_or_none()
