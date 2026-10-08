@@ -133,3 +133,18 @@ class Companion(Base):
     full_name: Mapped[str] = mapped_column(String(256))
     mobile: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class Operator(Base):
+    __tablename__ = "operators"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    display_name: Mapped[str | None] = mapped_column(String(128))
+    role: Mapped[str] = mapped_column(String(32), default="operator", index=True)
+    permissions_json: Mapped[str] = mapped_column(Text, default="{}")
+    active: Mapped[bool] = mapped_column(default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
