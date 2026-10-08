@@ -962,11 +962,8 @@ async def support(message: Message, telegram_id: int | None = None, show_direct:
     buttons.append([InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel")])
     if show_direct:
         await message.answer(
-            "📞 پشتیبانی
-
-"
-            "ارتباط مستقیم: @Good_ok_2000
-"
+            "📞 پشتیبانی\n\n"
+            "ارتباط مستقیم: @Good_ok_2000\n"
             "یا برای پیگیری یک درخواست فعال، گزینه زیر را انتخاب کنید.",
             reply_markup=support_menu(True),
         )
