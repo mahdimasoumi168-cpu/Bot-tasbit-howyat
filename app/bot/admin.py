@@ -999,7 +999,7 @@ async def users_panel(callback: CallbackQuery, state: FSMContext) -> None:
 async def user_search(message: Message, state: FSMContext) -> None:
     if not is_admin(message):
         return
-    raw = (message.text or "").strip()
+    raw = normalize_digits_admin((message.text or "").strip())
     if not raw:
         await message.answer("❌ عبارت جستجو را وارد کنید.", reply_markup=admin_cancel_menu())
         return
@@ -1136,7 +1136,7 @@ async def set_price_from_panel(message: Message, state: FSMContext) -> None:
 async def set_price(message: Message) -> None:
     if not is_admin(message):
         return
-    parts = (message.text or "").split()
+    parts = normalize_digits_admin(message.text or "").split()
     if len(parts) != 3 or parts[1] not in {"identity", "khodnevis"} or not parts[2].isdigit():
         await message.answer("برای تغییر قیمت، از بخش «💰 قیمت خدمات» در پنل مدیریت استفاده کنید.")
         return
@@ -1854,7 +1854,7 @@ async def operator_add_start(callback: CallbackQuery, state: FSMContext) -> None
 async def operator_add_save(message: Message, state: FSMContext) -> None:
     if not is_admin(message):
         return
-    raw = (message.text or "").strip()
+    raw = normalize_digits_admin((message.text or "").strip())
     if not raw.isdigit():
         await message.answer("❌ شناسه باید فقط عدد باشد.", reply_markup=admin_cancel_menu())
         return
@@ -2055,15 +2055,14 @@ async def operator_remove_start(callback: CallbackQuery, state: FSMContext) -> N
 async def operator_remove_save(message: Message, state: FSMContext) -> None:
     if not is_admin(message):
         return
-    raw = (message.text or "").strip()
+    raw = normalize_digits_admin((message.text or "").strip())
     if not raw.isdigit():
         await message.answer("❌ شناسه نامعتبر است.", reply_markup=admin_cancel_menu())
         return
     async with SessionLocal() as session:
-        op = (await session.execute(select(Operator).where(Operator.telegram_id == int(raw))).scalar_one_or_none()
-              if False else None)
-        # Keep this query explicit for SQLAlchemy async compatibility.
-        result = await session.execute(select(Operator).where(Operator.telegram_id == int(raw)))
+        result = await session.execute(
+            select(Operator).where(Operator.telegram_id == int(raw))
+        )
         op = result.scalar_one_or_none()
         if op is None:
             await state.clear()
