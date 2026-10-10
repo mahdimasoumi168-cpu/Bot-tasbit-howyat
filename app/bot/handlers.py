@@ -166,6 +166,15 @@ async def apply_wallet_payment(telegram_id: int, order_id: int) -> bool:
             raise ValueError("وضعیت درخواست تغییر کرده است؛ لطفاً درخواست را دوباره بررسی کنید.")
 
         wallet.balance_toman -= amount
+        # ثبت پرداخت کیف پول در جدول پرداخت‌ها نیز لازم است تا وضعیت پرداخت
+        # در پرونده و پنل اپراتور درست نمایش داده شود.
+        session.add(Payment(
+            order_id=order.id,
+            amount_toman=amount,
+            receipt_file_id=None,
+            receipt_type="wallet",
+            status="approved",
+        ))
         session.add(WalletTransaction(
             user_id=user.id,
             amount_toman=-amount,
