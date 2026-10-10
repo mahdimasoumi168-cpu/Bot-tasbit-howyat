@@ -134,9 +134,12 @@ async def show_payment_options(message: Message, state: FSMContext, order_id: in
 
 
 async def apply_wallet_payment(telegram_id: int, order_id: int) -> bool:
+    """Charge a wallet and approve its order exactly once, in one database transaction."""
     async with SessionLocal() as session:
         row = (await session.execute(
-            select(Order, Service, User).join(Service, Order.service_id == Service.id).join(User, Order.user_id == User.id)
+            select(Order, Service, User)
+            .join(Service, Order.service_id == Service.id)
+            .join(User, Order.user_id == User.id)
             .where(Order.id == order_id, User.telegram_id == telegram_id)
         )).one_or_none()
         if not row:
@@ -146,24 +149,42 @@ async def apply_wallet_payment(telegram_id: int, order_id: int) -> bool:
             if order.status == "payment_approved":
                 raise ValueError("پرداخت این درخواست قبلاً انجام شده است.")
             raise ValueError("این درخواست در حال حاضر قابل پرداخت نیست.")
-        amount, discount, code = await order_amount_and_coupon(order_id)
+
+        amount, _discount, code = await order_amount_and_coupon(order_id)
         wallet = await ensure_wallet(session, user.id)
         if wallet.balance_toman < amount:
             return False
+
+        # Conditional update prevents a double click/retry from charging the same order twice.
+        claimed = await session.execute(
+            update(Order)
+            .where(Order.id == order.id, Order.status == "waiting_payment")
+            .values(status="payment_approved")
+        )
+        if claimed.rowcount != 1:
+            await session.rollback()
+            raise ValueError("وضعیت درخواست تغییر کرده است؛ لطفاً درخواست را دوباره بررسی کنید.")
+
         wallet.balance_toman -= amount
         session.add(WalletTransaction(
-            user_id=user.id, amount_toman=-amount, balance_after_toman=wallet.balance_toman,
-            kind="order_payment", description=f"پرداخت {service.name} | {order.public_id}", order_id=order.id
+            user_id=user.id,
+            amount_toman=-amount,
+            balance_after_toman=wallet.balance_toman,
+            kind="order_payment",
+            description=f"پرداخت {service.name} | {order.public_id}",
+            order_id=order.id,
         ))
         if code:
-            coupon = (await session.execute(select(DiscountCode).where(DiscountCode.code == code))).scalar_one_or_none()
-            if coupon and coupon.active and (coupon.max_uses is None or coupon.used_count < coupon.max_uses):
+            coupon = (await session.execute(
+                select(DiscountCode).where(DiscountCode.code == code)
+            )).scalar_one_or_none()
+            if coupon and coupon.active and (
+                coupon.max_uses is None or coupon.used_count < coupon.max_uses
+            ):
                 coupon.used_count += 1
-        order.status = "payment_approved"
         await session.commit()
         await audit_payment_event(telegram_id, "wallet_payment", order.id, amount)
         return True
-
 
 async def audit_payment_event(actor_id: int, action: str, order_id: int, amount: int) -> None:
     async with SessionLocal() as session:
@@ -419,7 +440,7 @@ async def inline_consulate_m(callback: CallbackQuery, state: FSMContext) -> None
     if await state.get_state() != IdentityForm.consulate:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
     await callback.answer(); await state.update_data(consulate="🇦🇫 مشهد"); await state.set_state(IdentityForm.identity_document_type)
-    await callback.message.edit_text("۶/۸\nمدرک شناسایی شما چیست؟", reply_markup=identity_document_type_menu())
+    await safe_step_message(callback, "۶/۸\nمدرک شناسایی شما چیست؟", reply_markup=identity_document_type_menu())
 
 @router.callback_query(F.data == "identity:companion:y")
 async def inline_companion_yes(callback: CallbackQuery, state: FSMContext) -> None:
@@ -1126,8 +1147,8 @@ async def payment_coupon(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "menu:wallet")
 async def wallet_account(callback: CallbackQuery) -> None:
-    balance = await get_wallet_balance(callback.from_user.id)
     await callback.answer()
+    balance = await get_wallet_balance(callback.from_user.id)
     await callback.message.edit_text(
         f"💰 اعتبار شما\n\nموجودی فعلی: {balance:,} تومان",
         reply_markup=wallet_menu(balance),
@@ -1149,7 +1170,7 @@ async def wallet_topup_start(callback: CallbackQuery, state: FSMContext) -> None
 async def wallet_topup_amount(message: Message, state: FSMContext) -> None:
     raw = normalize_digits(message.text or "").replace(",", "").replace("٬", "").strip()
     if not raw.isdigit() or int(raw) <= 20000:
-        await message.answer("❌ مبلغ باید حداقل ۲۰,۰۰۰ تومان باشد.\nمثال: ۵۰,۰۰۰", reply_markup=cancel_menu())
+        await message.answer("❌ مبلغ باید بیشتر از ۲۰,۰۰۰ تومان باشد.\nمثال: ۵۰,۰۰۰", reply_markup=cancel_menu())
         return
     amount = int(raw)
     async with SessionLocal() as session:
@@ -1191,18 +1212,57 @@ async def wallet_topup_receipt(message: Message, state: FSMContext) -> None:
     if not topup_id:
         await message.answer("❌ درخواست افزایش اعتبار پیدا نشد.", reply_markup=cancel_menu())
         return
+
     async with SessionLocal() as session:
         topup = await session.get(WalletTopup, topup_id)
-        user = (await session.execute(select(User).where(User.telegram_id == message.from_user.id))).scalar_one_or_none()
-        if not topup or not user or topup.user_id != user.id or topup.status != "waiting_receipt_review":
-            await message.answer("❌ این درخواست افزایش اعتبار قابل ثبت نیست.", reply_markup=cancel_menu())
+        user = (await session.execute(
+            select(User).where(User.telegram_id == message.from_user.id)
+        )).scalar_one_or_none()
+        if (
+            not topup or not user or topup.user_id != user.id
+            or topup.status != "waiting_receipt_review"
+        ):
+            await message.answer(
+                "❌ این درخواست افزایش اعتبار قابل ثبت نیست.",
+                reply_markup=cancel_menu(),
+            )
             return
         topup.receipt_file_id = message.photo[-1].file_id if message.photo else message.document.file_id
         topup.receipt_type = "photo" if message.photo else "document"
+        amount = topup.amount_toman
         await session.commit()
-    await state.clear()
-    await message.answer("✅ رسید افزایش اعتبار ثبت شد و برای بررسی مدیریت ارسال می‌شود.", reply_markup=await user_main_menu(message.from_user.id))
 
+    await state.clear()
+    notification = (
+        f"🔔 رسید جدید افزایش اعتبار\n"
+        f"🧾 شماره شارژ: #{topup_id}\n"
+        f"👤 مشترک: {user.first_name or ''} {user.last_name or ''}\n"
+        f"🆔 شناسه تلگرام: {user.telegram_id}\n"
+        f"💰 مبلغ: {amount:,} تومان\n"
+        f"📌 وضعیت: در انتظار بررسی"
+    )
+    for admin_id in get_settings().admin_id_set:
+        try:
+            await message.bot.send_message(
+                admin_id,
+                notification,
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text="🔎 بررسی رسید شارژ",
+                        callback_data=f"adm:topup:view:{topup_id}",
+                        style="primary",
+                    )
+                ]]),
+            )
+            await message.copy_to(admin_id)
+        except Exception:
+            # The user's receipt remains saved even if an administrator cannot be reached.
+            continue
+
+    await message.answer(
+        "✅ رسید افزایش اعتبار ثبت شد و برای مدیریت ارسال شد.",
+        reply_markup=await user_main_menu(message.from_user.id),
+    )
 
 @router.message(WalletTopupForm.receipt)
 async def wallet_topup_receipt_invalid(message: Message, state: FSMContext) -> None:
@@ -1211,6 +1271,7 @@ async def wallet_topup_receipt_invalid(message: Message, state: FSMContext) -> N
 
 @router.callback_query(F.data == "wallet:history")
 async def wallet_history(callback: CallbackQuery) -> None:
+    await callback.answer()
     async with SessionLocal() as session:
         user = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not user:
@@ -1223,7 +1284,6 @@ async def wallet_history(callback: CallbackQuery) -> None:
             f"{'➕' if x.amount_toman > 0 else '➖'} {abs(x.amount_toman):,} تومان | {x.description}"
             for x in rows
         )
-    await callback.answer()
     await callback.message.edit_text(text, reply_markup=wallet_menu(await get_wallet_balance(callback.from_user.id)))
 
 
