@@ -269,7 +269,25 @@ async def admin_wallet_adjust_apply(message: Message, state: FSMContext) -> None
                 reply_markup=admin_cancel_menu(),
             )
             return
-        wallet.balance_toman += delta
+        # تغییر موجودی به‌صورت اتمی؛ جلوگیری از تداخل هم‌زمان پرداخت/شارژ
+        # با اصلاح دستی مدیریت و جلوگیری از منفی‌شدن اعتبار.
+        changed = await session.execute(
+            update(Wallet)
+            .where(
+                Wallet.user_id == user.id,
+                Wallet.balance_toman + delta >= 0,
+            )
+            .values(balance_toman=Wallet.balance_toman + delta)
+        )
+        if changed.rowcount != 1:
+            await session.rollback()
+            await message.answer(
+                "❌ موجودی در همین لحظه تغییر کرده یا برای این کاهش کافی نیست. "
+                "موجودی را دوباره بررسی کنید و مجدداً تلاش کنید.",
+                reply_markup=admin_menu(),
+            )
+            return
+        await session.refresh(wallet)
         new_balance = wallet.balance_toman
         session.add(WalletTransaction(
             user_id=user.id,
@@ -1641,7 +1659,14 @@ async def admin_topup_approve(callback: CallbackQuery) -> None:
             await callback.answer("این شارژ قبلاً بررسی شده است؛ اعتبار دوباره افزایش نمی‌یابد.", show_alert=True)
             return
         wallet = await ensure_wallet_admin(session, topup.user_id)
-        wallet.balance_toman += topup.amount_toman
+        # افزایش موجودی به‌صورت اتمی تا تأیید هم‌زمان چند شارژ باعث
+        # از دست رفتن یکی از افزایش‌ها نشود.
+        await session.execute(
+            update(Wallet)
+            .where(Wallet.user_id == topup.user_id)
+            .values(balance_toman=Wallet.balance_toman + topup.amount_toman)
+        )
+        await session.refresh(wallet)
         session.add(WalletTransaction(
             user_id=topup.user_id,
             amount_toman=topup.amount_toman,
