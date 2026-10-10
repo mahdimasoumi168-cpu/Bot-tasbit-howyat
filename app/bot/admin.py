@@ -4,7 +4,7 @@ import re
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 
 from app.bot.handlers import STATUS_TEXT, normalize_digits as normalize_digits_admin
 from app.bot.states import AdminForm
@@ -280,14 +280,14 @@ async def operator_orders(callback: CallbackQuery) -> None:
             select(Order, Service, User)
             .join(Service, Order.service_id == Service.id)
             .join(User, Order.user_id == User.id)
-            .where(Order.status.in_(["payment_approved", "in_progress", "waiting_user"]))
+            .where(Order.status.in_(["payment_approved", "in_progress", "waiting_user", "completed", "rejected"]))
             .order_by(Order.updated_at.desc())
             .limit(30)
         )).all()
     if not rows:
         text = "📋 درخواستی برای رسیدگی وجود ندارد."
     else:
-        text = "📋 درخواست‌های قابل رسیدگی\n\n" + "\n".join(
+        text = "📋 پرونده‌های پرداخت‌شده و قابل پیگیری\n\n" + "\n".join(
             f"{o.public_id} | {STATUS_TEXT.get(o.status, "نامشخص")} | {s.name}"
             for o,s,u in rows
         )
@@ -1255,6 +1255,20 @@ async def admin_topup_approve(callback: CallbackQuery) -> None:
         topup = await session.get(WalletTopup, topup_id)
         if not topup or topup.status != "waiting_receipt_review":
             await callback.answer("این شارژ قبلاً بررسی شده است.", show_alert=True); return
+        # Claim the top-up with a conditional update before touching the wallet.
+        # Concurrent/repeated button clicks can therefore credit the balance only once.
+        claimed = await session.execute(
+            update(WalletTopup)
+            .where(
+                WalletTopup.id == topup_id,
+                WalletTopup.status == "waiting_receipt_review",
+            )
+            .values(status="approved")
+        )
+        if claimed.rowcount != 1:
+            await session.rollback()
+            await callback.answer("این شارژ قبلاً بررسی شده است.", show_alert=True)
+            return
         wallet = await ensure_wallet_admin(session, topup.user_id)
         wallet.balance_toman += topup.amount_toman
         session.add(WalletTransaction(
@@ -1262,7 +1276,6 @@ async def admin_topup_approve(callback: CallbackQuery) -> None:
             balance_after_toman=wallet.balance_toman, kind="topup",
             description=f"افزایش اعتبار #{topup.id}", topup_id=topup.id
         ))
-        topup.status = "approved"
         user = await session.get(User, topup.user_id)
         new_balance = wallet.balance_toman
         await session.commit()
