@@ -1269,7 +1269,7 @@ async def pending(callback: CallbackQuery) -> None:
             f"👤 مشترک: {user.first_name or ''} {user.last_name or ''}\n"
             f"📱 شناسه تلگرام: {user.telegram_id}\n"
             f"💰 مبلغ: {payment.amount_toman:,} تومان",
-            reply_markup=order_actions(order.id),
+            reply_markup=order_actions(order.id, order_status=order.status),
         )
         if payment.receipt_file_id:
             await send_payment_receipt(callback.bot, callback.from_user.id, payment, f"🧾 رسید {order.public_id}")
