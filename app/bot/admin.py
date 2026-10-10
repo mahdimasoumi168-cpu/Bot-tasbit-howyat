@@ -555,6 +555,9 @@ async def operator_order_detail(callback: CallbackQuery) -> None:
         f"💰 مبلغ: {(order.price_snapshot_toman or service.price_toman):,} تومان\n"
         f"💳 وضعیت پرداخت: {PAYMENT_STATUS_TEXT.get(payment.status, payment.status) if payment else 'ثبت نشده'}\n"
         f"📎 تعداد مدارک: {len(docs)}\n"
+        f"🟡 مدارک در انتظار بررسی: {sum(1 for d in docs if getattr(d, 'review_status', 'pending') == 'pending')}\n"
+        f"✅ مدارک تأییدشده: {sum(1 for d in docs if getattr(d, 'review_status', 'pending') == 'approved')}\n"
+        f"❌ مدارک ردشده: {sum(1 for d in docs if getattr(d, 'review_status', 'pending') == 'rejected')}\n"
         f"👥 تعداد همراهان: {len(companions)}\n"
     )
     for key, label in (("birth_date_gregorian", "تاریخ تولد"), ("return_date_gregorian", "تاریخ بازگشت"), ("consulate", "کنسولگری"), ("document_type", "نوع مدرک"), ("own_mobile", "موبایل به نام شخص")):
@@ -967,7 +970,15 @@ def build_case_text(order: Order, service: Service, user: User, data: dict, comp
     else:
         lines.append("• پرداختی ثبت نشده است")
     lines.append("")
-    lines.append("📎 مدارک: " + (", ".join(d.document_type for d in documents) if documents else "ندارد"))
+    lines.append("")
+    lines.append("📎 وضعیت بررسی مدارک")
+    if documents:
+        lines.extend(
+            f"• {d.document_type}: {DOCUMENT_STATUS_TEXT.get(getattr(d, 'review_status', 'pending'), 'نامشخص')}"
+            for d in documents
+        )
+    else:
+        lines.append("• مدرکی ثبت نشده است")
     return "\n".join(lines)
 
 
@@ -1225,7 +1236,7 @@ async def admin_order_detail(callback: CallbackQuery) -> None:
         f"📱 {data.get('mobile','')}\n"
         f"🆔 شناسه کاربری: {user.telegram_id}\n"
         f"💰 قیمت ثبت‌شده: {(order.price_snapshot_toman or service.price_toman):,} تومان\n"
-        f"📎 مدارک: {len(docs)}\n"
+        f"📎 مدارک: {len(docs)} (در انتظار: {sum(1 for d in docs if getattr(d, 'review_status', 'pending') == 'pending')})\n"
         f"💳 پرداخت‌ها: {len(payments)}"
     )
     order_buttons = [
