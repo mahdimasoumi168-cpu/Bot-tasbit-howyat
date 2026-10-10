@@ -30,8 +30,18 @@ async def main() -> None:
         raw_db_path = settings.database_url.split(":///", 1)[-1]
         db_path = Path(raw_db_path)
         fsm_path = db_path.with_name("fsm.db")
+        persistent_root = Path("/data").resolve()
+        resolved_db_path = db_path.resolve()
+        try:
+            resolved_db_path.relative_to(persistent_root)
+        except ValueError:
+            logging.getLogger(__name__).warning(
+                "SQLite DATABASE_URL points outside Railway's /data persistent volume; "
+                "existing database path was preserved to avoid silently switching databases."
+            )
     else:
-        fsm_path = Path("data/fsm.db")
+        # Form progress must survive restarts even when the business database is PostgreSQL.
+        fsm_path = Path("/data/fsm.db")
 
     storage = SQLiteFSMStorage(str(fsm_path))
     dp = Dispatcher(storage=storage, events_isolation=SimpleEventIsolation())
