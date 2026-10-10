@@ -338,6 +338,7 @@ async def operator_order_detail(callback: CallbackQuery) -> None:
     except ValueError:
         await callback.answer("شماره پرونده نامعتبر است.", show_alert=True)
         return
+    await callback.answer()
     async with SessionLocal() as session:
         row = (await session.execute(
             select(Order, Service, User)
@@ -388,7 +389,8 @@ async def operator_order_detail(callback: CallbackQuery) -> None:
         buttons.append([ui_button(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order.id}")])
     buttons.append([ui_button(text="🔙 بازگشت", callback_data="op:orders")])
     await callback.message.edit_text(summary, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
-    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("op:docs:"))
 async def operator_order_docs(callback: CallbackQuery) -> None:
     operator = await get_operator(callback.from_user.id)
@@ -400,6 +402,7 @@ async def operator_order_docs(callback: CallbackQuery) -> None:
     except ValueError:
         await callback.answer("شماره پرونده نامعتبر است.", show_alert=True)
         return
+    await callback.answer("در حال دریافت مدارک…")
     async with SessionLocal() as session:
         order = await session.get(Order, order_id)
         docs = (await session.execute(
@@ -411,7 +414,6 @@ async def operator_order_docs(callback: CallbackQuery) -> None:
     if not docs:
         await callback.answer("برای این پرونده مدرکی ثبت نشده است.", show_alert=True)
         return
-    await callback.answer("مدارک در پیام‌های جداگانه ارسال می‌شوند.")
     for doc in docs:
         try:
             await callback.message.answer_photo(doc.telegram_file_id, caption=f"📎 {doc.document_type} | {order.public_id}")
@@ -430,6 +432,7 @@ async def operator_order_receipt(callback: CallbackQuery) -> None:
     except ValueError:
         await callback.answer("شماره پرونده نامعتبر است.", show_alert=True)
         return
+    await callback.answer("در حال دریافت رسید…")
     async with SessionLocal() as session:
         payment = (await session.execute(
             select(Payment).where(Payment.order_id == order_id).order_by(Payment.id.desc())
@@ -439,7 +442,6 @@ async def operator_order_receipt(callback: CallbackQuery) -> None:
         await callback.answer("رسید پرداخت پیدا نشد.", show_alert=True)
         return
     await send_payment_receipt(callback.bot, callback.from_user.id, payment, f"🧾 رسید پرداخت {order.public_id}")
-    await callback.answer("رسید ارسال شد.")
 
 
 @router.callback_query(F.data == "op:pending")
