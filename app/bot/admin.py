@@ -304,23 +304,111 @@ async def operator_order_detail(callback: CallbackQuery) -> None:
     if operator is None or not can_operator(operator, "view_orders"):
         await callback.answer("دسترسی ندارید.", show_alert=True)
         return
-    order_id = int(callback.data.rsplit(":",1)[1])
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except ValueError:
+        await callback.answer("شماره پرونده نامعتبر است.", show_alert=True)
+        return
     async with SessionLocal() as session:
         row = (await session.execute(
-            select(Order, Service, User).join(Service, Order.service_id==Service.id).join(User, Order.user_id==User.id).where(Order.id==order_id)
+            select(Order, Service, User)
+            .join(Service, Service.id == Order.service_id)
+            .join(User, User.id == Order.user_id)
+            .where(Order.id == order_id)
         )).one_or_none()
-    if not row:
-        await callback.answer("درخواست پیدا نشد.", show_alert=True)
-        return
-    order, service, user = row
-    await callback.message.edit_text(
-        f"{status_header(order,service)}\n"
-        f"👤 {user.first_name or ''} {user.last_name or ''}\n"
-        f"🆔 {user.telegram_id}\n"
-        f"💰 مبلغ ثبت‌شده: {(order.price_snapshot_toman or service.price_toman):,} تومان",
-        reply_markup=order_actions(order.id, operator=operator),
+        if not row:
+            await callback.answer("درخواست پیدا نشد.", show_alert=True)
+            return
+        order, service, user = row
+        data = json.loads(order.data_json or "{}")
+        docs = (await session.execute(
+            select(Document).where(Document.order_id == order.id).order_by(Document.id)
+        )).scalars().all()
+        companions = (await session.execute(
+            select(Companion).where(Companion.order_id == order.id).order_by(Companion.id)
+        )).scalars().all()
+        payment = (await session.execute(
+            select(Payment).where(Payment.order_id == order.id).order_by(Payment.id.desc())
+        )).scalars().first()
+    summary = (
+        f"{status_header(order, service)}\\n"
+        f"👤 نام پرونده: {data.get('full_name') or ((user.first_name or '') + ' ' + (user.last_name or '')).strip() or '—'}\\n"
+        f"📱 موبایل: {data.get('mobile') or '—'}\\n"
+        f"🆔 شناسه عددی تلگرام: {user.telegram_id}\\n"
+        f"🔗 نام کاربری: @{user.username if user.username else 'ندارد'}\\n"
+        f"💰 مبلغ: {(order.price_snapshot_toman or service.price_toman):,} تومان\\n"
+        f"💳 وضعیت پرداخت: {PAYMENT_STATUS_TEXT.get(payment.status, payment.status) if payment else 'ثبت نشده'}\\n"
+        f"📎 تعداد مدارک: {len(docs)}\\n"
+        f"👥 تعداد همراهان: {len(companions)}\\n"
     )
+    for key, label in (("birth_date_gregorian", "تاریخ تولد"), ("return_date_gregorian", "تاریخ بازگشت"), ("consulate", "کنسولگری"), ("document_type", "نوع مدرک"), ("own_mobile", "موبایل به نام شخص")):
+        if data.get(key):
+            summary += f"{label}: {data[key]}\\n"
+    if companions:
+        summary += "\\n👥 اطلاعات همراهان:\\n" + "\\n".join(f"• {x.full_name} — {x.mobile}" for x in companions)
+    buttons = [[ui_button(text="📎 مشاهده مدارک پرونده", callback_data=f"op:docs:{order.id}")]]
+    if payment and payment.receipt_file_id:
+        buttons.append([ui_button(text="🧾 مشاهده رسید پرداخت", callback_data=f"op:receipt:{order.id}")])
+    buttons.extend([
+        [ui_button(text="🟡 در حال انجام", callback_data=f"adm:status:{order.id}:in_progress")],
+        [ui_button(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order.id}:waiting_user")],
+        [ui_button(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order.id}:completed")],
+        [ui_button(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order.id}")],
+        [ui_button(text="🔙 بازگشت", callback_data="op:orders")],
+    ])
+    await callback.message.edit_text(summary, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
+@router.callback_query(F.data.startswith("op:docs:"))
+async def operator_order_docs(callback: CallbackQuery) -> None:
+    operator = await get_operator(callback.from_user.id)
+    if operator is None or not can_operator(operator, "view_orders"):
+        await callback.answer("دسترسی مشاهده مدارک را ندارید.", show_alert=True)
+        return
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except ValueError:
+        await callback.answer("شماره پرونده نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        order = await session.get(Order, order_id)
+        docs = (await session.execute(
+            select(Document).where(Document.order_id == order_id).order_by(Document.id)
+        )).scalars().all()
+    if not order or order.status not in {"payment_approved", "in_progress", "waiting_user", "completed", "rejected"}:
+        await callback.answer("پرونده پرداخت‌شده‌ای برای مشاهده مدارک پیدا نشد.", show_alert=True)
+        return
+    if not docs:
+        await callback.answer("برای این پرونده مدرکی ثبت نشده است.", show_alert=True)
+        return
+    await callback.answer("مدارک در پیام‌های جداگانه ارسال می‌شوند.")
+    for doc in docs:
+        try:
+            await callback.message.answer_photo(doc.telegram_file_id, caption=f"📎 {doc.document_type} | {order.public_id}")
+        except Exception:
+            await callback.message.answer(f"⚠️ مدرک «{doc.document_type}» قابل نمایش نیست.")
+
+
+@router.callback_query(F.data.startswith("op:receipt:"))
+async def operator_order_receipt(callback: CallbackQuery) -> None:
+    operator = await get_operator(callback.from_user.id)
+    if operator is None or not can_operator(operator, "view_orders"):
+        await callback.answer("دسترسی مشاهده رسید را ندارید.", show_alert=True)
+        return
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except ValueError:
+        await callback.answer("شماره پرونده نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        payment = (await session.execute(
+            select(Payment).where(Payment.order_id == order_id).order_by(Payment.id.desc())
+        )).scalars().first()
+        order = await session.get(Order, order_id)
+    if not order or not payment or not payment.receipt_file_id:
+        await callback.answer("رسید پرداخت پیدا نشد.", show_alert=True)
+        return
+    await send_payment_receipt(callback.bot, callback.from_user.id, payment, f"🧾 رسید پرداخت {order.public_id}")
+    await callback.answer("رسید ارسال شد.")
 
 
 @router.callback_query(F.data == "op:pending")
