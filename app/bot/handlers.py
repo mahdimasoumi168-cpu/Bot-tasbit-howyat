@@ -170,7 +170,21 @@ async def apply_wallet_payment(telegram_id: int, order_id: int) -> bool:
             await session.rollback()
             raise ValueError("وضعیت درخواست تغییر کرده است؛ لطفاً درخواست را دوباره بررسی کنید.")
 
-        wallet.balance_toman -= amount
+        # کسر اعتبار به‌صورت شرطی و اتمی؛ جلوگیری از خرج‌کردن هم‌زمان
+        # یک موجودی برای چند درخواست و منفی‌شدن/به‌هم‌ریختن حساب.
+        debit = await session.execute(
+            update(Wallet)
+            .where(
+                Wallet.user_id == user.id,
+                Wallet.balance_toman >= amount,
+            )
+            .values(balance_toman=Wallet.balance_toman - amount)
+        )
+        if debit.rowcount != 1:
+            await session.rollback()
+            return False
+        await session.refresh(wallet)
+
         # ثبت پرداخت کیف پول در جدول پرداخت‌ها نیز لازم است تا وضعیت پرداخت
         # در پرونده و پنل اپراتور درست نمایش داده شود.
         session.add(Payment(
