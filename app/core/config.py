@@ -6,7 +6,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     bot_token: str = Field(default="", validation_alias="BOT_TOKEN")
     database_url: str = Field(
-        default="sqlite+aiosqlite:///./data/bot.db",
+        # Railway's persistent volume is mounted at /data. Keep the fallback DB there
+        # so a missing DATABASE_URL does not silently put production data on ephemeral disk.
+        default="sqlite+aiosqlite:////data/bot.db",
         validation_alias="DATABASE_URL",
     )
     admin_ids: str = Field(default="", validation_alias="ADMIN_IDS")
