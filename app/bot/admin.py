@@ -4,7 +4,7 @@ import re
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select, update
 
 from app.bot.handlers import STATUS_TEXT, normalize_digits as normalize_digits_admin
 from app.bot.states import AdminForm
@@ -845,7 +845,7 @@ async def case_lookup(message: Message, state: FSMContext) -> None:
         operator = await get_operator(message.from_user.id)
         if operator is None or not can_operator(operator, "view_orders"):
             return
-    raw = (message.text or "").strip().lstrip("#").strip()
+    raw = normalize_digits_admin((message.text or "").strip()).lstrip("#").strip()
     if not raw.isdigit():
         await message.answer("❌ کد پیگیری نامعتبر است. مثال: #10001", reply_markup=admin_cancel_menu())
         return
@@ -1077,7 +1077,7 @@ async def set_price_start(callback: CallbackQuery, state: FSMContext) -> None:
 async def set_price_from_panel(message: Message, state: FSMContext) -> None:
     if not is_admin(message):
         return
-    raw = (message.text or "").replace(",", "").replace("٬", "").strip()
+    raw = normalize_digits_admin((message.text or "").replace(",", "").replace("٬", "").strip())
     if not raw.isdigit() or int(raw) <= 0:
         await message.answer("❌ مبلغ نامعتبر است. فقط عدد مثبت را ارسال کنید.", reply_markup=admin_cancel_menu())
         return
@@ -1128,24 +1128,33 @@ async def set_price(message: Message) -> None:
 @router.callback_query(F.data == "adm:stats")
 async def admin_stats(callback: CallbackQuery) -> None:
     if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
         return
+    # پاسخ سریع به کلیک و استفاده از تجمیع SQL به‌جای بارگذاری تمام رکوردها؛
+    # با بزرگ‌شدن پایگاه‌داده، گزارش مدیریت کند نمی‌شود.
+    await callback.answer()
     async with SessionLocal() as session:
-        total = (await session.execute(select(Order))).scalars().all()
-        counts = {}
-        for order in total:
-            counts[order.status] = counts.get(order.status, 0) + 1
-        approved = (await session.execute(
-            select(Payment).where(Payment.status == "approved")
-        )).scalars().all()
-        revenue = sum(p.amount_toman for p in approved)
-        users_count = len((await session.execute(select(User))).scalars().all())
+        status_rows = (await session.execute(
+            select(Order.status, func.count(Order.id)).group_by(Order.status)
+        )).all()
+        counts = {status: int(count) for status, count in status_rows}
+        orders_count = sum(counts.values())
+        approved_count, revenue = (await session.execute(
+            select(
+                func.count(Payment.id),
+                func.coalesce(func.sum(Payment.amount_toman), 0),
+            ).where(Payment.status == "approved")
+        )).one()
+        users_count = int((await session.execute(
+            select(func.count(User.id))
+        )).scalar_one())
     lines = [
         "📊 گزارش کلی کمک‌یار مهاجر",
         "",
         f"👥 مشترکان: {users_count}",
-        f"📋 کل درخواست‌ها: {len(total)}",
-        f"🔵 رسیدهای تأییدشده: {len(approved)}",
-        f"💰 مبلغ پرداخت‌های تأییدشده: {revenue:,} تومان",
+        f"📋 کل درخواست‌ها: {orders_count}",
+        f"🔵 پرداخت‌های تأییدشده: {int(approved_count)}",
+        f"💰 مبلغ پرداخت‌های تأییدشده: {int(revenue):,} تومان",
         "",
     ]
     for key, label in [
@@ -1164,7 +1173,6 @@ async def admin_stats(callback: CallbackQuery) -> None:
             [ui_button(text="🔙 بازگشت", callback_data="adm:home")]
         ])
     )
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("adm:order:"))
