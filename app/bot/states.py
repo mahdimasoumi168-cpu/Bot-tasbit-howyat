@@ -42,6 +42,8 @@ class AdminForm(StatesGroup):
     operator_remove = State()
     discount_code = State()
     discount_value = State()
+    wallet_adjust_user = State()
+    wallet_adjust_amount = State()
 
 
 class RetryReceiptForm(StatesGroup):
