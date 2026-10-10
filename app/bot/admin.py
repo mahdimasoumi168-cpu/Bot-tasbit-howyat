@@ -2152,20 +2152,43 @@ async def operator_status_change(callback: CallbackQuery) -> None:
             return
         order.status = status
         user = await session.get(User, order.user_id)
+        latest_payment = (await session.execute(
+            select(Payment).where(Payment.order_id == order_id).order_by(Payment.id.desc())
+        )).scalars().first()
         await session.commit()
     await audit(callback.from_user.id, "status_changed", order_id, {"status": status})
     labels = {"in_progress":"🟡 در حال انجام","waiting_user":"⏳ منتظر مشترک","completed":"✅ تکمیل شده","rejected":"🔴 رد شده"}
     await callback.answer("وضعیت تغییر کرد.")
-    refreshed_operator = None if is_main else operator
+    # همه گزینه‌های پرونده بعد از تغییر وضعیت باقی می‌مانند؛ از جمله مدارک،
+    # رسید پرداخت، پیام به مشترک و تغییر وضعیت‌های بعدی.
+    rows = []
+    if is_main:
+        rows.append([ui_button(text="📎 مشاهده مدارک پرونده", callback_data=f"adm:docs:{order_id}")])
+        rows.append([ui_button(text="💳 مشاهده رسیدها", callback_data=f"adm:payments:{order_id}")])
+        rows.append([ui_button(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order_id}")])
+        if status in {"payment_approved", "in_progress", "waiting_user"}:
+            rows.extend([
+                [ui_button(text="🟡 در حال انجام", callback_data=f"adm:status:{order_id}:in_progress")],
+                [ui_button(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order_id}:waiting_user")],
+                [ui_button(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order_id}:completed")],
+                [ui_button(text="🔴 رد درخواست", callback_data=f"adm:status:{order_id}:rejected")],
+            ])
+        rows.append([ui_button(text="🔙 بازگشت به درخواست‌ها", callback_data="adm:orders")])
+    else:
+        rows.append([ui_button(text="📎 مشاهده مدارک پرونده", callback_data=f"op:docs:{order_id}")])
+        if latest_payment and latest_payment.receipt_file_id:
+            rows.append([ui_button(text="🧾 مشاهده رسید پرداخت", callback_data=f"op:receipt:{order_id}")])
+        if can_operator(operator, "message_user"):
+            rows.append([ui_button(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order_id}")])
+        if can_operator(operator, "set_status") and status in {"payment_approved", "in_progress", "waiting_user"}:
+            rows.extend([
+                [ui_button(text="🟡 در حال انجام", callback_data=f"adm:status:{order_id}:in_progress")],
+                [ui_button(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order_id}:waiting_user")],
+                [ui_button(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order_id}:completed")],
+            ])
+        rows.append([ui_button(text="🔙 بازگشت به درخواست‌ها", callback_data="op:orders")])
     try:
-        await callback.message.edit_reply_markup(
-            reply_markup=order_actions(
-                order_id,
-                operator=refreshed_operator,
-                payment_review=False,
-                order_status=status,
-            )
-        )
+        await callback.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
     except Exception:
         pass
     completion_note = (
