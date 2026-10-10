@@ -1080,7 +1080,8 @@ async def pay_wallet(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.answer("پرداخت از اعتبار انجام شد.")
     await callback.message.edit_text("✅ پرداخت با اعتبار با موفقیت انجام شد.\n\nمبلغ فقط یک‌بار از اعتبار شما کسر شد و پرونده برای اپراتورهای مجاز ارسال می‌شود.", reply_markup=await user_main_menu(callback.from_user.id))
-    # پرداخت کیف پول در تراکنش apply_wallet_payment تأیید شده است؛ حالا پرونده را ارسال می‌کنیم.
+    # import محلی از وابستگی دوری هنگام بارگذاری ماژول‌ها جلوگیری می‌کند.
+    from app.bot.admin import send_case_to_operator
     await send_case_to_operator(callback.bot, order_id)
     for admin_id in get_settings().admin_id_set:
         try:
