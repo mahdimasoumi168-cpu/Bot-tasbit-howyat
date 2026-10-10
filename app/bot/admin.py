@@ -437,6 +437,7 @@ async def operator_button(message: Message, state: FSMContext) -> None:
     await state.clear()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [ui_button(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
+        [ui_button(text="🔎 جست‌وجوی پرونده با کد پیگیری", callback_data="op:case")],
         [ui_button(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
         [ui_button(text="🔙 بازگشت", callback_data="op:back")],
     ])
@@ -450,6 +451,7 @@ async def operator_back(callback: CallbackQuery) -> None:
         return
     await callback.message.edit_text("👨‍💼 پنل اپراتور", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [ui_button(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
+        [ui_button(text="🔎 جست‌وجوی پرونده با کد پیگیری", callback_data="op:case")],
         [ui_button(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
     ]))
     await callback.answer()
@@ -682,6 +684,7 @@ async def inline_operator_open(callback: CallbackQuery, state: FSMContext) -> No
     await callback.answer()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [ui_button(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
+        [ui_button(text="🔎 جست‌وجوی پرونده با کد پیگیری", callback_data="op:case")],
         [ui_button(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
         [ui_button(text="🔙 بازگشت به منوی اصلی", callback_data="op:back")],
     ])
@@ -819,9 +822,12 @@ async def toggle_service(callback: CallbackQuery) -> None:
     await services_panel(callback)
 
 
-@router.callback_query(F.data == "adm:case")
+@router.callback_query(F.data.in_({"adm:case", "op:case"}))
 async def case_lookup_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if callback.from_user.id not in get_settings().admin_id_set:
+    is_main = callback.from_user.id in get_settings().admin_id_set
+    operator = await get_operator(callback.from_user.id)
+    if not is_main and (operator is None or not can_operator(operator, "view_orders")):
+        await callback.answer("دسترسی مشاهده پرونده ندارید.", show_alert=True)
         return
     await state.clear()
     await state.set_state(AdminForm.case_lookup)
@@ -836,7 +842,9 @@ async def case_lookup_start(callback: CallbackQuery, state: FSMContext) -> None:
 @router.message(AdminForm.case_lookup)
 async def case_lookup(message: Message, state: FSMContext) -> None:
     if not is_admin(message):
-        return
+        operator = await get_operator(message.from_user.id)
+        if operator is None or not can_operator(operator, "view_orders"):
+            return
     raw = (message.text or "").strip().lstrip("#").strip()
     if not raw.isdigit():
         await message.answer("❌ کد پیگیری نامعتبر است. مثال: #10001", reply_markup=admin_cancel_menu())
@@ -1984,4 +1992,13 @@ async def operator_status_change(callback: CallbackQuery) -> None:
     labels = {"in_progress":"🟡 در حال انجام","waiting_user":"⏳ منتظر مشترک","completed":"✅ تکمیل شده","rejected":"🔴 رد شده"}
     await callback.answer("وضعیت تغییر کرد.")
     await callback.message.edit_reply_markup(reply_markup=None)
-    await callback.bot.send_message(user.telegram_id, f"🔔 وضعیت درخواست {order.public_id} تغییر کرد.\n\nوضعیت جدید: {labels[status]}")
+    completion_note = (
+        f"\n\n🔖 کد پیگیری نهایی شما: {order.public_id}\n"
+        "این کد را برای پیگیری‌های بعدی نگه دارید."
+        if status == "completed" else ""
+    )
+    await callback.bot.send_message(
+        user.telegram_id,
+        f"🔔 وضعیت درخواست {order.public_id} تغییر کرد.\n\n"
+        f"وضعیت جدید: {labels[status]}{completion_note}",
+    )
