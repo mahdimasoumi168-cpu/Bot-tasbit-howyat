@@ -269,33 +269,62 @@ async def operator_back(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.callback_query(F.data == "op:orders")
-async def operator_orders(callback: CallbackQuery) -> None:
+async def _show_operator_orders(callback: CallbackQuery, status_filter: str = "active") -> None:
     operator = await get_operator(callback.from_user.id)
     if operator is None or not can_operator(operator, "view_orders"):
         await callback.answer("دسترسی مشاهده درخواست‌ها را ندارید.", show_alert=True)
         return
+    filters = {
+        "active": (["payment_approved", "in_progress", "waiting_user"], "📋 درخواست‌های فعال"),
+        "completed": (["completed"], "✅ درخواست‌های تکمیل‌شده"),
+        "rejected": (["rejected"], "❌ درخواست‌های ردشده"),
+        "review": (["waiting_receipt_review"], "🧾 درخواست‌های در انتظار بررسی رسید"),
+    }
+    statuses, heading = filters.get(status_filter, filters["active"])
+    await callback.answer()
     async with SessionLocal() as session:
         rows = (await session.execute(
             select(Order, Service, User)
             .join(Service, Order.service_id == Service.id)
             .join(User, Order.user_id == User.id)
-            .where(Order.status.in_(["payment_approved", "in_progress", "waiting_user", "completed", "rejected"]))
+            .where(Order.status.in_(statuses))
             .order_by(Order.updated_at.desc())
             .limit(30)
         )).all()
-    if not rows:
-        text = "📋 درخواستی برای رسیدگی وجود ندارد."
-    else:
-        text = "📋 پرونده‌های پرداخت‌شده و قابل پیگیری\n\n" + "\n".join(
-            f"{o.public_id} | {STATUS_TEXT.get(o.status, "نامشخص")} | {s.name}"
-            for o,s,u in rows
+    text = heading + "\n\n"
+    if rows:
+        text += "\n".join(
+            f"{o.public_id} | {STATUS_TEXT.get(o.status, 'نامشخص')} | {s.name}"
+            for o, s, _u in rows
         )
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [ui_button(text=o.public_id, callback_data=f"op:order:{o.id}")]
-        for o,s,u in rows
-    ] + [[ui_button(text="🔙 بازگشت", callback_data="op:back")]]))
-    await callback.answer()
+    else:
+        text += "پرونده‌ای در این بخش وجود ندارد."
+    buttons = [
+        [ui_button(text=f"{o.public_id} | {STATUS_TEXT.get(o.status, 'نامشخص')}", callback_data=f"op:order:{o.id}")]
+        for o, _s, _u in rows
+    ]
+    buttons.extend([
+        [ui_button(text="🟡 درخواست‌های فعال", callback_data="op:orders:active"),
+         ui_button(text="🧾 در انتظار رسید", callback_data="op:orders:review")],
+        [ui_button(text="✅ تکمیل‌شده‌ها", callback_data="op:orders:completed"),
+         ui_button(text="❌ ردشده‌ها", callback_data="op:orders:rejected")],
+        [ui_button(text="🔙 بازگشت به پنل", callback_data="op:back")],
+    ])
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+@router.callback_query(F.data == "op:orders")
+async def operator_orders(callback: CallbackQuery) -> None:
+    await _show_operator_orders(callback, "active")
+
+
+@router.callback_query(F.data.startswith("op:orders:"))
+async def operator_orders_filter(callback: CallbackQuery) -> None:
+    status_filter = callback.data.rsplit(":", 1)[1]
+    if status_filter not in {"active", "completed", "rejected", "review"}:
+        await callback.answer("فیلتر درخواست نامعتبر است.", show_alert=True)
+        return
+    await _show_operator_orders(callback, status_filter)
 
 
 @router.callback_query(F.data.startswith("op:order:"))
@@ -425,7 +454,7 @@ async def operator_pending(callback: CallbackQuery) -> None:
             .join(Order,Payment.order_id==Order.id)
             .join(Service,Order.service_id==Service.id)
             .join(User,Order.user_id==User.id)
-            .where(Payment.status=="pending")
+            .where(Payment.status == "pending", Order.status == "waiting_receipt_review")
             .order_by(Payment.id.desc()).limit(20)
         )).all()
     if not rows:
@@ -1165,38 +1194,52 @@ async def approve(callback: CallbackQuery) -> None:
     if not is_main and (operator is None or not can_operator(operator, "approve_payment")):
         await callback.answer("دسترسی تأیید پرداخت ندارید.", show_alert=True)
         return
-    order_id = int(callback.data.rsplit(":", 1)[1])
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("شماره درخواست نامعتبر است.", show_alert=True)
+        return
     async with SessionLocal() as session:
         order = await session.get(Order, order_id)
-        payment = (
-            await session.execute(
-                select(Payment)
-                .where(Payment.order_id == order_id, Payment.status == "pending")
-                .order_by(Payment.id.desc())
-            )
-        ).scalars().first()
+        payment = (await session.execute(
+            select(Payment).where(Payment.order_id == order_id, Payment.status == "pending")
+            .order_by(Payment.id.desc())
+        )).scalars().first()
         if not order or not payment or order.status != "waiting_receipt_review":
             await callback.answer("این رسید دیگر در انتظار بررسی نیست.", show_alert=True)
             return
-        payment.status = "approved"
+        # هر دو وضعیت را به‌صورت شرطی تغییر می‌دهیم تا دوبارکلیک/درخواست هم‌زمان
+        # باعث تأیید تکراری یا ارسال زودهنگام پرونده نشود.
+        order_claim = await session.execute(
+            update(Order).where(Order.id == order_id, Order.status == "waiting_receipt_review")
+            .values(status="payment_approved")
+        )
+        payment_claim = await session.execute(
+            update(Payment).where(Payment.id == payment.id, Payment.status == "pending")
+            .values(status="approved")
+        )
+        if order_claim.rowcount != 1 or payment_claim.rowcount != 1:
+            await session.rollback()
+            await callback.answer("این رسید هم‌زمان بررسی شده است؛ فهرست را تازه کنید.", show_alert=True)
+            return
         payload = json.loads(order.data_json or "{}")
         code = payload.get("discount_code")
         if code:
             coupon = (await session.execute(select(DiscountCode).where(DiscountCode.code == code))).scalar_one_or_none()
-            if coupon and coupon.active and (coupon.max_uses is None or coupon.used_count < coupon.max_uses):
+            if coupon and coupon.active and (not coupon.expires_at or coupon.expires_at > __import__("datetime").datetime.now()) and (coupon.max_uses is None or coupon.used_count < coupon.max_uses):
                 coupon.used_count += 1
-        order.status = "payment_approved"
-        ticket = (
-            await session.execute(select(Ticket).where(Ticket.order_id == order_id))
-        ).scalar_one_or_none()
+        ticket = (await session.execute(select(Ticket).where(Ticket.order_id == order_id))).scalar_one_or_none()
         if ticket is None:
             session.add(Ticket(order_id=order_id, status="open"))
         await session.commit()
         user = await session.get(User, order.user_id)
     await callback.answer("پرداخت تأیید شد.")
-    await callback.message.edit_reply_markup(reply_markup=None)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
     await audit(callback.from_user.id, "payment_approved", order_id, {"payment_id": payment.id})
-    await callback.message.bot.send_message(
+    await callback.bot.send_message(
         user.telegram_id,
         f"✅ پرداخت درخواست {order.public_id} تأیید شد.\nدرخواست شما وارد مرحله انجام شد.",
     )
@@ -1210,32 +1253,44 @@ async def reject(callback: CallbackQuery) -> None:
     if not is_main and (operator is None or not can_operator(operator, "reject_payment")):
         await callback.answer("دسترسی رد پرداخت ندارید.", show_alert=True)
         return
-    order_id = int(callback.data.rsplit(":", 1)[1])
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("شماره درخواست نامعتبر است.", show_alert=True)
+        return
     async with SessionLocal() as session:
         order = await session.get(Order, order_id)
-        payment = (
-            await session.execute(
-                select(Payment)
-                .where(Payment.order_id == order_id, Payment.status == "pending")
-                .order_by(Payment.id.desc())
-            )
-        ).scalars().first()
+        payment = (await session.execute(
+            select(Payment).where(Payment.order_id == order_id, Payment.status == "pending")
+            .order_by(Payment.id.desc())
+        )).scalars().first()
         if not order or not payment or order.status != "waiting_receipt_review":
             await callback.answer("این رسید دیگر در انتظار بررسی نیست.", show_alert=True)
             return
-        payment.status = "rejected"
-        order.status = "rejected"
+        order_claim = await session.execute(
+            update(Order).where(Order.id == order_id, Order.status == "waiting_receipt_review")
+            .values(status="rejected")
+        )
+        payment_claim = await session.execute(
+            update(Payment).where(Payment.id == payment.id, Payment.status == "pending")
+            .values(status="rejected")
+        )
+        if order_claim.rowcount != 1 or payment_claim.rowcount != 1:
+            await session.rollback()
+            await callback.answer("این رسید هم‌زمان بررسی شده است؛ فهرست را تازه کنید.", show_alert=True)
+            return
         user = await session.get(User, order.user_id)
         await session.commit()
     await callback.answer("رسید رد شد.")
-    await callback.message.edit_reply_markup(reply_markup=None)
-    retry_keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [ui_button(text="🧾 ارسال مجدد رسید", callback_data=f"retry_receipt:{order.id}")]
-        ]
-    )
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    retry_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [ui_button(text="🧾 ارسال مجدد رسید", callback_data=f"retry_receipt:{order.id}")]
+    ])
     await audit(callback.from_user.id, "payment_rejected", order_id, {"payment_id": payment.id})
-    await callback.message.bot.send_message(
+    await callback.bot.send_message(
         user.telegram_id,
         f"❌ رسید درخواست {order.public_id} تأیید نشد.\n"
         "می‌توانید رسید صحیح را همین حالا دوباره ارسال کنید.",
@@ -1297,7 +1352,15 @@ async def admin_topup_reject(callback: CallbackQuery) -> None:
         topup = await session.get(WalletTopup, topup_id)
         if not topup or topup.status != "waiting_receipt_review":
             await callback.answer("این شارژ قبلاً بررسی شده است.", show_alert=True); return
-        topup.status = "rejected"
+        claimed = await session.execute(
+            update(WalletTopup)
+            .where(WalletTopup.id == topup_id, WalletTopup.status == "waiting_receipt_review")
+            .values(status="rejected")
+        )
+        if claimed.rowcount != 1:
+            await session.rollback()
+            await callback.answer("این شارژ هم‌زمان بررسی شده است.", show_alert=True)
+            return
         user = await session.get(User, topup.user_id)
         await session.commit()
     await audit(callback.from_user.id, "wallet_topup_rejected", None, {"topup_id": topup_id, "amount_toman": topup.amount_toman})
