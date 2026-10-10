@@ -67,7 +67,7 @@ def optional_document_menu() -> InlineKeyboardMarkup:
 
 def support_menu(active_orders: bool = False) -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(text="💬 ارتباط مستقیم با پشتیبانی", url="https://t.me/Good_ok_2000", style="primary")],
+        [InlineKeyboardButton(text="💬 ارتباط مستقیم با پشتیبانی", url="https://t.me/NetYar_esf", style="primary")],
     ]
     if active_orders:
         rows.append([InlineKeyboardButton(text="📋 پشتیبانی درخواست‌های من", callback_data="menu:support_orders", style="primary")])
