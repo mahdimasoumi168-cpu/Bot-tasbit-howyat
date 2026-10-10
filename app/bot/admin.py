@@ -600,10 +600,14 @@ async def operator_order_docs(callback: CallbackQuery) -> None:
     if not docs:
         await callback.answer("برای این پرونده مدرکی ثبت نشده است.", show_alert=True)
         return
-    await callback.answer("مدارک در پیام‌های جداگانه ارسال می‌شوند.")
+    await callback.answer("مدارک ارسال می‌شوند.")
     for doc in docs:
         try:
-            await callback.message.answer_photo(doc.telegram_file_id, caption=f"📎 {doc.document_type} | {order.public_id}")
+            await callback.message.answer_photo(
+                doc.telegram_file_id,
+                caption=f"📎 {doc.document_type} | {order.public_id}\nوضعیت مدرک: {DOCUMENT_STATUS_TEXT.get(getattr(doc, 'review_status', 'pending'), 'نامشخص')}",
+                reply_markup=document_review_keyboard(doc, operator=operator),
+            )
         except Exception:
             await callback.message.answer(f"⚠️ مدرک «{doc.document_type}» قابل نمایش نیست.")
 
@@ -903,6 +907,23 @@ PAYMENT_STATUS_TEXT = {
     "rejected": "رد شده",
     "superseded": "جایگزین شده",
 }
+
+DOCUMENT_STATUS_TEXT = {
+    "pending": "در انتظار بررسی",
+    "approved": "تأیید شده",
+    "rejected": "رد شده",
+}
+
+
+def document_review_keyboard(document: Document, operator: Operator | None = None) -> InlineKeyboardMarkup | None:
+    if getattr(document, "review_status", "pending") != "pending":
+        return None
+    if operator is not None and not can_operator(operator, "review_documents"):
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        ui_button(text="✅ تأیید مدرک", callback_data=f"adm:doc:approve:{document.id}"),
+        ui_button(text="❌ رد مدرک", callback_data=f"adm:doc:reject:{document.id}"),
+    ]])
 
 
 def build_case_text(order: Order, service: Service, user: User, data: dict, companions, documents, payments) -> str:
@@ -1227,8 +1248,13 @@ async def admin_order_detail(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("adm:docs:"))
 async def admin_order_docs(callback: CallbackQuery) -> None:
     if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
         return
-    order_id = int(callback.data.rsplit(":",1)[1])
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except ValueError:
+        await callback.answer("شماره پرونده نامعتبر است.", show_alert=True)
+        return
     async with SessionLocal() as session:
         docs = (await session.execute(
             select(Document).where(Document.order_id == order_id).order_by(Document.id)
@@ -1236,9 +1262,74 @@ async def admin_order_docs(callback: CallbackQuery) -> None:
     if not docs:
         await callback.answer("مدرکی ثبت نشده است.", show_alert=True)
         return
+    await callback.answer("مدارک ارسال می‌شوند.")
     for doc in docs:
-        await callback.message.answer_photo(doc.telegram_file_id, caption=f"📎 {doc.document_type}")
-    await callback.answer("مدارک ارسال شد.")
+        await callback.message.answer_photo(
+            doc.telegram_file_id,
+            caption=f"📎 {doc.document_type}\nوضعیت مدرک: {DOCUMENT_STATUS_TEXT.get(getattr(doc, 'review_status', 'pending'), 'نامشخص')}",
+            reply_markup=document_review_keyboard(doc),
+        )
+
+
+@router.callback_query(F.data.startswith("adm:doc:"))
+async def document_review_action(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    if len(parts) != 4 or parts[2] not in {"approve", "reject"}:
+        await callback.answer("درخواست بررسی مدرک نامعتبر است.", show_alert=True)
+        return
+    is_main = callback.from_user.id in get_settings().admin_id_set
+    operator = await get_operator(callback.from_user.id)
+    if not is_main and (operator is None or not can_operator(operator, "review_documents")):
+        await callback.answer("دسترسی بررسی مدارک ندارید.", show_alert=True)
+        return
+    try:
+        document_id = int(parts[3])
+    except ValueError:
+        await callback.answer("شناسه مدرک نامعتبر است.", show_alert=True)
+        return
+    new_status = "approved" if parts[2] == "approve" else "rejected"
+    async with SessionLocal() as session:
+        document = await session.get(Document, document_id)
+        if document is None:
+            await callback.answer("مدرک پیدا نشد.", show_alert=True)
+            return
+        claim = await session.execute(
+            update(Document)
+            .where(Document.id == document_id, Document.review_status == "pending")
+            .values(
+                review_status=new_status,
+                reviewed_by_telegram_id=callback.from_user.id,
+                reviewed_at=__import__("datetime").datetime.now(),
+            )
+        )
+        if claim.rowcount != 1:
+            await session.rollback()
+            await callback.answer("این مدرک قبلاً بررسی شده است.", show_alert=True)
+            return
+        order = await session.get(Order, document.order_id)
+        user = await session.get(User, order.user_id) if order else None
+        session.add(AuditLog(
+            actor_telegram_id=callback.from_user.id,
+            action=f"document_{new_status}",
+            order_id=order.id if order else None,
+            details_json=json.dumps({"document_id": document_id, "document_type": document.document_type}, ensure_ascii=False),
+        ))
+        await session.commit()
+    await callback.answer("مدرک تأیید شد." if new_status == "approved" else "مدرک رد شد.")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    if user and order:
+        status_label = DOCUMENT_STATUS_TEXT[new_status]
+        note = (
+            f"📎 وضعیت مدرک «{document.document_type}» در پرونده {order.public_id}: {status_label}.\n"
+            + ("نیازی به اقدام دیگری نیست." if new_status == "approved" else "لطفاً با پشتیبانی تماس بگیرید تا برای اصلاح مدرک راهنمایی شوید.")
+        )
+        try:
+            await callback.bot.send_message(user.telegram_id, note)
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data.startswith("adm:payments:"))
@@ -1390,7 +1481,10 @@ async def send_case_to_operator(bot, order_id: int) -> None:
             await send_payment_receipt(bot, recipient_id, payment, f"🧾 رسید پرداخت {order.public_id}")
         for doc in docs:
             await bot.send_photo(
-                recipient_id, doc.telegram_file_id, caption=f"📎 {doc.document_type} | {order.public_id}"
+                recipient_id,
+                doc.telegram_file_id,
+                caption=f"📎 {doc.document_type} | {order.public_id}\nوضعیت مدرک: {DOCUMENT_STATUS_TEXT.get(getattr(doc, 'review_status', 'pending'), 'نامشخص')}",
+                reply_markup=document_review_keyboard(doc, operator=op),
             )
 
 
@@ -1720,7 +1814,7 @@ async def operators_panel(callback: CallbackQuery, state: FSMContext) -> None:
     text = "👨‍💼 مدیریت اپراتورها\n\n"
     if rows:
         for op in rows:
-            permission_labels = {"view_orders": "مشاهده درخواست‌ها", "approve_payment": "تأیید پرداخت", "reject_payment": "رد پرداخت", "set_status": "تغییر وضعیت", "message_user": "پیام به مشترک"}
+            permission_labels = {"view_orders": "مشاهده درخواست‌ها", "approve_payment": "تأیید پرداخت", "reject_payment": "رد پرداخت", "review_documents": "تأیید یا رد مدارک", "set_status": "تغییر وضعیت", "message_user": "پیام به مشترک"}
             flags = "، ".join(permission_labels.get(x, x) for x in sorted(_operator_permissions(op))) or "بدون دسترسی"
             text += f"• {op.display_name or 'بدون نام'} | {op.telegram_id} | {'🟢' if op.active else '🔴'}\n  دسترسی: {flags}\n"
     else:
@@ -1761,7 +1855,7 @@ async def operator_add_save(message: Message, state: FSMContext) -> None:
                 telegram_id=telegram_id,
                 display_name=str(telegram_id),
                 role="operator",
-                permissions_json=json.dumps({"view_orders": True, "approve_payment": False, "reject_payment": False, "set_status": True, "message_user": True}, ensure_ascii=False),
+                permissions_json=json.dumps({"view_orders": True, "approve_payment": False, "reject_payment": False, "review_documents": True, "set_status": True, "message_user": True}, ensure_ascii=False),
                 active=True,
             ))
             msg = "✅ اپراتور اضافه شد."
@@ -1777,6 +1871,7 @@ PERMISSION_LABELS = {
     "view_orders": "مشاهده درخواست‌ها",
     "approve_payment": "تأیید پرداخت",
     "reject_payment": "رد پرداخت",
+    "review_documents": "تأیید یا رد مدارک",
     "set_status": "تغییر وضعیت درخواست",
     "message_user": "ارسال پیام به مشترک",
 }
@@ -1785,6 +1880,7 @@ PERMISSION_ICONS = {
     "view_orders": "👁",
     "approve_payment": "💳",
     "reject_payment": "❌",
+    "review_documents": "📎",
     "set_status": "🔄",
     "message_user": "💬",
 }
@@ -1792,7 +1888,7 @@ PERMISSION_ICONS = {
 
 def operator_permission_keyboard(telegram_id: int, permissions: set[str]) -> InlineKeyboardMarkup:
     rows = []
-    for key in ("view_orders", "approve_payment", "reject_payment", "set_status", "message_user"):
+    for key in ("view_orders", "approve_payment", "reject_payment", "review_documents", "set_status", "message_user"):
         mark = "✅" if key in permissions else "⬜"
         rows.append([ui_button(
             text=f"{mark} {PERMISSION_ICONS[key]} {PERMISSION_LABELS[key]}",
