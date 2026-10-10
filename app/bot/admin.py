@@ -564,25 +564,15 @@ async def operator_order_detail(callback: CallbackQuery) -> None:
         payment = (await session.execute(
             select(Payment).where(Payment.order_id == order.id).order_by(Payment.id.desc())
         )).scalars().first()
-    summary = (
-        f"{status_header(order, service)}\n"
-        f"👤 نام پرونده: {data.get('full_name') or ((user.first_name or '') + ' ' + (user.last_name or '')).strip() or '—'}\n"
-        f"📱 موبایل: {data.get('mobile') or '—'}\n"
-        f"🆔 شناسه عددی تلگرام: {user.telegram_id}\n"
-        f"🔗 نام کاربری: @{user.username if user.username else 'ندارد'}\n"
-        f"💰 مبلغ: {(order.price_snapshot_toman or service.price_toman):,} تومان\n"
-        f"💳 وضعیت پرداخت: {PAYMENT_STATUS_TEXT.get(payment.status, payment.status) if payment else 'ثبت نشده'}\n"
-        f"📎 تعداد مدارک: {len(docs)}\n"
-        f"🟡 مدارک در انتظار بررسی: {sum(1 for d in docs if getattr(d, 'review_status', 'pending') == 'pending')}\n"
-        f"✅ مدارک تأییدشده: {sum(1 for d in docs if getattr(d, 'review_status', 'pending') == 'approved')}\n"
-        f"❌ مدارک ردشده: {sum(1 for d in docs if getattr(d, 'review_status', 'pending') == 'rejected')}\n"
-        f"👥 تعداد همراهان: {len(companions)}\n"
+    summary = build_case_text(order, service, user, data, companions, docs, [payment] if payment else [])
+    summary += (
+        f"\n🆔 شناسه عددی تلگرام: {user.telegram_id}"
+        f"\n🔗 نام کاربری: @{user.username if user.username else 'ندارد'}"
+        f"\n💳 وضعیت پرداخت: {PAYMENT_STATUS_TEXT.get(payment.status, payment.status) if payment else 'ثبت نشده'}"
+        f"\n🟡 مدارک در انتظار بررسی: {sum(1 for d in docs if getattr(d, 'review_status', 'pending') == 'pending')}"
+        f"\n✅ مدارک تأییدشده: {sum(1 for d in docs if getattr(d, 'review_status', 'pending') == 'approved')}"
+        f"\n❌ مدارک ردشده: {sum(1 for d in docs if getattr(d, 'review_status', 'pending') == 'rejected')}"
     )
-    for key, label in (("birth_date_gregorian", "تاریخ تولد"), ("return_date_gregorian", "تاریخ بازگشت"), ("consulate", "کنسولگری"), ("document_type", "نوع مدرک"), ("own_mobile", "موبایل به نام شخص")):
-        if data.get(key):
-            summary += f"{label}: {data[key]}\n"
-    if companions:
-        summary += "\n👥 اطلاعات همراهان:\n" + "\n".join(f"• {x.full_name} — {x.mobile}" for x in companions)
     buttons = [[ui_button(text="📎 مشاهده مدارک پرونده", callback_data=f"op:docs:{order.id}")]]
     if payment and payment.receipt_file_id:
         buttons.append([ui_button(text="🧾 مشاهده رسید پرداخت", callback_data=f"op:receipt:{order.id}")])
@@ -1248,14 +1238,14 @@ async def admin_order_detail(callback: CallbackQuery) -> None:
             select(Payment).where(Payment.order_id == order.id).order_by(Payment.id.desc())
         )).scalars().all()
         data = json.loads(order.data_json or "{}")
-    summary = (
-        f"{status_header(order,service)}\n\n"
-        f"👤 {data.get('full_name') or ((user.first_name or '')+' '+(user.last_name or '')).strip()}\n"
-        f"📱 {data.get('mobile','')}\n"
-        f"🆔 شناسه کاربری: {user.telegram_id}\n"
-        f"💰 قیمت ثبت‌شده: {(order.price_snapshot_toman or service.price_toman):,} تومان\n"
-        f"📎 مدارک: {len(docs)} (در انتظار: {sum(1 for d in docs if getattr(d, 'review_status', 'pending') == 'pending')})\n"
-        f"💳 پرداخت‌ها: {len(payments)}"
+        companions = (await session.execute(
+            select(Companion).where(Companion.order_id == order.id).order_by(Companion.id)
+        )).scalars().all()
+    summary = build_case_text(order, service, user, data, companions, docs, payments)
+    summary += (
+        f"\n🆔 شناسه عددی تلگرام: {user.telegram_id}"
+        f"\n🔗 نام کاربری: @{user.username if user.username else 'ندارد'}"
+        f"\n📎 مدارک: {len(docs)} (در انتظار: {sum(1 for d in docs if getattr(d, 'review_status', 'pending') == 'pending')})"
     )
     order_buttons = [
         [ui_button(text="📎 ارسال مدارک به من", callback_data=f"adm:docs:{order.id}")],
@@ -1747,9 +1737,41 @@ async def start_message(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.answer("💬 پیام خود را ارسال کنید. متن، عکس، فایل، ویدیو یا صوت قابل ارسال است.", reply_markup=admin_cancel_menu())
 
 
+@router.callback_query(F.data.startswith("adm:reply:"))
+async def start_reply_to_user(callback: CallbackQuery, state: FSMContext) -> None:
+    operator = await get_operator(callback.from_user.id)
+    settings = get_settings()
+    is_support = settings.support_telegram_id == callback.from_user.id
+    if callback.from_user.id not in settings.admin_id_set and not is_support and (
+        operator is None or not can_operator(operator, "message_user")
+    ):
+        await callback.answer("دسترسی پاسخ به مشترک ندارید.", show_alert=True)
+        return
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("پرونده نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        order = await session.get(Order, order_id)
+        if order is None:
+            await callback.answer("پرونده پیدا نشد.", show_alert=True)
+            return
+    await state.clear()
+    await state.update_data(admin_order_id=order_id)
+    await state.set_state(AdminForm.send_message)
+    await callback.answer()
+    await callback.message.answer(
+        f"↩️ پاسخ به مشترک | پرونده {order.public_id}\n"
+        "پیام، عکس، فایل، ویدیو یا صوت خود را ارسال کنید.",
+        reply_markup=admin_cancel_menu(),
+    )
+
+
 @router.message(AdminForm.send_message)
 async def send_message_to_user(message: Message, state: FSMContext) -> None:
-    if message.from_user.id not in get_settings().admin_id_set:
+    settings = get_settings()
+    if message.from_user.id not in settings.admin_id_set and message.from_user.id != settings.support_telegram_id:
         operator = await get_operator(message.from_user.id)
         if operator is None or not can_operator(operator, "message_user"):
             return
@@ -1808,12 +1830,16 @@ async def send_message_to_user(message: Message, state: FSMContext) -> None:
         )
         await session.commit()
     # اعلان مستقل از خود محتوا: مشترک حتماً یک نوتیفیکیشن قابل مشاهده دریافت می‌کند.
+    reply_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        ui_button(text="↩️ پاسخ به این پیام", callback_data=f"user:reply:{order.id}:{message.from_user.id}")
+    ]])
     await message.bot.send_message(
         user.telegram_id,
         f"🔔 پیام جدید از پشتیبانی\n📋 درخواست: {order.public_id}\n\n"
-        "یک پیام جدید برای شما ارسال شده است.",
+        "برای پاسخ مستقیم به فرستنده، دکمه زیر را بزنید.",
+        reply_markup=reply_keyboard,
     )
-    await message.copy_to(user.telegram_id)
+    await message.copy_to(user.telegram_id, reply_markup=reply_keyboard)
     await state.clear()
     await message.answer("✅ پیام ارسال شد.", reply_markup=admin_menu())
 
@@ -2130,7 +2156,18 @@ async def operator_status_change(callback: CallbackQuery) -> None:
     await audit(callback.from_user.id, "status_changed", order_id, {"status": status})
     labels = {"in_progress":"🟡 در حال انجام","waiting_user":"⏳ منتظر مشترک","completed":"✅ تکمیل شده","rejected":"🔴 رد شده"}
     await callback.answer("وضعیت تغییر کرد.")
-    await callback.message.edit_reply_markup(reply_markup=None)
+    refreshed_operator = None if is_main else operator
+    try:
+        await callback.message.edit_reply_markup(
+            reply_markup=order_actions(
+                order_id,
+                operator=refreshed_operator,
+                payment_review=False,
+                order_status=status,
+            )
+        )
+    except Exception:
+        pass
     completion_note = (
         f"\n\n🔖 کد پیگیری نهایی شما: {order.public_id}\n"
         "این کد را برای پیگیری‌های بعدی نگه دارید."
