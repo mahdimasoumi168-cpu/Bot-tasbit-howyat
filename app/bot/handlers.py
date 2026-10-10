@@ -122,12 +122,17 @@ async def order_amount_and_coupon(order_id: int) -> tuple[int, int, str | None]:
 
 
 async def show_payment_options(message: Message, state: FSMContext, order_id: int) -> None:
-    amount, discount, code = await order_amount_and_coupon(order_id)
-    credit = await get_wallet_balance(message.from_user.id)
+    amount, discount, _code = await order_amount_and_coupon(order_id)
+    form_data = await state.get_data()
+    # Callback-confirmation messages belong to the bot, so use the saved user's ID,
+    # not message.from_user.id, to avoid showing a false zero wallet balance.
+    telegram_id = int(form_data.get("telegram_id") or message.from_user.id)
+    credit = await get_wallet_balance(telegram_id)
     extra = f"\n🏷️ تخفیف: {discount:,} تومان" if discount else ""
     await state.set_state(PaymentForm.choice)
     await message.answer(
-        f"💳 روش پرداخت را انتخاب کنید.\n\nمبلغ نهایی: {amount:,} تومان{extra}\n\n"
+        f"💳 روش پرداخت را انتخاب کنید.\n\nمبلغ نهایی: {amount:,} تومان{extra}\n"
+        f"💰 موجودی اعتبار شما: {credit:,} تومان\n\n"
         "اگر اعتبار کافی داشته باشید، می‌توانید مبلغ را از اعتبار کم کنید؛ در غیر این صورت کارت به کارت را انتخاب کنید.",
         reply_markup=payment_choice_menu(credit),
     )
@@ -423,7 +428,7 @@ async def inline_identity_doc_none(callback: CallbackQuery, state: FSMContext) -
     await callback.answer()
     await state.update_data(identity_document_type="ندارد", identity_document=None)
     await state.set_state(IdentityForm.tazkira)
-    await safe_step_message(callback, "۷/۸\n📸 عکس تذکره را ارسال کنید.\nمثال: عکس واضح از تمام صفحه تذکره.", reply_markup=cancel_menu())
+    await safe_step_message(callback, "۷/۸\n📸 لطفاً عکس واضحِ تذکره اصلی یکی از اقارب نزدیک را ارسال کنید.\nمثال: تصویر کامل و خوانای تذکره اصلی پدر، مادر، برادر یا خواهر.", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.identity_document_type)
@@ -515,7 +520,8 @@ async def identity_start(message: Message, state: FSMContext, telegram_id: int |
         await message.answer(f"❌ {exc}", reply_markup=await user_main_menu(uid))
         return
     await state.update_data(
-        order_id=order.id, public_id=order.public_id, service_code=ServiceCode.IDENTITY.value
+        order_id=order.id, public_id=order.public_id, service_code=ServiceCode.IDENTITY.value,
+        telegram_id=uid,
     )
     await state.set_state(IdentityForm.full_name)
     await message.answer("۱/۸\nنام و نام خانوادگی را وارد کنید.\nمثال: احمد محمدی\nمحدودیت: ۳ تا ۸۰ نویسه و حداقل دو بخش.", reply_markup=cancel_menu())
@@ -593,7 +599,7 @@ async def identity_consulate(message: Message, state: FSMContext) -> None:
 async def identity_document(message: Message, state: FSMContext) -> None:
     await state.update_data(identity_document=message.photo[-1].file_id)
     await state.set_state(IdentityForm.tazkira)
-    await message.answer("۷/۸\n📸 عکس تذکره را ارسال کنید.\nمثال: عکس واضح از تمام صفحه تذکره.\nمحدودیت: فقط عکس، واضح و خوانا.", reply_markup=cancel_menu())
+    await message.answer("۷/۸\n📸 لطفاً عکس واضحِ تذکره اصلی یکی از اقارب نزدیک را ارسال کنید.\nمثال: تصویر کامل و خوانای تذکره اصلی پدر، مادر، برادر یا خواهر.\nمحدودیت: فقط عکس واضح و خوانا.", reply_markup=cancel_menu())
 
 
 @router.message(IdentityForm.tazkira, F.photo)
@@ -688,7 +694,8 @@ async def khodnevis_start(message: Message, state: FSMContext, telegram_id: int 
         await message.answer(f"❌ {exc}", reply_markup=await user_main_menu(uid))
         return
     await state.update_data(
-        order_id=order.id, public_id=order.public_id, service_code=ServiceCode.KHODNEVIS.value
+        order_id=order.id, public_id=order.public_id, service_code=ServiceCode.KHODNEVIS.value,
+        telegram_id=uid,
     )
     await state.set_state(KhodnevisForm.full_name)
     await message.answer("۱/۷\nنام و نام خانوادگی را وارد کنید.\nمثال: احمد محمدی\nمحدودیت: ۳ تا ۸۰ نویسه و حداقل دو بخش.", reply_markup=cancel_menu())
