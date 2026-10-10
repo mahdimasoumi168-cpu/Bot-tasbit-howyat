@@ -145,6 +145,9 @@ class Document(Base):
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
     document_type: Mapped[str] = mapped_column(String(64))
     telegram_file_id: Mapped[str] = mapped_column(String(512))
+    review_status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    reviewed_by_telegram_id: Mapped[int | None] = mapped_column(BigInteger)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     order: Mapped["Order"] = relationship(back_populates="documents")
