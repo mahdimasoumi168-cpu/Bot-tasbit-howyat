@@ -1088,10 +1088,17 @@ async def pay_wallet(callback: CallbackQuery, state: FSMContext) -> None:
     if not ok:
         credit = await get_wallet_balance(callback.from_user.id)
         await callback.answer("اعتبار کافی نیست؛ کارت به کارت را انتخاب کنید.", show_alert=True)
-        await callback.message.edit_text(
-            f"💰 اعتبار شما: {credit:,} تومان\n\nاعتبار کافی نیست. لطفاً روش کارت به کارت را انتخاب کنید.",
-            reply_markup=payment_choice_menu(credit),
-        )
+        try:
+            await callback.message.edit_text(
+                f"💰 اعتبار شما: {credit:,} تومان\n\nاعتبار کافی نیست. لطفاً روش کارت به کارت را انتخاب کنید.",
+                reply_markup=payment_choice_menu(credit),
+            )
+        except Exception as exc:
+            # Clicking the same wallet button again can produce an identical message;
+            # Telegram rejects that no-op edit. Do not let it become a failed update.
+            if "message is not modified" not in str(exc).lower():
+                raise
+            await callback.answer("اعتبار کافی نیست؛ کارت به کارت را انتخاب کنید.", show_alert=True)
         return
     await state.clear()
     await callback.answer("پرداخت از اعتبار انجام شد.")
