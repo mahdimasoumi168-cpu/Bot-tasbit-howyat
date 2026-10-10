@@ -331,21 +331,21 @@ async def operator_order_detail(callback: CallbackQuery) -> None:
             select(Payment).where(Payment.order_id == order.id).order_by(Payment.id.desc())
         )).scalars().first()
     summary = (
-        f"{status_header(order, service)}\\n"
-        f"👤 نام پرونده: {data.get('full_name') or ((user.first_name or '') + ' ' + (user.last_name or '')).strip() or '—'}\\n"
-        f"📱 موبایل: {data.get('mobile') or '—'}\\n"
-        f"🆔 شناسه عددی تلگرام: {user.telegram_id}\\n"
-        f"🔗 نام کاربری: @{user.username if user.username else 'ندارد'}\\n"
-        f"💰 مبلغ: {(order.price_snapshot_toman or service.price_toman):,} تومان\\n"
-        f"💳 وضعیت پرداخت: {PAYMENT_STATUS_TEXT.get(payment.status, payment.status) if payment else 'ثبت نشده'}\\n"
-        f"📎 تعداد مدارک: {len(docs)}\\n"
-        f"👥 تعداد همراهان: {len(companions)}\\n"
+        f"{status_header(order, service)}\n"
+        f"👤 نام پرونده: {data.get('full_name') or ((user.first_name or '') + ' ' + (user.last_name or '')).strip() or '—'}\n"
+        f"📱 موبایل: {data.get('mobile') or '—'}\n"
+        f"🆔 شناسه عددی تلگرام: {user.telegram_id}\n"
+        f"🔗 نام کاربری: @{user.username if user.username else 'ندارد'}\n"
+        f"💰 مبلغ: {(order.price_snapshot_toman or service.price_toman):,} تومان\n"
+        f"💳 وضعیت پرداخت: {PAYMENT_STATUS_TEXT.get(payment.status, payment.status) if payment else 'ثبت نشده'}\n"
+        f"📎 تعداد مدارک: {len(docs)}\n"
+        f"👥 تعداد همراهان: {len(companions)}\n"
     )
     for key, label in (("birth_date_gregorian", "تاریخ تولد"), ("return_date_gregorian", "تاریخ بازگشت"), ("consulate", "کنسولگری"), ("document_type", "نوع مدرک"), ("own_mobile", "موبایل به نام شخص")):
         if data.get(key):
-            summary += f"{label}: {data[key]}\\n"
+            summary += f"{label}: {data[key]}\n"
     if companions:
-        summary += "\\n👥 اطلاعات همراهان:\\n" + "\\n".join(f"• {x.full_name} — {x.mobile}" for x in companions)
+        summary += "\n👥 اطلاعات همراهان:\n" + "\n".join(f"• {x.full_name} — {x.mobile}" for x in companions)
     buttons = [[ui_button(text="📎 مشاهده مدارک پرونده", callback_data=f"op:docs:{order.id}")]]
     if payment and payment.receipt_file_id:
         buttons.append([ui_button(text="🧾 مشاهده رسید پرداخت", callback_data=f"op:receipt:{order.id}")])
