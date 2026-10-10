@@ -1338,6 +1338,80 @@ async def account(message: Message, telegram_id: int | None = None) -> None:
 
 
 
+@router.callback_query(F.data.startswith("user:reply:"))
+async def user_reply_to_support_sender(callback: CallbackQuery, state: FSMContext) -> None:
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("درخواست پاسخ نامعتبر است.", show_alert=True)
+        return
+    try:
+        order_id, recipient_id = int(parts[2]), int(parts[3])
+    except ValueError:
+        await callback.answer("شناسه پرونده یا فرستنده نامعتبر است.", show_alert=True)
+        return
+    settings = get_settings()
+    trusted = recipient_id in settings.admin_id_set or recipient_id == settings.support_telegram_id
+    recipient_operator = None if trusted else await get_operator_for_support(recipient_id)
+    if not trusted and (
+        recipient_operator is None or not _operator_can_support_message(recipient_operator)
+    ):
+        await callback.answer("فرستنده دیگر دسترسی پاسخ‌گویی ندارد.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(
+                select(Order, Service, User)
+                .join(Service, Order.service_id == Service.id)
+                .join(User, Order.user_id == User.id)
+                .where(
+                    Order.id == order_id,
+                    User.telegram_id == callback.from_user.id,
+                    Order.status.not_in(["draft", "waiting_payment"]),
+                )
+            )
+        ).one_or_none()
+        if row:
+            ticket = (await session.execute(select(Ticket).where(Ticket.order_id == order_id))).scalar_one_or_none()
+            if ticket is None:
+                session.add(Ticket(order_id=order_id, status="open"))
+            elif ticket.status != "open":
+                ticket.status = "open"
+            await session.commit()
+    if not row:
+        await callback.answer("پرونده برای پاسخ پیدا نشد.", show_alert=True)
+        return
+    order, _service, _user = row
+    await state.clear()
+    await state.update_data(support_order_id=order_id, support_reply_to_id=recipient_id)
+    await state.set_state(SupportForm.message)
+    await callback.answer()
+    await callback.message.answer(
+        f"↩️ پاسخ مستقیم به پشتیبانی | پرونده {order.public_id}\n\n"
+        "پیام یا فایل خود را ارسال کنید؛ پاسخ فقط برای فرستنده همین پیام می‌رود.",
+        reply_markup=cancel_menu(),
+    )
+
+
+async def get_operator_for_support(telegram_id: int):
+    async with SessionLocal() as session:
+        return (
+            await session.execute(
+                select(Operator).where(
+                    Operator.telegram_id == telegram_id,
+                    Operator.active.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+
+
+def _operator_can_support_message(operator) -> bool:
+    try:
+        permissions = json.loads(operator.permissions_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return False
+    return bool(permissions.get("message_user"))
+
+
 @router.callback_query(F.data.startswith("user:support:"))
 async def user_support_start(callback: CallbackQuery, state: FSMContext) -> None:
     try:
@@ -1436,19 +1510,21 @@ async def user_support_message(message: Message, state: FSMContext) -> None:
             file_id=file_id,
         ))
         await session.commit()
-    recipients = set(get_settings().admin_id_set)
+    direct_recipient = data.get("support_reply_to_id")
+    recipients = {int(direct_recipient)} if direct_recipient else set(get_settings().admin_id_set)
     support_id = get_settings().support_telegram_id
-    if support_id:
+    if support_id and not direct_recipient:
         recipients.add(support_id)
-    async with SessionLocal() as session:
-        operators = (await session.execute(select(Operator).where(Operator.active.is_(True)))).scalars().all()
-    for op in operators:
-        try:
-            permissions = json.loads(op.permissions_json or "{}")
-        except (TypeError, json.JSONDecodeError):
-            permissions = {}
-        if permissions.get("view_orders") and permissions.get("message_user"):
-            recipients.add(op.telegram_id)
+    if not direct_recipient:
+        async with SessionLocal() as session:
+            operators = (await session.execute(select(Operator).where(Operator.active.is_(True)))).scalars().all()
+        for op in operators:
+            try:
+                permissions = json.loads(op.permissions_json or "{}")
+            except (TypeError, json.JSONDecodeError):
+                permissions = {}
+            if permissions.get("view_orders") and permissions.get("message_user"):
+                recipients.add(op.telegram_id)
     sent_any = False
     for recipient_id in recipients:
         try:
@@ -1458,7 +1534,10 @@ async def user_support_message(message: Message, state: FSMContext) -> None:
                 f"🔔 پیام جدید تیکت پشتیبانی\n📋 درخواست: {order.public_id}\n🪪 خدمت: {service.name}\n\n"
                 "مشترک پیام جدیدی برای شما ارسال کرده است.",
             )
-            await message.copy_to(recipient_id)
+            reply_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+                ui_button(text="↩️ پاسخ به مشترک", callback_data=f"adm:reply:{order.id}")
+            ]])
+            await message.copy_to(recipient_id, reply_markup=reply_keyboard)
             sent_any = True
         except Exception:
             continue
