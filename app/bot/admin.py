@@ -104,20 +104,199 @@ async def ensure_wallet_admin(session, user_id: int) -> Wallet:
 @router.callback_query(F.data == "adm:wallets")
 async def admin_wallets(callback: CallbackQuery) -> None:
     if callback.from_user.id not in get_settings().admin_id_set:
-        await callback.answer("دسترسی ندارید.", show_alert=True); return
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
     async with SessionLocal() as session:
         rows = (await session.execute(
-            select(User, Wallet).join(Wallet, Wallet.user_id == User.id)
-            .where(Wallet.balance_toman > 0).order_by(Wallet.balance_toman.desc()).limit(50)
+            select(User, Wallet).outerjoin(Wallet, Wallet.user_id == User.id)
+            .order_by(User.id.desc()).limit(15)
         )).all()
-    text = "💰 اعتبار مشترکان\n\n" + ("\n".join(
-        f"👤 {u.first_name or ''} {u.last_name or ''} | {u.telegram_id} | 💳 {w.balance_toman:,} تومان"
-        for u, w in rows
-    ) if rows else "هیچ مشترکی اعتبار مثبت ندارد.")
+    lines = ["💰 مدیریت اعتبار مشترکان", "", "برای ویرایش موجودی، مشترک را انتخاب کنید یا جست‌وجو را بزنید."]
+    buttons = []
+    for user, wallet in rows:
+        balance = wallet.balance_toman if wallet else 0
+        display_name = " ".join(x for x in (user.first_name, user.last_name) if x) or "بدون نام"
+        lines.append(f"👤 {display_name} | 🆔 {user.telegram_id} | 💰 {balance:,} تومان")
+        buttons.append([ui_button(
+            text=f"✏️ {user.telegram_id} | {balance:,} تومان",
+            callback_data=f"adm:wallet:edit:{user.telegram_id}",
+        )])
+    if not rows:
+        lines.append("هنوز مشترکی ثبت نشده است.")
+    buttons.extend([
+        [ui_button(text="🔎 جست‌وجوی مشترک برای تغییر اعتبار", callback_data="adm:wallet:adjust")],
+        [ui_button(text="➕ شارژهای در انتظار", callback_data="adm:topups")],
+        [ui_button(text="🔙 بازگشت به مدیریت", callback_data="adm:home")],
+    ])
     await callback.answer()
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-        [ui_button(text="🔙 بازگشت", callback_data="menu:admin")]
-    ]))
+    await callback.message.edit_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+@router.callback_query(F.data == "adm:wallet:adjust")
+async def admin_wallet_adjust_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    await state.clear()
+    await state.set_state(AdminForm.wallet_adjust_user)
+    await callback.answer()
+    await callback.message.answer(
+        "🔎 مشترک موردنظر را پیدا کنید.\n\n"
+        "شناسه عددی تلگرام، نام، نام کاربری یا شماره درخواست را وارد کنید.\n"
+        "مثال: 8937359321 یا @username",
+        reply_markup=admin_cancel_menu(),
+    )
+
+
+@router.callback_query(F.data.startswith("adm:wallet:edit:"))
+async def admin_wallet_edit_user(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    try:
+        telegram_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("شناسه مشترک نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        user = (await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )).scalar_one_or_none()
+        if not user:
+            await callback.answer("مشترک پیدا نشد.", show_alert=True)
+            return
+        wallet = await ensure_wallet_admin(session, user.id)
+        balance = wallet.balance_toman
+    await state.clear()
+    await state.update_data(wallet_adjust_user_id=user.id, wallet_adjust_telegram_id=user.telegram_id)
+    await state.set_state(AdminForm.wallet_adjust_amount)
+    await callback.answer()
+    await callback.message.answer(
+        f"💰 تغییر اعتبار مشترک\n\n"
+        f"👤 {user.first_name or ''} {user.last_name or ''}\n"
+        f"🆔 {user.telegram_id}\n"
+        f"موجودی فعلی: {balance:,} تومان\n\n"
+        "مبلغ را با علامت وارد کنید:\n"
+        "+50000 برای افزایش ۵۰٬۰۰۰ تومان\n"
+        "-20000 برای کاهش ۲۰٬۰۰۰ تومان\n"
+        "محدودیت: عدد صحیح، فقط تومان؛ موجودی منفی مجاز نیست.",
+        reply_markup=admin_cancel_menu(),
+    )
+
+
+@router.message(AdminForm.wallet_adjust_user)
+async def admin_wallet_adjust_find(message: Message, state: FSMContext) -> None:
+    if not is_admin(message):
+        return
+    raw = normalize_digits_admin((message.text or "").strip())
+    if not raw:
+        await message.answer("عبارت جست‌وجو را وارد کنید.", reply_markup=admin_cancel_menu())
+        return
+    async with SessionLocal() as session:
+        user = None
+        if raw.isdigit():
+            user = (await session.execute(
+                select(User).where(User.telegram_id == int(raw))
+            )).scalar_one_or_none()
+        if user is None:
+            pattern = f"%{raw.lstrip('@#')}%"
+            user = (await session.execute(
+                select(User).where(or_(
+                    User.first_name.ilike(pattern),
+                    User.last_name.ilike(pattern),
+                    User.username.ilike(pattern),
+                )).order_by(User.id.desc()).limit(1)
+            )).scalar_one_or_none()
+        if user is None and raw.lstrip("#").isdigit():
+            order = (await session.execute(
+                select(Order).where(Order.public_id == f"#{raw.lstrip('#')}")
+            )).scalar_one_or_none()
+            if order:
+                user = await session.get(User, order.user_id)
+        if user is None:
+            await message.answer("❌ مشترک پیدا نشد. شناسه عددی یا نام دیگری را امتحان کنید.", reply_markup=admin_cancel_menu())
+            return
+        wallet = await ensure_wallet_admin(session, user.id)
+        balance = wallet.balance_toman
+        user_id, telegram_id = user.id, user.telegram_id
+        display_name = " ".join(x for x in (user.first_name, user.last_name) if x) or "بدون نام"
+    await state.update_data(wallet_adjust_user_id=user_id, wallet_adjust_telegram_id=telegram_id)
+    await state.set_state(AdminForm.wallet_adjust_amount)
+    await message.answer(
+        f"💰 تغییر اعتبار مشترک\n\n👤 {display_name}\n🆔 {telegram_id}\n"
+        f"موجودی فعلی: {balance:,} تومان\n\n"
+        "+50000 برای افزایش ۵۰٬۰۰۰ تومان\n"
+        "-20000 برای کاهش ۲۰٬۰۰۰ تومان\n"
+        "مبلغ را با + یا - و به تومان وارد کنید. موجودی منفی مجاز نیست.",
+        reply_markup=admin_cancel_menu(),
+    )
+
+
+@router.message(AdminForm.wallet_adjust_amount)
+async def admin_wallet_adjust_apply(message: Message, state: FSMContext) -> None:
+    if not is_admin(message):
+        return
+    raw = normalize_digits_admin((message.text or "").replace(",", "").replace("٬", "").replace(" ", ""))
+    if len(raw) < 2 or raw[0] not in "+-" or not raw[1:].isdigit() or int(raw[1:]) <= 0:
+        await message.answer("❌ مبلغ معتبر نیست. نمونه: +50000 یا -20000", reply_markup=admin_cancel_menu())
+        return
+    delta = int(raw)
+    data = await state.get_data()
+    user_id = data.get("wallet_adjust_user_id")
+    telegram_id = data.get("wallet_adjust_telegram_id")
+    if not user_id or not telegram_id:
+        await state.clear()
+        await message.answer("❌ مشترک انتخاب نشده است؛ دوباره از مدیریت اعتبار شروع کنید.", reply_markup=admin_menu())
+        return
+    async with SessionLocal() as session:
+        user = await session.get(User, user_id)
+        if not user or user.telegram_id != telegram_id:
+            await state.clear()
+            await message.answer("❌ اطلاعات مشترک پیدا نشد؛ دوباره جست‌وجو کنید.", reply_markup=admin_menu())
+            return
+        wallet = await ensure_wallet_admin(session, user.id)
+        if wallet.balance_toman + delta < 0:
+            await message.answer(
+                f"❌ موجودی کافی نیست.\nموجودی فعلی: {wallet.balance_toman:,} تومان\n"
+                f"کاهش درخواستی: {abs(delta):,} تومان",
+                reply_markup=admin_cancel_menu(),
+            )
+            return
+        wallet.balance_toman += delta
+        new_balance = wallet.balance_toman
+        session.add(WalletTransaction(
+            user_id=user.id,
+            amount_toman=delta,
+            balance_after_toman=new_balance,
+            kind="admin_adjustment",
+            description=f"اصلاح اعتبار توسط مدیریت (شناسه {message.from_user.id})",
+        ))
+        session.add(AuditLog(
+            actor_telegram_id=message.from_user.id,
+            action="wallet_admin_adjustment",
+            details_json=json.dumps({
+                "target_telegram_id": telegram_id,
+                "delta_toman": delta,
+                "balance_after_toman": new_balance,
+            }, ensure_ascii=False),
+        ))
+        await session.commit()
+    await state.clear()
+    action = "افزایش" if delta > 0 else "کاهش"
+    await message.answer(
+        f"✅ اعتبار مشترک با موفقیت {action} یافت.\n"
+        f"🆔 شناسه: {telegram_id}\n"
+        f"تغییر: {delta:+,} تومان\n"
+        f"موجودی جدید: {new_balance:,} تومان",
+        reply_markup=admin_menu(),
+    )
+    try:
+        await message.bot.send_message(
+            telegram_id,
+            f"🔔 تغییر اعتبار حساب شما\n{action}: {abs(delta):,} تومان\nموجودی فعلی: {new_balance:,} تومان",
+        )
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data == "adm:topups")
@@ -1306,42 +1485,53 @@ async def reject(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("adm:topup:approve:"))
 async def admin_topup_approve(callback: CallbackQuery) -> None:
     if callback.from_user.id not in get_settings().admin_id_set:
-        await callback.answer("دسترسی ندارید.", show_alert=True); return
-    topup_id = int(callback.data.rsplit(":", 1)[1])
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    try:
+        topup_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("شناسه شارژ نامعتبر است.", show_alert=True)
+        return
     async with SessionLocal() as session:
         topup = await session.get(WalletTopup, topup_id)
-        if not topup or topup.status != "waiting_receipt_review":
-            await callback.answer("این شارژ قبلاً بررسی شده است.", show_alert=True); return
-        # Claim the top-up with a conditional update before touching the wallet.
-        # Concurrent/repeated button clicks can therefore credit the balance only once.
-        claimed = await session.execute(
+        if not topup:
+            await callback.answer("شارژ پیدا نشد.", show_alert=True)
+            return
+        claim = await session.execute(
             update(WalletTopup)
             .where(
                 WalletTopup.id == topup_id,
                 WalletTopup.status == "waiting_receipt_review",
             )
-            .values(status="approved")
+            .values(status="approved", reviewed_at=__import__("datetime").datetime.now())
         )
-        if claimed.rowcount != 1:
+        if claim.rowcount != 1:
             await session.rollback()
-            await callback.answer("این شارژ قبلاً بررسی شده است.", show_alert=True)
+            await callback.answer("این شارژ قبلاً بررسی شده است؛ اعتبار دوباره افزایش نمی‌یابد.", show_alert=True)
             return
         wallet = await ensure_wallet_admin(session, topup.user_id)
         wallet.balance_toman += topup.amount_toman
         session.add(WalletTransaction(
-            user_id=topup.user_id, amount_toman=topup.amount_toman,
-            balance_after_toman=wallet.balance_toman, kind="topup",
-            description=f"افزایش اعتبار #{topup.id}", topup_id=topup.id
+            user_id=topup.user_id,
+            amount_toman=topup.amount_toman,
+            balance_after_toman=wallet.balance_toman,
+            kind="topup",
+            description=f"افزایش اعتبار #{topup.id}",
+            topup_id=topup.id,
         ))
         user = await session.get(User, topup.user_id)
         new_balance = wallet.balance_toman
+        amount = topup.amount_toman
         await session.commit()
-    await audit(callback.from_user.id, "wallet_topup_approved", None, {"topup_id": topup_id, "amount_toman": topup.amount_toman})
+    await audit(callback.from_user.id, "wallet_topup_approved", None, {"topup_id": topup_id, "amount_toman": amount})
     await callback.answer("اعتبار افزایش یافت.")
-    await callback.message.edit_reply_markup(reply_markup=None)
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
     await callback.bot.send_message(
         user.telegram_id,
-        f"✅ افزایش اعتبار تأیید شد.\n💰 مبلغ: {topup.amount_toman:,} تومان\n💳 موجودی جدید: {new_balance:,} تومان",
+        f"✅ افزایش اعتبار تأیید شد.\n💰 مبلغ: {amount:,} تومان\n💳 موجودی جدید: {new_balance:,} تومان",
     )
 
 
