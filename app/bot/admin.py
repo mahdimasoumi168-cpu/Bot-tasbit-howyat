@@ -826,7 +826,7 @@ async def admin_stats(callback: CallbackQuery) -> None:
         revenue = sum(p.amount_toman for p in approved)
         users_count = len((await session.execute(select(User))).scalars().all())
     lines = [
-        "📊 گزارش کلی رنا یار بات",
+        "📊 گزارش کلی کمک‌یار مهاجر",
         "",
         f"👥 مشترکان: {users_count}",
         f"📋 کل درخواست‌ها: {len(total)}",
