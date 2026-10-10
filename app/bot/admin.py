@@ -349,13 +349,15 @@ async def operator_order_detail(callback: CallbackQuery) -> None:
     buttons = [[ui_button(text="📎 مشاهده مدارک پرونده", callback_data=f"op:docs:{order.id}")]]
     if payment and payment.receipt_file_id:
         buttons.append([ui_button(text="🧾 مشاهده رسید پرداخت", callback_data=f"op:receipt:{order.id}")])
-    buttons.extend([
-        [ui_button(text="🟡 در حال انجام", callback_data=f"adm:status:{order.id}:in_progress")],
-        [ui_button(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order.id}:waiting_user")],
-        [ui_button(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order.id}:completed")],
-        [ui_button(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order.id}")],
-        [ui_button(text="🔙 بازگشت", callback_data="op:orders")],
-    ])
+    if can_operator(operator, "set_status") and order.status in {"payment_approved", "in_progress", "waiting_user"}:
+        buttons.extend([
+            [ui_button(text="🟡 در حال انجام", callback_data=f"adm:status:{order.id}:in_progress")],
+            [ui_button(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order.id}:waiting_user")],
+            [ui_button(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order.id}:completed")],
+        ])
+    if can_operator(operator, "message_user"):
+        buttons.append([ui_button(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order.id}")])
+    buttons.append([ui_button(text="🔙 بازگشت", callback_data="op:orders")])
     await callback.message.edit_text(summary, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await callback.answer()
 @router.callback_query(F.data.startswith("op:docs:"))
