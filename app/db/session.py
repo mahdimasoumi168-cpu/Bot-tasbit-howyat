@@ -80,3 +80,17 @@ async def init_db() -> None:
             if "receipt_type" not in payment_names:
                 await conn.execute(text("ALTER TABLE payments ADD COLUMN receipt_type VARCHAR(16) DEFAULT 'photo'"))
                 await conn.execute(text("UPDATE payments SET receipt_type = 'photo' WHERE receipt_type IS NULL"))
+            document_columns = await conn.execute(text("PRAGMA table_info(documents)"))
+            document_names = {row[1] for row in document_columns.fetchall()}
+            if "review_status" not in document_names:
+                await conn.execute(text(
+                    "ALTER TABLE documents ADD COLUMN review_status VARCHAR(32) NOT NULL DEFAULT 'pending'"
+                ))
+            if "reviewed_by_telegram_id" not in document_names:
+                await conn.execute(text(
+                    "ALTER TABLE documents ADD COLUMN reviewed_by_telegram_id BIGINT"
+                ))
+            if "reviewed_at" not in document_names:
+                await conn.execute(text(
+                    "ALTER TABLE documents ADD COLUMN reviewed_at DATETIME"
+                ))
