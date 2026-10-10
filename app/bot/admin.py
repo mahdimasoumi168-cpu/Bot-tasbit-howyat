@@ -62,23 +62,30 @@ def admin_menu() -> InlineKeyboardMarkup:
     )
 
 
-def order_actions(order_id: int, operator: Operator | None = None, payment_review: bool = True) -> InlineKeyboardMarkup:
+def order_actions(
+    order_id: int,
+    operator: Operator | None = None,
+    payment_review: bool = True,
+    order_status: str | None = None,
+) -> InlineKeyboardMarkup:
     rows = []
-    if payment_review and operator is None:
-        rows.append([ui_button(text="✅ تأیید پرداخت", callback_data=f"adm:approve:{order_id}")])
-        rows.append([ui_button(text="❌ رد پرداخت", callback_data=f"adm:reject:{order_id}")])
-    elif payment_review:
-        if can_operator(operator, "approve_payment"):
+    if payment_review and order_status == "waiting_receipt_review":
+        if operator is None:
             rows.append([ui_button(text="✅ تأیید پرداخت", callback_data=f"adm:approve:{order_id}")])
-        if can_operator(operator, "reject_payment"):
             rows.append([ui_button(text="❌ رد پرداخت", callback_data=f"adm:reject:{order_id}")])
-    if operator is None or can_operator(operator, "set_status"):
-        rows.extend([
-            [ui_button(text="🟡 در حال انجام", callback_data=f"adm:status:{order_id}:in_progress")],
-            [ui_button(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order_id}:waiting_user")],
-            [ui_button(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order_id}:completed")],
-            [ui_button(text="🔴 رد درخواست", callback_data=f"adm:status:{order_id}:rejected")],
-        ])
+        else:
+            if can_operator(operator, "approve_payment"):
+                rows.append([ui_button(text="✅ تأیید پرداخت", callback_data=f"adm:approve:{order_id}")])
+            if can_operator(operator, "reject_payment"):
+                rows.append([ui_button(text="❌ رد پرداخت", callback_data=f"adm:reject:{order_id}")])
+    if order_status in {"payment_approved", "in_progress", "waiting_user"}:
+        if operator is None or can_operator(operator, "set_status"):
+            rows.extend([
+                [ui_button(text="🟡 در حال انجام", callback_data=f"adm:status:{order_id}:in_progress")],
+                [ui_button(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order_id}:waiting_user")],
+                [ui_button(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order_id}:completed")],
+                [ui_button(text="🔴 رد درخواست", callback_data=f"adm:status:{order_id}:rejected")],
+            ])
     if operator is None or can_operator(operator, "message_user"):
         rows.append([ui_button(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order_id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -457,7 +464,6 @@ async def _show_operator_orders(callback: CallbackQuery, status_filter: str = "a
         "active": (["payment_approved", "in_progress", "waiting_user"], "📋 درخواست‌های فعال"),
         "completed": (["completed"], "✅ درخواست‌های تکمیل‌شده"),
         "rejected": (["rejected"], "❌ درخواست‌های ردشده"),
-        "review": (["waiting_receipt_review"], "🧾 درخواست‌های در انتظار بررسی رسید"),
     }
     statuses, heading = filters.get(status_filter, filters["active"])
     await callback.answer()
@@ -484,7 +490,7 @@ async def _show_operator_orders(callback: CallbackQuery, status_filter: str = "a
     ]
     buttons.extend([
         [ui_button(text="🟡 درخواست‌های فعال", callback_data="op:orders:active"),
-         ui_button(text="🧾 در انتظار رسید", callback_data="op:orders:review")],
+         ui_button(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
         [ui_button(text="✅ تکمیل‌شده‌ها", callback_data="op:orders:completed"),
          ui_button(text="❌ ردشده‌ها", callback_data="op:orders:rejected")],
         [ui_button(text="🔙 بازگشت به پنل", callback_data="op:back")],
@@ -500,7 +506,7 @@ async def operator_orders(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("op:orders:"))
 async def operator_orders_filter(callback: CallbackQuery) -> None:
     status_filter = callback.data.rsplit(":", 1)[1]
-    if status_filter not in {"active", "completed", "rejected", "review"}:
+    if status_filter not in {"active", "completed", "rejected"}:
         await callback.answer("فیلتر درخواست نامعتبر است.", show_alert=True)
         return
     await _show_operator_orders(callback, status_filter)
@@ -650,7 +656,7 @@ async def operator_pending(callback: CallbackQuery) -> None:
             f"{status_header(order, service)}\n"
             f"👤 {user.first_name or ''} {user.last_name or ''}\n"
             f"💰 {payment.amount_toman:,} تومان",
-            reply_markup=order_actions(order.id, operator=operator),
+            reply_markup=order_actions(order.id, operator=operator, order_status=order.status),
         )
         if payment.receipt_file_id:
             await send_payment_receipt(callback.bot, callback.from_user.id, payment, f"🧾 رسید {order.public_id}")
@@ -860,7 +866,7 @@ async def case_lookup(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer(
         build_case_text(order, service, user, data, companions, documents, payments),
-        reply_markup=order_actions(order.id),
+        reply_markup=order_actions(order.id, order_status=order.status),
     )
     for doc in documents:
         try:
@@ -1185,16 +1191,20 @@ async def admin_order_detail(callback: CallbackQuery) -> None:
         f"📎 مدارک: {len(docs)}\n"
         f"💳 پرداخت‌ها: {len(payments)}"
     )
-    await callback.message.edit_text(summary, reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+    order_buttons = [
         [ui_button(text="📎 ارسال مدارک به من", callback_data=f"adm:docs:{order.id}")],
         [ui_button(text="💳 رسیدها", callback_data=f"adm:payments:{order.id}")],
         [ui_button(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order.id}")],
-        [ui_button(text="🟡 در حال انجام", callback_data=f"adm:status:{order.id}:in_progress")],
-        [ui_button(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order.id}:waiting_user")],
-        [ui_button(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order.id}:completed")],
-        [ui_button(text="🔴 رد درخواست", callback_data=f"adm:status:{order.id}:rejected")],
         [ui_button(text="🔙 بازگشت", callback_data="adm:orders")],
-    ]))
+    ]
+    if order.status in {"payment_approved", "in_progress", "waiting_user"}:
+        order_buttons[3:3] = [
+            [ui_button(text="🟡 در حال انجام", callback_data=f"adm:status:{order.id}:in_progress")],
+            [ui_button(text="⏳ منتظر مشترک", callback_data=f"adm:status:{order.id}:waiting_user")],
+            [ui_button(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order.id}:completed")],
+            [ui_button(text="🔴 رد درخواست", callback_data=f"adm:status:{order.id}:rejected")],
+        ]
+    await callback.message.edit_text(summary, reply_markup=InlineKeyboardMarkup(inline_keyboard=order_buttons))
     await callback.answer()
 
 
@@ -1275,7 +1285,7 @@ async def orders(callback: CallbackQuery) -> None:
             select(Order, Service, User)
             .join(Service, Order.service_id == Service.id)
             .join(User, Order.user_id == User.id)
-            .where(Order.status.notin_(["draft", "waiting_payment"]))
+            .where(Order.status.notin_(["draft", "waiting_payment", "waiting_receipt_review"]))
             .order_by(Order.id.desc())
             .limit(20)
         )
@@ -1359,7 +1369,7 @@ async def send_case_to_operator(bot, order_id: int) -> None:
         op = None
         if recipient_id not in settings.admin_id_set:
             op = next((x for x in operators if x.telegram_id == recipient_id), None)
-        await bot.send_message(recipient_id, text, reply_markup=order_actions(order.id, operator=op, payment_review=bool(payment and payment.status == "pending")))
+        await bot.send_message(recipient_id, text, reply_markup=order_actions(order.id, operator=op, payment_review=bool(payment and payment.status == "pending"), order_status=order.status))
         if payment and payment.receipt_file_id:
             await send_payment_receipt(bot, recipient_id, payment, f"🧾 رسید پرداخت {order.public_id}")
         for doc in docs:
