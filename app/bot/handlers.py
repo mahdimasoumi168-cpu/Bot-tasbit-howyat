@@ -323,7 +323,7 @@ async def start(message: Message, state: FSMContext, telegram_id: int | None = N
     await state.clear()
     await get_or_create_user(message, telegram_id=telegram_id)
     await message.answer(
-        "سلام 🌷\nبه «رنا یار بات» خوش آمدید.\n\nخدمت موردنظر را انتخاب کنید:",
+        "سلام 🌷\nبه «کمک‌یار مهاجر» خوش آمدید.\n\nخدمت موردنظر را انتخاب کنید:",
         reply_markup=await user_main_menu(uid),
     )
 
@@ -1079,10 +1079,12 @@ async def pay_wallet(callback: CallbackQuery, state: FSMContext) -> None:
         return
     await state.clear()
     await callback.answer("پرداخت از اعتبار انجام شد.")
-    await callback.message.edit_text("✅ پرداخت با اعتبار با موفقیت انجام شد.\n\nدرخواست شما برای انجام کار ثبت شد.", reply_markup=await user_main_menu(callback.from_user.id))
+    await callback.message.edit_text("✅ پرداخت با اعتبار با موفقیت انجام شد.\n\nمبلغ فقط یک‌بار از اعتبار شما کسر شد و پرونده برای اپراتورهای مجاز ارسال می‌شود.", reply_markup=await user_main_menu(callback.from_user.id))
+    # پرداخت کیف پول در تراکنش apply_wallet_payment تأیید شده است؛ حالا پرونده را ارسال می‌کنیم.
+    await send_case_to_operator(callback.bot, order_id)
     for admin_id in get_settings().admin_id_set:
         try:
-            await callback.bot.send_message(admin_id, f"💰 پرداخت با اعتبار انجام شد.\nدرخواست داخلی: {order_id}")
+            await callback.bot.send_message(admin_id, f"💰 پرداخت با اعتبار تأیید شد.\nشماره درخواست: {order_id}")
         except Exception:
             pass
 
