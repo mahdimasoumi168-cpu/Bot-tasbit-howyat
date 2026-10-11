@@ -169,3 +169,60 @@ def test_services_menu_can_hide_disabled_services():
     callbacks = {button.callback_data for button in buttons}
     assert {"menu:identity", "menu:fida", "menu:home"} <= callbacks
     assert not {"menu:khodnevis", "menu:dolatman", "menu:screening", "menu:other_service"} & callbacks
+
+
+
+def test_admin_price_command_rejects_zero_tariff():
+    from pathlib import Path
+
+    source = Path("app/bot/admin.py").read_text(encoding="utf-8")
+    command_block = source.split(
+        '@router.message(F.text.regexp(r"^/(?:setprice|setserviceprice)(?:\\s|$)"))',
+        1,
+    )[1].split('@router.callback_query(F.data == "adm:stats")', 1)[0]
+    assert "if price <= 0:" in command_block
+
+
+
+def test_unapproved_receipts_stay_out_of_request_and_case_views():
+    from pathlib import Path
+
+    admin_source = Path("app/bot/admin.py").read_text(encoding="utf-8")
+    handlers_source = Path("app/bot/handlers.py").read_text(encoding="utf-8")
+
+    request_list = admin_source.split(
+        '@router.callback_query(F.data == "adm:orders")', 1
+    )[1].split("async def send_case_to_operator", 1)[0]
+    operator_list = admin_source.split(
+        "async def _show_operator_orders", 1
+    )[1].split('@router.callback_query(F.data == "op:orders")', 1)[0]
+    admin_detail = admin_source.split(
+        '@router.callback_query(F.data.startswith("adm:order:"))', 1
+    )[1].split('@router.callback_query(F.data.startswith("adm:delete:confirm:"))', 1)[0]
+    case_lookup = admin_source.split(
+        "async def case_lookup(message: Message", 1
+    )[1].split("async def send_payment_receipt", 1)[0]
+    case_dispatch = admin_source.split(
+        "async def send_case_to_operator", 1
+    )[1].split('@router.callback_query(F.data.startswith("adm:approve:"))', 1)[0]
+    user_tracking = handlers_source.split(
+        "async def track_orders", 1
+    )[1].split('@router.callback_query(F.data.startswith("user:order:"))', 1)[0]
+
+    for block in (request_list, operator_list, admin_detail, case_lookup, case_dispatch, user_tracking):
+        assert 'Payment.status == "approved"' in block
+
+
+
+def test_wallet_topup_requires_payment_choice_before_receipt_upload():
+    from pathlib import Path
+
+    source = Path("app/bot/handlers.py").read_text(encoding="utf-8")
+    amount_block = source.split(
+        "async def wallet_topup_amount", 1
+    )[1].split('@router.callback_query(F.data == "wallet:topup:card")', 1)[0]
+    card_block = source.split(
+        '@router.callback_query(F.data == "wallet:topup:card")', 1
+    )[1].split("async def wallet_topup_invoice", 1)[0]
+    assert "await state.set_state(WalletTopupForm.choice)" in amount_block
+    assert "await state.get_state() != WalletTopupForm.choice" in card_block

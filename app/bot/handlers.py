@@ -29,6 +29,7 @@ from app.bot.states import AdditionalServiceForm, IdentityForm, KhodnevisForm, R
 from app.core.config import get_settings
 from app.db.models import Companion, Document, Operator, Order, Payment, Service, ServiceCode, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode, AuditLog
 from app.db.session import SessionLocal
+from app.db.queries import find_custom_service_order_without_payment
 from app.utils.dates import gregorian_display, jalali_to_gregorian
 from app.utils.ids import public_order_id
 
@@ -95,6 +96,11 @@ async def ensure_wallet(session, user_id: int) -> Wallet:
         session.add(wallet)
         await session.flush()
     return wallet
+
+
+def card_details_ready(card_number: str | None, card_holder: str | None) -> bool:
+    """Card-to-card payment is available only after both destination details are configured."""
+    return bool(card_number and card_number.strip() and card_holder and card_holder.strip())
 
 
 def calculate_discount(base_amount: int, coupon: DiscountCode | None) -> int:
@@ -1370,6 +1376,33 @@ async def retry_receipt_save(message: Message, state: FSMContext) -> None:
     await message.answer("✅ رسید جدید ثبت شد و دوباره برای بررسی ارسال گردید.", reply_markup=await user_main_menu(message.from_user.id))
 
 
+def format_optional_order_details(data: dict) -> str:
+    """Format optional service fields with real line breaks and escaped user-provided text."""
+    extra_labels = {
+        "father_name": "نام پدر",
+        "birth_date": "تاریخ تولد",
+        "province": "استان",
+        "city": "شهر",
+        "neighborhood": "محله",
+        "street": "خیابان",
+        "alley": "کوچه",
+        "plaque": "پلاک",
+        "parent_mobile": "موبایل به نام پدر/مادر",
+        "requested_service": "خدمت درخواستی",
+    }
+    lines = [
+        f"{label}: {escape(str(data[key]))}"
+        for key, label in extra_labels.items()
+        if data.get(key)
+    ]
+    if data.get("child_count"):
+        lines.append(f"تعداد دانش‌آموزان ثبت‌شده: {int(data['child_count'])}")
+    result = "\n" + "\n".join(lines) if lines else ""
+    if data.get("service_description"):
+        result += "\n\n📝 توضیحات مشترک: " + escape(str(data["service_description"]))
+    return result
+
+
 @router.message(F.text == "📋 پیگیری درخواست‌ها")
 async def track_orders(message: Message, telegram_id: int | None = None) -> None:
     async with SessionLocal() as session:
@@ -1458,20 +1491,7 @@ async def user_order_detail(callback: CallbackQuery) -> None:
     ):
         if data.get(key):
             text += f"{label}: {data[key]}\n"
-    extra_labels = {
-        "father_name": "نام پدر", "birth_date": "تاریخ تولد",
-        "province": "استان", "city": "شهر", "neighborhood": "محله",
-        "street": "خیابان", "alley": "کوچه", "plaque": "پلاک",
-        "parent_mobile": "موبایل به نام پدر/مادر",
-        "requested_service": "خدمت درخواستی",
-    }
-    for key, label in extra_labels.items():
-        if data.get(key):
-            text += f"\\n{label}: {escape(str(data[key]))}"
-    if data.get("child_count"):
-        text += f"\\nتعداد دانش‌آموزان ثبت‌شده: {int(data['child_count'])}"
-    if data.get("service_description"):
-        text += f"\\n\\n📝 توضیحات مشترک: {escape(str(data['service_description']))}"
+    text += format_optional_order_details(data)
     text += "\n👨‍👩‍👧 همراهان:\n" + (
         "\n".join(f"• {x.full_name} — {x.mobile}" for x in companions) if companions else "ندارد"
     )
@@ -1491,6 +1511,39 @@ async def user_order_detail(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+
+
+@router.callback_query(F.data.startswith("user:payquote:"))
+async def user_pay_custom_quote(callback: CallbackQuery, state: FSMContext) -> None:
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("درخواست پرداخت نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        row = await find_custom_service_order_without_payment(
+            session,
+            order_id,
+            status="waiting_payment",
+            telegram_id=callback.from_user.id,
+            require_price=True,
+        )
+        if not row:
+            await callback.answer(
+                "این درخواست برای پرداخت آماده نیست یا قبلاً پرداخت شده است.",
+                show_alert=True,
+            )
+            return
+        order, service, user = row
+    await state.clear()
+    await state.update_data(
+        order_id=order.id,
+        public_id=order.public_id,
+        service_code=service.code,
+        telegram_id=user.telegram_id,
+    )
+    await callback.answer()
+    await show_payment_options(callback.message, state, order.id)
 
 
 @router.callback_query(F.data == "pay:wallet")
@@ -1540,12 +1593,17 @@ async def pay_card(callback: CallbackQuery, state: FSMContext) -> None:
     if not order_id:
         await callback.answer("درخواست پرداخت پیدا نشد.", show_alert=True)
         return
+    async with SessionLocal() as session:
+        card_setting = (await session.execute(select(Setting).where(Setting.key == "card_number"))).scalar_one_or_none()
+        holder_setting = (await session.execute(select(Setting).where(Setting.key == "card_holder"))).scalar_one_or_none()
+    card_number = card_setting.value if card_setting and card_setting.value else ""
+    card_holder = holder_setting.value if holder_setting and holder_setting.value else ""
+    if not card_details_ready(card_number, card_holder):
+        await callback.answer("اطلاعات کارت مقصد هنوز کامل نشده است؛ لطفاً با پشتیبانی تماس بگیرید.", show_alert=True)
+        return
     await state.set_state(IdentityForm.receipt if data.get("service_code") == ServiceCode.IDENTITY.value else KhodnevisForm.receipt if data.get("service_code") == ServiceCode.KHODNEVIS.value else AdditionalServiceForm.receipt)
     await callback.answer()
     invoice_text = await payment_instructions(order_id)
-    async with SessionLocal() as session:
-        card_setting = (await session.execute(select(Setting).where(Setting.key == "card_number"))).scalar_one_or_none()
-    card_number = card_setting.value if card_setting and card_setting.value else "تنظیم نشده"
     amount_toman, _, _ = await order_amount_and_coupon(order_id)
     await callback.message.edit_text(
         invoice_text,
@@ -1626,7 +1684,7 @@ async def wallet_topup_amount(message: Message, state: FSMContext) -> None:
         await session.flush()
         await state.update_data(topup_id=topup.id)
         await session.commit()
-    await state.set_state(WalletTopupForm.receipt)
+    await state.set_state(WalletTopupForm.choice)
     await message.answer(
         f"➕ درخواست افزایش اعتبار ثبت شد.\n\n💰 مبلغ: {amount:,} تومان\n\nروش پرداخت را انتخاب کنید:",
         reply_markup=wallet_topup_choice_menu(),
@@ -1635,6 +1693,9 @@ async def wallet_topup_amount(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "wallet:topup:card")
 async def wallet_topup_card_choice(callback: CallbackQuery, state: FSMContext) -> None:
+    if await state.get_state() != WalletTopupForm.choice:
+        await callback.answer("این مرحله دیگر فعال نیست؛ دوباره افزایش اعتبار را شروع کنید.", show_alert=True)
+        return
     data = await state.get_data()
     topup_id = data.get("topup_id")
     if not topup_id:
@@ -1652,11 +1713,16 @@ async def wallet_topup_card_choice(callback: CallbackQuery, state: FSMContext) -
             await callback.answer("این درخواست افزایش اعتبار دیگر برای پرداخت کارت‌به‌کارت آماده نیست.", show_alert=True)
             return
         amount = row[0].amount_toman
-    await state.set_state(WalletTopupForm.receipt)
-    invoice_text = await wallet_topup_invoice(amount)
     async with SessionLocal() as session:
         card_setting = (await session.execute(select(Setting).where(Setting.key == "card_number"))).scalar_one_or_none()
-    card_number = card_setting.value if card_setting and card_setting.value else "تنظیم نشده"
+        holder_setting = (await session.execute(select(Setting).where(Setting.key == "card_holder"))).scalar_one_or_none()
+    card_number = card_setting.value if card_setting and card_setting.value else ""
+    card_holder = holder_setting.value if holder_setting and holder_setting.value else ""
+    if not card_details_ready(card_number, card_holder):
+        await callback.answer("اطلاعات کارت مقصد هنوز کامل نشده است؛ لطفاً با پشتیبانی تماس بگیرید.", show_alert=True)
+        return
+    await state.set_state(WalletTopupForm.receipt)
+    invoice_text = await wallet_topup_invoice(amount)
     await callback.answer()
     await callback.message.edit_text(
         invoice_text,
