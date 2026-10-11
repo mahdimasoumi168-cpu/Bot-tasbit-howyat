@@ -36,6 +36,12 @@ from app.utils.ids import public_order_id
 router = Router()
 
 
+def valid_identity_document_number(value: str | None) -> bool:
+    """Accept a non-empty document identifier while preventing accidental oversized input."""
+    normalized = " ".join((value or "").strip().split())
+    return 2 <= len(normalized) <= 64
+
+
 def ui_button(text: str, **kwargs):
     """Create consistently styled Telegram inline buttons: blue by default, semantic red/green when appropriate."""
     if "style" not in kwargs:
@@ -935,7 +941,7 @@ async def identity_document(message: Message, state: FSMContext) -> None:
 @router.message(IdentityForm.identity_document_number, F.text)
 async def identity_document_number(message: Message, state: FSMContext) -> None:
     value = " ".join((message.text or "").strip().split())
-    if len(value) < 2 or len(value) > 64:
+    if not valid_identity_document_number(value):
         await message.answer(
             "❌ شماره شناسه باید بین ۲ تا ۶۴ نویسه باشد. لطفاً دوباره وارد کنید.",
             reply_markup=cancel_menu(),
@@ -944,7 +950,7 @@ async def identity_document_number(message: Message, state: FSMContext) -> None:
     await state.update_data(identity_document_number=value)
     await state.set_state(IdentityForm.tazkira)
     await message.answer(
-        "۷/۸\\n📸 لطفاً عکس واضحِ تذکره اصلی یکی از اقارب نزدیک را ارسال کنید.\\n"
+        "۷/۸\n📸 لطفاً عکس واضحِ تذکره اصلی یکی از اقارب نزدیک را ارسال کنید.\n"
         "مثال: تصویر کامل و خوانای تذکره اصلی پدر، مادر، برادر یا خواهر.",
         reply_markup=cancel_menu(),
     )
