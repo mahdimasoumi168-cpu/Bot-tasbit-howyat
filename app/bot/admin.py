@@ -48,6 +48,7 @@ def admin_menu() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [ui_button(text="🔵 رسیدهای در انتظار بررسی", callback_data="adm:pending")],
             [ui_button(text="📋 درخواست‌ها", callback_data="adm:orders")],
+            [ui_button(text="💬 ارسال پیام به مشترک", callback_data="adm:send_user")],
             [ui_button(text="🗄 پرونده‌های حذف‌شده", callback_data="adm:deleted")],
             [ui_button(text="🔎 پرونده با کد پیگیری", callback_data="adm:case")],
             [ui_button(text="📊 گزارش‌ها", callback_data="adm:stats")],
@@ -1957,6 +1958,101 @@ async def admin_topup_reject(callback: CallbackQuery) -> None:
         f"❌ رسید افزایش اعتبار #{topup_id} تأیید نشد.\n"
         "در صورت نیاز دوباره از بخش «اعتبار من» اقدام کنید.",
     )
+
+
+@router.callback_query(F.data == "adm:send_user")
+async def start_direct_message(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("این امکان فقط برای مدیر اصلی فعال است.", show_alert=True)
+        return
+    await state.clear()
+    await state.set_state(AdminForm.direct_message_user_id)
+    await callback.answer()
+    await callback.message.answer(
+        "💬 ارسال پیام مستقیم به مشترک\n\n"
+        "شناسه عددی تلگرام (Telegram ID) مشترک را ارسال کنید.\n"
+        "سپس می‌توانید متن، عکس، ویدیو، فایل، صوت یا پیام دارای توضیح را بفرستید.\n"
+        "نکته: مشترک باید قبلاً ربات را فعال کرده باشد.",
+        reply_markup=admin_cancel_menu(),
+    )
+
+
+@router.message(AdminForm.direct_message_user_id)
+async def direct_message_get_user_id(message: Message, state: FSMContext) -> None:
+    if not is_admin(message):
+        return
+    raw = normalize_digits_admin((message.text or "").strip())
+    if not raw.isdigit() or int(raw) <= 0:
+        await message.answer("❌ شناسه نامعتبر است. فقط شناسه عددی مثبت تلگرام را ارسال کنید.", reply_markup=admin_cancel_menu())
+        return
+    target_id = int(raw)
+    if target_id == message.from_user.id:
+        await message.answer("❌ نمی‌توانید شناسه خودتان را به‌عنوان مشترک وارد کنید.", reply_markup=admin_cancel_menu())
+        return
+    await state.update_data(direct_message_target_id=target_id)
+    await state.set_state(AdminForm.direct_message)
+    await message.answer(
+        f"✅ شناسه مقصد ثبت شد: {target_id}\n\n"
+        "حالا پیام موردنظر را ارسال کنید. پیام‌های متنی و رسانه‌ای پشتیبانی می‌شوند.",
+        reply_markup=admin_cancel_menu(),
+    )
+
+
+@router.callback_query(F.data.startswith("adm:direct_reply:"))
+async def start_direct_reply(callback: CallbackQuery, state: FSMContext) -> None:
+    settings = get_settings()
+    operator = await get_operator(callback.from_user.id)
+    if callback.from_user.id not in settings.admin_id_set and (
+        operator is None or not can_operator(operator, "message_user")
+    ):
+        await callback.answer("دسترسی پاسخ به مشترک ندارید.", show_alert=True)
+        return
+    try:
+        target_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("شناسه مشترک نامعتبر است.", show_alert=True)
+        return
+    await state.clear()
+    await state.update_data(direct_message_target_id=target_id)
+    await state.set_state(AdminForm.direct_message)
+    await callback.answer()
+    await callback.message.answer(
+        f"↩️ پاسخ مستقیم به مشترک | شناسه: {target_id}\n\n"
+        "متن، عکس، ویدیو، فایل یا صوت پاسخ را ارسال کنید.",
+        reply_markup=admin_cancel_menu(),
+    )
+
+
+@router.message(AdminForm.direct_message)
+async def send_direct_message(message: Message, state: FSMContext) -> None:
+    settings = get_settings()
+    operator = await get_operator(message.from_user.id)
+    if message.from_user.id not in settings.admin_id_set and (
+        operator is None or not can_operator(operator, "message_user")
+    ):
+        await state.clear()
+        return
+    data = await state.get_data()
+    target_id = data.get("direct_message_target_id")
+    if not target_id:
+        await state.clear()
+        await message.answer("❌ شناسه مقصد ثبت نشده است. عملیات لغو شد.", reply_markup=admin_menu())
+        return
+    user_reply_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        ui_button(text="↩️ ارسال پاسخ پیام", callback_data=f"user:direct_reply:{message.from_user.id}")
+    ]])
+    try:
+        await message.copy_to(int(target_id), reply_markup=user_reply_keyboard)
+    except Exception:
+        await message.answer(
+            "❌ پیام ارسال نشد. شناسه را بررسی کنید و مطمئن شوید مشترک قبلاً ربات را فعال کرده است.",
+            reply_markup=admin_menu(),
+        )
+        await state.clear()
+        return
+    await audit(message.from_user.id, "direct_message_sent", None, {"recipient_telegram_id": int(target_id), "content_type": message.content_type})
+    await state.clear()
+    await message.answer(f"✅ پیام برای شناسه {target_id} ارسال شد. دکمه پاسخ زیر پیام به مشترک امکان پاسخ مستقیم می‌دهد.", reply_markup=admin_menu())
 
 
 @router.callback_query(F.data.startswith("adm:msg:"))

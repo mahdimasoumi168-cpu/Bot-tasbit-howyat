@@ -45,6 +45,8 @@ class AdminForm(StatesGroup):
     wallet_adjust_user = State()
     wallet_adjust_amount = State()
     service_rules = State()
+    direct_message_user_id = State()
+    direct_message = State()
 
 
 class RetryReceiptForm(StatesGroup):
@@ -63,3 +65,7 @@ class PaymentForm(StatesGroup):
 class WalletTopupForm(StatesGroup):
     amount = State()
     receipt = State()
+
+
+class DirectReplyForm(StatesGroup):
+    message = State()

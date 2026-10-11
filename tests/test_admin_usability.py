@@ -93,3 +93,12 @@ def test_service_rules_menu_has_accept_and_reject_actions():
     keyboard = service_rules_menu("identity")
     callbacks = {button.callback_data for row in keyboard.inline_keyboard for button in row}
     assert callbacks == {"service:accept:identity", "service:reject:identity"}
+
+
+def test_admin_menu_exposes_direct_message_action():
+    callbacks = {
+        button.callback_data
+        for row in admin_menu().inline_keyboard
+        for button in row
+    }
+    assert "adm:send_user" in callbacks
