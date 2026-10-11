@@ -169,3 +169,15 @@ def test_services_menu_can_hide_disabled_services():
     callbacks = {button.callback_data for button in buttons}
     assert {"menu:identity", "menu:fida", "menu:home"} <= callbacks
     assert not {"menu:khodnevis", "menu:dolatman", "menu:screening", "menu:other_service"} & callbacks
+
+
+
+def test_admin_price_command_rejects_zero_tariff():
+    from pathlib import Path
+
+    source = Path("app/bot/admin.py").read_text(encoding="utf-8")
+    command_block = source.split(
+        '@router.message(F.text.regexp(r"^/(?:setprice|setserviceprice)(?:\\s|$)"))',
+        1,
+    )[1].split('@router.callback_query(F.data == "adm:stats")', 1)[0]
+    assert "if price <= 0:" in command_block
