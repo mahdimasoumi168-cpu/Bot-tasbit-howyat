@@ -1047,7 +1047,7 @@ def build_case_text(order: Order, service: Service, user: User, data: dict, comp
         f"نام و نام خانوادگی: {name}",
         f"📱 موبایل: {mobile}",
     ]
-    skip = {"full_name", "mobile", "identity_document", "tazkira", "amayesh", "passport_first", "passport_renewal", "residence_renewal"}
+    skip = {"full_name", "mobile", "identity_document", "tazkira", "amayesh", "passport_first", "passport_renewal", "residence_renewal", "deleted_previous_status"}
     for key, value in data.items():
         if key in skip or value in (None, "", [], {}):
             continue
