@@ -1925,10 +1925,21 @@ async def admin_unpriced_quote_save(message: Message, state: FSMContext) -> None
             await message.answer("❌ این درخواست دیگر برای تعیین هزینه آماده نیست.", reply_markup=admin_menu())
             return
         order, _service, user = row
-        order.price_snapshot_toman = int(raw)
-        order.status = "waiting_payment"
         public_id = order.public_id
         user_telegram_id = user.telegram_id
+        claim = await session.execute(
+            update(Order)
+            .where(Order.id == order.id, Order.status == "waiting_user")
+            .values(price_snapshot_toman=int(raw), status="waiting_payment")
+        )
+        if claim.rowcount != 1:
+            await session.rollback()
+            await state.clear()
+            await message.answer(
+                "❌ این درخواست هم‌زمان بررسی شده است؛ فهرست را تازه کنید.",
+                reply_markup=admin_menu(),
+            )
+            return
         await session.commit()
     await state.clear()
     await audit(message.from_user.id, "custom_service_quote_set", order_id, {"amount_toman": int(raw)})
@@ -1981,9 +1992,17 @@ async def admin_unpriced_reject(callback: CallbackQuery) -> None:
             await callback.answer("این درخواست دیگر در صف بررسی نیست.", show_alert=True)
             return
         order, _service, user = row
-        order.status = "rejected"
         public_id = order.public_id
         user_telegram_id = user.telegram_id
+        claim = await session.execute(
+            update(Order)
+            .where(Order.id == order.id, Order.status == "waiting_user")
+            .values(status="rejected")
+        )
+        if claim.rowcount != 1:
+            await session.rollback()
+            await callback.answer("این درخواست هم‌زمان بررسی شده است؛ فهرست را تازه کنید.", show_alert=True)
+            return
         await session.commit()
     await audit(callback.from_user.id, "custom_service_request_rejected", order_id)
     await callback.answer("درخواست رد شد.")
