@@ -745,7 +745,7 @@ async def set_card_start(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AdminForm.set_card_number)
     await callback.answer()
     await callback.message.answer(
-        "💳 مرحله ۱ از ۲\nشماره کارت ۱۶ رقمی را فقط به صورت عددی ارسال کنید.\nمثال: 6037991234567890\nمحدودیت: دقیقاً ۱۶ رقم.",
+        "💳 مرحله ۱ از ۲\nشماره کارت ۱۶ رقمی را فقط به صورت عددی ارسال کنید.\nمثال: 6037991234567890",
         reply_markup=admin_cancel_menu(),
     )
 
@@ -760,7 +760,7 @@ async def set_card_number_save(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(card_number=value)
     await state.set_state(AdminForm.set_card_holder)
-    await message.answer("💳 مرحله ۲ از ۲\nنام صاحب کارت را وارد کنید.\nمثال: علی احمدی\nمحدودیت: ۳ تا ۸۰ نویسه.", reply_markup=admin_cancel_menu())
+    await message.answer("💳 مرحله ۲ از ۲\nنام صاحب کارت را وارد کنید.\nمثال: علی احمدی", reply_markup=admin_cancel_menu())
 
 
 @router.message(AdminForm.set_card_holder)
@@ -957,7 +957,7 @@ async def case_lookup_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await callback.message.answer(
         "🔎 مشاهده پرونده کامل\n\n"
-        "کد پیگیری را وارد کنید.\nمثال: #10001 یا 10001\nمحدودیت: فقط کد پیگیری عددی.",
+        "کد پیگیری را وارد کنید.\nمثال: #10001 یا 10001",
         reply_markup=admin_cancel_menu(),
     )
 
@@ -1216,7 +1216,7 @@ async def set_price_start(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AdminForm.set_price)
     await callback.answer()
     await callback.message.answer(
-        "💰 مبلغ جدید را فقط به تومان و به صورت عددی ارسال کنید.\nمثال: 280000\nمحدودیت: عدد صحیح بزرگ‌تر از صفر.",
+        "💰 مبلغ جدید را فقط به تومان و به صورت عددی ارسال کنید.\nمثال: 280000",
         reply_markup=admin_cancel_menu(),
     )
 
@@ -2291,7 +2291,7 @@ async def operator_add_start(callback: CallbackQuery, state: FSMContext) -> None
     await state.clear()
     await state.set_state(AdminForm.operator_add)
     await callback.answer()
-    await callback.message.answer("👨‍💼 شناسه عددی تلگرام اپراتور را ارسال کنید.\nمثال: 7165912028\nمحدودیت: فقط عدد.", reply_markup=admin_cancel_menu())
+    await callback.message.answer("👨‍💼 شناسه عددی تلگرام اپراتور را ارسال کنید.\nمثال: 7165912028", reply_markup=admin_cancel_menu())
 
 
 @router.message(AdminForm.operator_add)
@@ -2492,7 +2492,7 @@ async def operator_remove_start(callback: CallbackQuery, state: FSMContext) -> N
     await state.clear()
     await state.set_state(AdminForm.operator_remove)
     await callback.answer()
-    await callback.message.answer("🚫 شناسه عددی اپراتور را برای غیرفعال‌سازی ارسال کنید.\nمثال: 7165912028\nمحدودیت: فقط عدد.", reply_markup=admin_cancel_menu())
+    await callback.message.answer("🚫 شناسه عددی اپراتور را برای غیرفعال‌سازی ارسال کنید.\nمثال: 7165912028", reply_markup=admin_cancel_menu())
 
 
 @router.message(AdminForm.operator_remove)
