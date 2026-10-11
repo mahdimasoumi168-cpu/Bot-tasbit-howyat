@@ -14,23 +14,12 @@ class Settings(BaseSettings):
     admin_ids: str = Field(default="", validation_alias="ADMIN_IDS")
     support_telegram_id: int | None = Field(default=8937359321, validation_alias="SUPPORT_TELEGRAM_ID")
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
-    variza_api_key: str = Field(default="", validation_alias="VARIZA_API_KEY")
-    variza_webhook_secret: str = Field(default="", validation_alias="VARIZA_WEBHOOK_SECRET")
-    public_base_url: str = Field(default="", validation_alias="PUBLIC_BASE_URL")
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
-
-    @property
-    def variza_enabled(self) -> bool:
-        return bool(
-            self.variza_api_key.strip()
-            and self.variza_webhook_secret.strip()
-            and self.public_base_url.strip().startswith("https://")
-        )
 
     @property
     def admin_id_set(self) -> set[int]:
