@@ -48,11 +48,13 @@ def admin_menu() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [ui_button(text="🔵 رسیدهای در انتظار بررسی", callback_data="adm:pending")],
             [ui_button(text="📋 درخواست‌ها", callback_data="adm:orders")],
+            [ui_button(text="🗄 پرونده‌های حذف‌شده", callback_data="adm:deleted")],
             [ui_button(text="🔎 پرونده با کد پیگیری", callback_data="adm:case")],
             [ui_button(text="📊 گزارش‌ها", callback_data="adm:stats")],
             [ui_button(text="👥 مشترکان", callback_data="adm:users")],
             [ui_button(text="👨‍💼 اپراتورها", callback_data="adm:operators")],
             [ui_button(text="🧩 خدمات", callback_data="adm:services")],
+            [ui_button(text="📜 تنظیم متن قوانین هر خدمت", callback_data="adm:rules")],
             [ui_button(text="💰 قیمت خدمات", callback_data="adm:prices")],
             [ui_button(text="💳 اطلاعات کارت", callback_data="adm:card")],
             [ui_button(text="💰 اعتبار مشترکان", callback_data="adm:wallets"), ui_button(text="➕ شارژهای در انتظار", callback_data="adm:topups")],
@@ -797,10 +799,100 @@ async def settings_panel(callback: CallbackQuery) -> None:
             [ui_button(text="💳 اطلاعات کارت", callback_data="adm:card")],
             [ui_button(text="💰 قیمت خدمات", callback_data="adm:prices")],
             [ui_button(text="🧩 وضعیت خدمات", callback_data="adm:services")],
+            [ui_button(text="📜 تنظیم متن قوانین هر خدمت", callback_data="adm:rules")],
+            [ui_button(text="🗄 پرونده‌های حذف‌شده", callback_data="adm:deleted")],
             [ui_button(text="🔙 بازگشت", callback_data="adm:home")],
         ]),
     )
     await callback.answer()
+
+
+@router.callback_query(F.data == "adm:rules")
+async def service_rules_panel(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        services = (await session.execute(select(Service).order_by(Service.id))).scalars().all()
+        settings_rows = (await session.execute(
+            select(Setting).where(Setting.key.in_([
+                f"service_rules:{service.code}" for service in services
+            ]))
+        )).scalars().all()
+    saved = {row.key: row.value for row in settings_rows}
+    buttons = []
+    lines = ["📜 تنظیم متن قوانین هر خدمت", "", "متن ذخیره‌شده پیش از شروع همان خدمت برای مشترک نمایش داده می‌شود."]
+    for service in services:
+        value = saved.get(f"service_rules:{service.code}", "").strip()
+        status = "✅ تنظیم شده" if value else "⚠️ متن اختصاصی ثبت نشده"
+        lines.append(f"\n• {service.name}: {status}")
+        buttons.append([ui_button(
+            text=f"✏️ ویرایش قوانین {service.name}",
+            callback_data=f"adm:rules:edit:{service.code}",
+        )])
+    buttons.append([ui_button(text="🔙 بازگشت به مدیریت", callback_data="adm:home")])
+    await callback.answer()
+    await callback.message.edit_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+@router.callback_query(F.data.startswith("adm:rules:edit:"))
+async def service_rules_edit_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    code = callback.data.rsplit(":", 1)[1]
+    if code not in {"identity", "khodnevis"}:
+        await callback.answer("خدمت نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        service = (await session.execute(select(Service).where(Service.code == code))).scalar_one_or_none()
+        setting = (await session.execute(select(Setting).where(Setting.key == f"service_rules:{code}"))).scalar_one_or_none()
+    if service is None:
+        await callback.answer("خدمت پیدا نشد.", show_alert=True)
+        return
+    await state.clear()
+    await state.update_data(service_rules_code=code)
+    await state.set_state(AdminForm.service_rules)
+    current = setting.value.strip() if setting and setting.value else "هنوز متن اختصاصی ذخیره نشده است."
+    await callback.answer()
+    await callback.message.answer(
+        f"📜 تنظیم قوانین: {service.name}\n\n"
+        f"متن فعلی:\n{current}\n\n"
+        "متن کامل قوانین جدید را در یک پیام ارسال کنید. این متن پیش از شروع خدمت به مشترک نمایش داده می‌شود.\n"
+        "حداکثر طول: ۳۵۰۰ نویسه.",
+        reply_markup=admin_cancel_menu(),
+    )
+
+
+@router.message(AdminForm.service_rules)
+async def service_rules_save(message: Message, state: FSMContext) -> None:
+    if not is_admin(message):
+        return
+    data = await state.get_data()
+    code = data.get("service_rules_code")
+    value = (message.text or "").strip()
+    if code not in {"identity", "khodnevis"}:
+        await state.clear()
+        await message.answer("❌ فرایند تنظیم قوانین منقضی شده است.", reply_markup=admin_menu())
+        return
+    if not value:
+        await message.answer("❌ متن قوانین نمی‌تواند خالی باشد. متن را ارسال کنید.", reply_markup=admin_cancel_menu())
+        return
+    if len(value) > 3500:
+        await message.answer("❌ متن بیش از ۳۵۰۰ نویسه است. لطفاً کوتاه‌تر ارسال کنید.", reply_markup=admin_cancel_menu())
+        return
+    key = f"service_rules:{code}"
+    async with SessionLocal() as session:
+        setting = (await session.execute(select(Setting).where(Setting.key == key))).scalar_one_or_none()
+        if setting is None:
+            session.add(Setting(key=key, value=value))
+        else:
+            setting.value = value
+        await session.commit()
+        service = (await session.execute(select(Service).where(Service.code == code))).scalar_one_or_none()
+        service_name = service.name if service else code
+    await state.clear()
+    await message.answer(f"✅ قوانین خدمت «{service_name}» ذخیره شد. از این پس پیش از شروع خدمت نمایش داده می‌شود.", reply_markup=admin_menu())
 
 
 @router.callback_query(F.data == "adm:services")
@@ -1260,8 +1352,149 @@ async def admin_order_detail(callback: CallbackQuery) -> None:
             [ui_button(text="✅ تکمیل درخواست", callback_data=f"adm:status:{order.id}:completed")],
             [ui_button(text="🔴 رد درخواست", callback_data=f"adm:status:{order.id}:rejected")],
         ]
+    if order.status == "deleted":
+        order_buttons.insert(-1, [ui_button(text="♻️ بازگردانی پرونده", callback_data=f"adm:restore:{order.id}")])
+    else:
+        order_buttons.insert(-1, [ui_button(text="🗑 حذف پرونده", callback_data=f"adm:delete:confirm:{order.id}")])
     await callback.message.edit_text(summary, reply_markup=InlineKeyboardMarkup(inline_keyboard=order_buttons))
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("adm:delete:confirm:"))
+async def admin_delete_order_confirm(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except ValueError:
+        await callback.answer("شماره پرونده نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        row = (await session.execute(
+            select(Order, Service).join(Service, Service.id == Order.service_id).where(Order.id == order_id)
+        )).one_or_none()
+    if row is None:
+        await callback.answer("پرونده پیدا نشد.", show_alert=True)
+        return
+    order, service = row
+    if order.status == "deleted":
+        await callback.answer("این پرونده قبلاً حذف شده است.", show_alert=True)
+        return
+    await callback.answer()
+    await callback.message.edit_text(
+        f"⚠️ تأیید حذف پرونده\n\nکد پیگیری: {order.public_id}\nخدمت: {service.name}\n\n"
+        "پرونده از فهرست فعال درخواست‌ها و پیگیری مشترک خارج می‌شود؛ سوابق پرداخت و مدارک برای حسابرسی حفظ می‌شوند. "
+        "در صورت نیاز، مدیر می‌تواند از بخش «پرونده‌های حذف‌شده» آن را بازگرداند.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [ui_button(text="🗑 بله، حذف پرونده", callback_data=f"adm:delete:yes:{order.id}")],
+            [ui_button(text="↩️ انصراف و بازگشت به پرونده", callback_data=f"adm:order:{order.id}")],
+            [ui_button(text="🔙 بازگشت به درخواست‌ها", callback_data="adm:orders")],
+        ]),
+    )
+
+
+@router.callback_query(F.data.startswith("adm:delete:yes:"))
+async def admin_delete_order_yes(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except ValueError:
+        await callback.answer("شماره پرونده نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        order = await session.get(Order, order_id)
+        if order is None:
+            await callback.answer("پرونده پیدا نشد.", show_alert=True)
+            return
+        if order.status == "deleted":
+            await callback.answer("این پرونده قبلاً حذف شده است.", show_alert=True)
+            return
+        try:
+            order_data = json.loads(order.data_json or "{}")
+        except (TypeError, json.JSONDecodeError):
+            order_data = {}
+        order_data["deleted_previous_status"] = order.status
+        order.data_json = json.dumps(order_data, ensure_ascii=False)
+        previous_status = order.status
+        order.status = "deleted"
+        await session.commit()
+    await audit(callback.from_user.id, "order_soft_deleted", order_id, {"previous_status": previous_status})
+    await callback.answer("پرونده از فهرست فعال حذف شد.")
+    await callback.message.edit_text(
+        "✅ پرونده از فهرست فعال حذف شد. سوابق مالی و مدارک حفظ شده‌اند.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [ui_button(text="🗄 مشاهده پرونده‌های حذف‌شده", callback_data="adm:deleted")],
+            [ui_button(text="🔙 بازگشت به درخواست‌ها", callback_data="adm:orders")],
+            [ui_button(text="🛠 بازگشت به پنل مدیریت", callback_data="adm:home")],
+        ]),
+    )
+
+
+@router.callback_query(F.data == "adm:deleted")
+async def admin_deleted_orders(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        rows = (await session.execute(
+            select(Order, Service, User)
+            .join(Service, Service.id == Order.service_id)
+            .join(User, User.id == Order.user_id)
+            .where(Order.status == "deleted")
+            .order_by(Order.id.desc())
+            .limit(30)
+        )).all()
+    buttons = [[ui_button(
+        text=f"🗄 {order.public_id} | {service.name}",
+        callback_data=f"adm:order:{order.id}",
+    )] for order, service, user in rows]
+    buttons.append([ui_button(text="🔙 بازگشت به مدیریت", callback_data="adm:home")])
+    await callback.answer()
+    await callback.message.edit_text(
+        "🗄 پرونده‌های حذف‌شده از فهرست فعال\n\n"
+        + ("\n".join(f"{o.public_id} — {s.name} — {u.telegram_id}" for o, s, u in rows) if rows else "پرونده‌ای در بایگانی نیست."),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
+
+
+@router.callback_query(F.data.startswith("adm:restore:"))
+async def admin_restore_order(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except ValueError:
+        await callback.answer("شماره پرونده نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        order = await session.get(Order, order_id)
+        if order is None or order.status != "deleted":
+            await callback.answer("پرونده حذف‌شده پیدا نشد.", show_alert=True)
+            return
+        try:
+            order_data = json.loads(order.data_json or "{}")
+        except (TypeError, json.JSONDecodeError):
+            order_data = {}
+        previous_status = order_data.pop("deleted_previous_status", "rejected")
+        if previous_status not in {"draft", "waiting_payment", "waiting_receipt_review", "payment_approved", "in_progress", "waiting_user", "completed", "rejected"}:
+            previous_status = "rejected"
+        order.data_json = json.dumps(order_data, ensure_ascii=False)
+        order.status = previous_status
+        await session.commit()
+    await audit(callback.from_user.id, "order_restored", order_id, {"restored_status": previous_status})
+    await callback.answer("پرونده بازگردانی شد.")
+    await callback.message.edit_text(
+        f"♻️ پرونده {order.public_id} بازگردانی شد.\nوضعیت قبلی: {previous_status}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [ui_button(text="📋 مشاهده پرونده", callback_data=f"adm:order:{order_id}")],
+            [ui_button(text="📋 درخواست‌ها", callback_data="adm:orders")],
+            [ui_button(text="🛠 پنل مدیریت", callback_data="adm:home")],
+        ]),
+    )
 
 
 @router.callback_query(F.data.startswith("adm:docs:"))
@@ -1411,7 +1644,7 @@ async def orders(callback: CallbackQuery) -> None:
             select(Order, Service, User)
             .join(Service, Order.service_id == Service.id)
             .join(User, Order.user_id == User.id)
-            .where(Order.status.notin_(["draft", "waiting_payment", "waiting_receipt_review"]))
+            .where(Order.status.notin_(["draft", "waiting_payment", "waiting_receipt_review", "deleted"]))
             .order_by(Order.id.desc())
             .limit(20)
         )
