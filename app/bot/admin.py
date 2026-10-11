@@ -1099,6 +1099,7 @@ def build_case_text(order: Order, service: Service, user: User, data: dict, comp
             "consulate": "کنسولگری",
             "document_type": "نوع مدرک شناسایی",
             "identity_document_type": "نوع مدرک شناسایی",
+            "identity_document_number": "شماره شناسه مدرک شناسایی",
             "own_mobile": "شماره موبایل به نام شخص",
             "father_name": "نام پدر",
             "province": "استان محل سکونت",
