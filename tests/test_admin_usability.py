@@ -138,3 +138,11 @@ def test_setserviceprice_command_is_handled_by_unrestricted_admin_router():
     # would intercept the command and reject identity/khodnevis service codes.
     assert '@router.message(F.text.startswith("/setserviceprice"))' not in handlers_source
     assert '@router.message(F.text.regexp(r"^/(?:setprice|setserviceprice)(?:\\s|$)"))' in admin_source
+
+
+def test_services_menu_can_hide_disabled_services():
+    keyboard = services_menu({"identity", "fida"})
+    buttons = [button for row in keyboard.inline_keyboard for button in row]
+    callbacks = {button.callback_data for button in buttons}
+    assert {"menu:identity", "menu:fida", "menu:home"} <= callbacks
+    assert not {"menu:khodnevis", "menu:dolatman", "menu:screening", "menu:other_service"} & callbacks
