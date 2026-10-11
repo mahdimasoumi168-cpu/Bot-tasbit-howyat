@@ -5,13 +5,16 @@ import hmac
 import json
 import logging
 import re
+from datetime import datetime
 from urllib.parse import urlparse
 
 from aiohttp import ClientSession, ClientTimeout, web
 from sqlalchemy import select, update
 
 from app.core.config import get_settings
-from app.db.models import AuditLog, DiscountCode, Order, Payment, Service, User
+from app.db.models import (
+    AuditLog, DiscountCode, Order, Payment, Service, User, Wallet, WalletTopup, WalletTransaction,
+)
 from app.db.session import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -112,73 +115,75 @@ async def handle_variza_webhook(request: web.Request, bot) -> web.Response:
     try:
         async with SessionLocal() as session:
             async with session.begin():
-                row = (
+                # Wallet top-ups use WalletTopup.receipt_file_id to retain the
+                # provider slug; no schema migration is needed for existing databases.
+                topup_row = (
                     await session.execute(
-                        select(Payment, Order, User, Service)
-                        .join(Order, Payment.order_id == Order.id)
-                        .join(User, Order.user_id == User.id)
-                        .join(Service, Order.service_id == Service.id)
+                        select(WalletTopup, User)
+                        .join(User, WalletTopup.user_id == User.id)
                         .where(
-                            Payment.receipt_type == "variza",
-                            Payment.receipt_file_id == slug,
+                            WalletTopup.receipt_type == "variza",
+                            WalletTopup.receipt_file_id == slug,
                         )
                     )
                 ).one_or_none()
 
-                if row is None:
-                    outcome = "unknown"
-                else:
-                    payment, order, user, service = row
-                    order_id = order.id
+                if topup_row is not None:
+                    topup, user = topup_row
                     telegram_id = user.telegram_id
-                    public_id = order.public_id
-                    service_name = service.name
-
-                    if payment.status == "approved" or order.status in {
-                        "payment_approved", "in_progress", "waiting_user", "completed"
-                    }:
+                    topup_id = topup.id
+                    if topup.status == "paid":
                         outcome = "duplicate"
-                    elif payment.status != "pending" or order.status != "waiting_payment":
+                    elif topup.status != "waiting_online_payment":
                         outcome = "ignored"
-                    elif int(payment.amount_toman) != base_amount:
+                    elif int(topup.amount_toman) != base_amount:
                         logger.error(
-                            "Variza amount mismatch for order %s (expected %s, received base %s)",
-                            order.public_id, payment.amount_toman, base_amount,
+                            "Variza amount mismatch for wallet top-up %s (expected %s, received %s)",
+                            topup.id, topup.amount_toman, base_amount,
                         )
                         outcome = "amount_mismatch"
                     else:
-                        payment_update = await session.execute(
-                            update(Payment)
-                            .where(Payment.id == payment.id, Payment.status == "pending")
-                            .values(status="approved")
+                        topup_update = await session.execute(
+                            update(WalletTopup)
+                            .where(
+                                WalletTopup.id == topup.id,
+                                WalletTopup.status == "waiting_online_payment",
+                            )
+                            .values(status="paid", reviewed_at=datetime.now())
                         )
-                        order_update = await session.execute(
-                            update(Order)
-                            .where(Order.id == order.id, Order.status == "waiting_payment")
-                            .values(status="payment_approved")
-                        )
-                        if payment_update.rowcount != 1 or order_update.rowcount != 1:
+                        if topup_update.rowcount != 1:
                             raise _ConcurrentDelivery()
 
-                        data = json.loads(order.data_json or "{}")
-                        coupon_code = data.get("discount_code")
-                        if coupon_code:
-                            coupon = (
-                                await session.execute(
-                                    select(DiscountCode).where(DiscountCode.code == coupon_code)
-                                )
-                            ).scalar_one_or_none()
-                            if coupon is not None:
-                                coupon.used_count += 1
-
+                        wallet = (
+                            await session.execute(
+                                select(Wallet).where(Wallet.user_id == user.id)
+                            )
+                        ).scalar_one_or_none()
+                        if wallet is None:
+                            wallet = Wallet(user_id=user.id, balance_toman=0)
+                            session.add(wallet)
+                            await session.flush()
+                        wallet.balance_toman += base_amount
+                        session.add(
+                            WalletTransaction(
+                                user_id=user.id,
+                                amount_toman=base_amount,
+                                balance_after_toman=wallet.balance_toman,
+                                kind="topup",
+                                description=f"افزایش اعتبار آنلاین واریزا #{topup.id}",
+                                order_id=None,
+                                topup_id=topup.id,
+                            )
+                        )
                         session.add(
                             AuditLog(
                                 actor_telegram_id=None,
-                                action="variza_payment",
-                                order_id=order.id,
+                                action="variza_wallet_topup",
+                                order_id=None,
                                 details_json=json.dumps(
                                     {
                                         "slug": slug,
+                                        "topup_id": topup.id,
                                         "amount_toman": base_amount,
                                         "attempt_code": str(payload.get("attempt_code", ""))[:128],
                                     },
@@ -186,7 +191,83 @@ async def handle_variza_webhook(request: web.Request, bot) -> web.Response:
                                 ),
                             )
                         )
-                        outcome = "approved"
+                        outcome = "wallet_approved"
+                else:
+                    row = (
+                        await session.execute(
+                            select(Payment, Order, User, Service)
+                            .join(Order, Payment.order_id == Order.id)
+                            .join(User, Order.user_id == User.id)
+                            .join(Service, Order.service_id == Service.id)
+                            .where(
+                                Payment.receipt_type == "variza",
+                                Payment.receipt_file_id == slug,
+                            )
+                        )
+                    ).one_or_none()
+
+                    if row is None:
+                        outcome = "unknown"
+                    else:
+                        payment, order, user, service = row
+                        order_id = order.id
+                        telegram_id = user.telegram_id
+                        public_id = order.public_id
+                        service_name = service.name
+
+                        if payment.status == "approved" or order.status in {
+                            "payment_approved", "in_progress", "waiting_user", "completed"
+                        }:
+                            outcome = "duplicate"
+                        elif payment.status != "pending" or order.status != "waiting_payment":
+                            outcome = "ignored"
+                        elif int(payment.amount_toman) != base_amount:
+                            logger.error(
+                                "Variza amount mismatch for order %s (expected %s, received base %s)",
+                                order.public_id, payment.amount_toman, base_amount,
+                            )
+                            outcome = "amount_mismatch"
+                        else:
+                            payment_update = await session.execute(
+                                update(Payment)
+                                .where(Payment.id == payment.id, Payment.status == "pending")
+                                .values(status="approved")
+                            )
+                            order_update = await session.execute(
+                                update(Order)
+                                .where(Order.id == order.id, Order.status == "waiting_payment")
+                                .values(status="payment_approved")
+                            )
+                            if payment_update.rowcount != 1 or order_update.rowcount != 1:
+                                raise _ConcurrentDelivery()
+
+                            data = json.loads(order.data_json or "{}")
+                            coupon_code = data.get("discount_code")
+                            if coupon_code:
+                                coupon = (
+                                    await session.execute(
+                                        select(DiscountCode).where(DiscountCode.code == coupon_code)
+                                    )
+                                ).scalar_one_or_none()
+                                if coupon is not None:
+                                    coupon.used_count += 1
+
+                            session.add(
+                                AuditLog(
+                                    actor_telegram_id=None,
+                                    action="variza_payment",
+                                    order_id=order.id,
+                                    details_json=json.dumps(
+                                        {
+                                            "slug": slug,
+                                            "amount_toman": base_amount,
+                                            "attempt_code": str(payload.get("attempt_code", ""))[:128],
+                                        },
+                                        ensure_ascii=False,
+                                    ),
+                                )
+                            )
+                            outcome = "approved"
     except _ConcurrentDelivery:
         outcome = "duplicate"
     except Exception:
@@ -196,6 +277,28 @@ async def handle_variza_webhook(request: web.Request, bot) -> web.Response:
     if outcome == "unknown":
         logger.warning("Received Variza webhook for an unknown payment slug")
         return web.json_response({"ok": False, "error": "unknown_payment"}, status=404)
+    if outcome == "wallet_approved":
+        try:
+            await bot.send_message(
+                telegram_id,
+                "✅ پرداخت افزایش اعتبار با موفقیت تأیید شد.\n\n"
+                f"💰 مبلغ افزوده‌شده: {base_amount:,} تومان\n"
+                f"🧾 شماره شارژ: #{topup_id}\n"
+                "موجودی کیف پول شما به‌روزرسانی شد.",
+            )
+        except Exception:
+            logger.exception("Wallet top-up was recorded but user notification failed")
+        for admin_id in settings.admin_id_set:
+            try:
+                await bot.send_message(
+                    admin_id,
+                    "💳 افزایش اعتبار آنلاین واریزا تأیید شد.\n"
+                    f"شناسه مشترک: {telegram_id}\nشماره شارژ: #{topup_id}\n"
+                    f"مبلغ: {base_amount:,} تومان",
+                )
+            except Exception:
+                logger.exception("Wallet top-up was recorded but admin notification failed")
+        return web.json_response({"ok": True, "result": "wallet_approved"})
     if outcome != "approved":
         # A valid, already-handled delivery or a superseded/mismatched payment should not retry forever.
         return web.json_response({"ok": True, "result": outcome})
