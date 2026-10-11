@@ -1370,6 +1370,33 @@ async def retry_receipt_save(message: Message, state: FSMContext) -> None:
     await message.answer("✅ رسید جدید ثبت شد و دوباره برای بررسی ارسال گردید.", reply_markup=await user_main_menu(message.from_user.id))
 
 
+def format_optional_order_details(data: dict) -> str:
+    """Format optional service fields with real line breaks and escaped user-provided text."""
+    extra_labels = {
+        "father_name": "نام پدر",
+        "birth_date": "تاریخ تولد",
+        "province": "استان",
+        "city": "شهر",
+        "neighborhood": "محله",
+        "street": "خیابان",
+        "alley": "کوچه",
+        "plaque": "پلاک",
+        "parent_mobile": "موبایل به نام پدر/مادر",
+        "requested_service": "خدمت درخواستی",
+    }
+    lines = [
+        f"{label}: {escape(str(data[key]))}"
+        for key, label in extra_labels.items()
+        if data.get(key)
+    ]
+    if data.get("child_count"):
+        lines.append(f"تعداد دانش‌آموزان ثبت‌شده: {int(data['child_count'])}")
+    result = "\n" + "\n".join(lines) if lines else ""
+    if data.get("service_description"):
+        result += "\n\n📝 توضیحات مشترک: " + escape(str(data["service_description"]))
+    return result
+
+
 @router.message(F.text == "📋 پیگیری درخواست‌ها")
 async def track_orders(message: Message, telegram_id: int | None = None) -> None:
     async with SessionLocal() as session:
@@ -1458,20 +1485,7 @@ async def user_order_detail(callback: CallbackQuery) -> None:
     ):
         if data.get(key):
             text += f"{label}: {data[key]}\n"
-    extra_labels = {
-        "father_name": "نام پدر", "birth_date": "تاریخ تولد",
-        "province": "استان", "city": "شهر", "neighborhood": "محله",
-        "street": "خیابان", "alley": "کوچه", "plaque": "پلاک",
-        "parent_mobile": "موبایل به نام پدر/مادر",
-        "requested_service": "خدمت درخواستی",
-    }
-    for key, label in extra_labels.items():
-        if data.get(key):
-            text += f"\\n{label}: {escape(str(data[key]))}"
-    if data.get("child_count"):
-        text += f"\\nتعداد دانش‌آموزان ثبت‌شده: {int(data['child_count'])}"
-    if data.get("service_description"):
-        text += f"\\n\\n📝 توضیحات مشترک: {escape(str(data['service_description']))}"
+    text += format_optional_order_details(data)
     text += "\n👨‍👩‍👧 همراهان:\n" + (
         "\n".join(f"• {x.full_name} — {x.mobile}" for x in companions) if companions else "ندارد"
     )
