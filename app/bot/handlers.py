@@ -620,7 +620,7 @@ async def identity_start(message: Message, state: FSMContext, telegram_id: int |
 async def identity_name(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     if not valid_name(value):
-        await message.answer("❌ نام و نام خانوادگی باید بین ۳ تا ۸۰ نویسه باشد و حداقل شامل دو بخش باشد. مثال: «احمد محمدی».", reply_markup=cancel_menu())
+        await message.answer("❌ لطفاً نام و نام خانوادگی را کامل وارد کنید. مثال: «احمد محمدی».", reply_markup=cancel_menu())
         return
     await state.update_data(full_name=" ".join(value.split()))
     await state.set_state(IdentityForm.mobile)
@@ -713,7 +713,7 @@ async def identity_companion_choice(message: Message, state: FSMContext) -> None
 async def identity_companion_name(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     if len(value) < 3:
-        await message.answer("❌ نام همراه معتبر نیست. مثال: «محمد احمدی». محدودیت: ۳ تا ۸۰ نویسه و حداقل دو بخش.", reply_markup=cancel_menu())
+        await message.answer("❌ لطفاً نام و نام خانوادگی همراه را کامل وارد کنید. مثال: «محمد احمدی».", reply_markup=cancel_menu())
         return
     await state.update_data(pending_companion_name=value)
     await state.set_state(IdentityForm.companion_mobile)
@@ -812,7 +812,7 @@ async def khodnevis_start(message: Message, state: FSMContext, telegram_id: int 
 async def khodnevis_name(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     if len(value) < 3:
-        await message.answer("❌ نام و نام خانوادگی معتبر نیست. مثال: «احمد محمدی». محدودیت: ۳ تا ۸۰ نویسه و حداقل دو بخش.", reply_markup=cancel_menu())
+        await message.answer("❌ لطفاً نام و نام خانوادگی را کامل وارد کنید. مثال: «احمد محمدی».", reply_markup=cancel_menu())
         return
     await state.update_data(full_name=value)
     await state.set_state(KhodnevisForm.mobile)
