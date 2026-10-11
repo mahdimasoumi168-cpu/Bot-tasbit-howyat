@@ -1806,12 +1806,7 @@ async def send_case_to_operator(bot, order_id: int) -> None:
         if recipient_id not in settings.admin_id_set:
             op = next((x for x in operators if x.telegram_id == recipient_id), None)
         await bot.send_message(recipient_id, text, reply_markup=order_actions(order.id, operator=op, payment_review=bool(payment and payment.status == "pending"), order_status=order.status))
-        if payment and payment.receipt_type == "variza":
-            await bot.send_message(
-                recipient_id,
-                f"💳 روش پرداخت: واریزا (تأیید خودکار)\n💰 مبلغ پرداخت: {payment.amount_toman:,} تومان",
-            )
-        elif payment and payment.receipt_file_id:
+        if payment and payment.receipt_file_id and payment.receipt_type != "variza":
             await send_payment_receipt(bot, recipient_id, payment, f"🧾 رسید پرداخت {order.public_id}")
         for doc in docs:
             await bot.send_photo(
