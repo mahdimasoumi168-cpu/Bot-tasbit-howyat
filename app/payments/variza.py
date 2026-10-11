@@ -48,11 +48,34 @@ async def create_payment_link(
                 "expires_in": "1h",
             },
         ) as response:
+            # Read the response body even for errors so the provider's actionable
+            # validation reason (e.g. destination card or account limit) is visible
+            # in Railway logs. Never log request headers or the API key.
+            response_text = await response.text()
             if response.status not in (200, 201):
-                logger.warning("Variza payment-link API returned HTTP %s", response.status)
-                raise RuntimeError("واریزا نتوانست لینک پرداخت را بسازد؛ تنظیمات API و اعتبار حساب را بررسی کنید.")
+                detail = response_text[:1500].replace("\n", " ").replace("\r", " ")
+                # Defensive redaction in case the provider echoes credential-like data.
+                detail = re.sub(
+                    r"(?i)(bearer\s+)[A-Za-z0-9._~-]+",
+                    r"\1[REDACTED]",
+                    detail,
+                )
+                detail = re.sub(
+                    r'(?i)("(?:api[_-]?key|token|secret|password)"\s*:\s*")[^"]*(")',
+                    r"\1[REDACTED]\2",
+                    detail,
+                )
+                logger.warning(
+                    "Variza payment-link API returned HTTP %s; response body: %s",
+                    response.status,
+                    detail or "<empty>",
+                )
+                raise RuntimeError(
+                    f"واریزا نتوانست لینک پرداخت را بسازد (HTTP {response.status})؛ "
+                    "جزئیات فنی در گزارش امن سرور ثبت شد."
+                )
             try:
-                body = await response.json(content_type=None)
+                body = json.loads(response_text)
             except (ValueError, json.JSONDecodeError) as exc:
                 raise RuntimeError("پاسخ واریزا قابل خواندن نیست.") from exc
 
