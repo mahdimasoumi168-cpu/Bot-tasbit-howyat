@@ -106,13 +106,18 @@ def confirm_menu() -> InlineKeyboardMarkup:
     ])
 
 
-def payment_choice_menu(credit: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+def payment_choice_menu(credit: int, variza_enabled: bool = False) -> InlineKeyboardMarkup:
+    rows = [
         [InlineKeyboardButton(text=f"💰 استفاده از اعتبار | {credit:,} تومان", callback_data="pay:wallet", style="success")],
+    ]
+    if variza_enabled:
+        rows.append([InlineKeyboardButton(text="💳 پرداخت آنلاین واریزا", callback_data="pay:variza", style="primary")])
+    rows.extend([
         [InlineKeyboardButton(text="💳 کارت به کارت", callback_data="pay:card", style="primary")],
         [InlineKeyboardButton(text="🏷️ کد تخفیف", callback_data="pay:coupon", style="primary")],
         [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
     ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def wallet_menu(balance: int) -> InlineKeyboardMarkup:
