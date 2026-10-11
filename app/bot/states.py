@@ -9,6 +9,7 @@ class IdentityForm(StatesGroup):
     consulate = State()
     identity_document_type = State()
     identity_document = State()
+    identity_document_number = State()
     tazkira = State()
     companion_choice = State()
     companion_name = State()
