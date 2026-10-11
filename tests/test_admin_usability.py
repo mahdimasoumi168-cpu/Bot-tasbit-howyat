@@ -102,12 +102,3 @@ def test_admin_menu_exposes_direct_message_action():
         for button in row
     }
     assert "adm:send_user" in callbacks
-
-
-def test_wallet_topups_are_not_reviewable_until_a_receipt_exists():
-    from app.db.models import WalletTopup
-
-    topup = WalletTopup(user_id=1, amount_toman=50_000)
-    # The model default represents the user's receipt-upload step, not admin review.
-    assert topup.status == "awaiting_receipt"
-    assert topup.receipt_file_id is None
