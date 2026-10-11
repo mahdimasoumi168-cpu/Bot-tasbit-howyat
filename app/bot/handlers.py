@@ -223,6 +223,11 @@ async def audit_payment_event(actor_id: int, action: str, order_id: int, amount:
         await session.commit()
 
 
+def can_retry_receipt(order_status: str, payment_status: str | None) -> bool:
+    """A receipt can be retried only after the latest payment receipt was rejected."""
+    return order_status == "rejected" and payment_status == "rejected"
+
+
 STATUS_TEXT = {
     "draft": "پیش‌نویس",
     "waiting_payment": "در انتظار پرداخت",
@@ -1039,7 +1044,7 @@ async def retry_receipt_start(callback: CallbackQuery, state: FSMContext) -> Non
                 .where(Order.id == order_id, User.telegram_id == callback.from_user.id)
             )
         ).one_or_none()
-    if not row or row[0].status != "rejected":
+    if not row or row[0].status == "deleted":
         await callback.answer("این درخواست برای ارسال مجدد رسید آماده نیست.", show_alert=True)
         return
     order, service = row
@@ -1051,8 +1056,8 @@ async def retry_receipt_start(callback: CallbackQuery, state: FSMContext) -> Non
                 .order_by(Payment.id.desc())
             )
         ).scalars().first()
-    if latest_payment and latest_payment.status == "approved":
-        await callback.answer("این درخواست قبلاً پرداخت تأییدشده دارد و امکان ارسال مجدد رسید ندارد.", show_alert=True)
+    if not can_retry_receipt(order.status, latest_payment.status if latest_payment else None):
+        await callback.answer("فقط رسیدی که مدیریت رد کرده باشد قابل ارسال مجدد است.", show_alert=True)
         return
     await state.clear()
     await state.update_data(order_id=order.id, public_id=order.public_id, service_code=service.code)
@@ -1122,11 +1127,15 @@ async def user_order_detail(callback: CallbackQuery) -> None:
                 select(Order, Service, User)
                 .join(Service, Order.service_id == Service.id)
                 .join(User, Order.user_id == User.id)
-                .where(Order.id == order_id, User.telegram_id == callback.from_user.id)
+                .where(
+                    Order.id == order_id,
+                    User.telegram_id == callback.from_user.id,
+                    Order.status != "deleted",
+                )
             )
         ).one_or_none()
         if not row:
-            await callback.answer("این درخواست متعلق به شما نیست.", show_alert=True)
+            await callback.answer("این درخواست متعلق به شما نیست یا از فهرست فعال حذف شده است.", show_alert=True)
             return
         order, service, user = row
         data = json.loads(order.data_json or "{}")
@@ -1136,6 +1145,9 @@ async def user_order_detail(callback: CallbackQuery) -> None:
         documents = (await session.execute(
             select(Document).where(Document.order_id == order.id).order_by(Document.id)
         )).scalars().all()
+        latest_payment = (await session.execute(
+            select(Payment).where(Payment.order_id == order.id).order_by(Payment.id.desc())
+        )).scalars().first()
     text = (
         f"📋 درخواست {order.public_id}\n\n"
         f"🧾 خدمت: {service.name}\n"
@@ -1161,7 +1173,7 @@ async def user_order_detail(callback: CallbackQuery) -> None:
         ", ".join(d.document_type for d in documents) if documents else "ندارد"
     )
     buttons = []
-    if order.status == "rejected":
+    if can_retry_receipt(order.status, latest_payment.status if latest_payment else None):
         buttons.append([ui_button(text="🧾 ارسال مجدد رسید", callback_data=f"retry_receipt:{order.id}")])
     buttons.append([ui_button(text="📞 پشتیبانی", callback_data=f"user:support:{order.id}")])
     await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
@@ -1509,7 +1521,7 @@ async def user_reply_to_support_sender(callback: CallbackQuery, state: FSMContex
                 .where(
                     Order.id == order_id,
                     User.telegram_id == callback.from_user.id,
-                    Order.status.not_in(["draft", "waiting_payment"]),
+                    Order.status.not_in(["draft", "waiting_payment", "deleted"]),
                 )
             )
         ).one_or_none()
@@ -1571,7 +1583,7 @@ async def user_support_start(callback: CallbackQuery, state: FSMContext) -> None
                 .where(
                     Order.id == order_id,
                     User.telegram_id == callback.from_user.id,
-                    Order.status.not_in(["draft", "waiting_payment"]),
+                    Order.status.not_in(["draft", "waiting_payment", "deleted"]),
                 )
             )
         ).one_or_none()
