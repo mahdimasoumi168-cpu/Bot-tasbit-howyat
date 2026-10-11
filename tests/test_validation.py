@@ -31,3 +31,13 @@ def test_inline_buttons_have_semantic_styles():
     assert "success" in styles
     assert "danger" in styles
     assert "primary" in styles
+
+
+def test_receipt_retry_is_only_available_after_payment_receipt_rejection():
+    from app.bot.handlers import can_retry_receipt
+
+    assert can_retry_receipt("rejected", "rejected")
+    assert not can_retry_receipt("rejected", "approved")
+    assert not can_retry_receipt("completed", "rejected")
+    assert not can_retry_receipt("deleted", "rejected")
+    assert not can_retry_receipt("rejected", None)
