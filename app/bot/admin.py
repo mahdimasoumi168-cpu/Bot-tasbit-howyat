@@ -572,10 +572,12 @@ async def operator_order_detail(callback: CallbackQuery) -> None:
             select(Order, Service, User)
             .join(Service, Service.id == Order.service_id)
             .join(User, User.id == Order.user_id)
-            .where(Order.id == order_id)
-        )).one_or_none()
+            .join(Payment, Payment.order_id == Order.id)
+            .where(Order.id == order_id, Payment.status == "approved")
+            .order_by(Payment.id.desc())
+        )).first()
         if not row:
-            await callback.answer("درخواست پیدا نشد.", show_alert=True)
+            await callback.answer("این پرونده تا تأیید رسید پرداخت قابل مشاهده نیست.", show_alert=True)
             return
         order, service, user = row
         data = json.loads(order.data_json or "{}")
@@ -1778,9 +1780,11 @@ async def send_case_to_operator(bot, order_id: int) -> None:
                 select(Order, Service, User)
                 .join(Service, Order.service_id == Service.id)
                 .join(User, Order.user_id == User.id)
-                .where(Order.id == order_id)
+                .join(Payment, Payment.order_id == Order.id)
+                .where(Order.id == order_id, Payment.status == "approved")
+                .order_by(Payment.id.desc())
             )
-        ).one_or_none()
+        ).first()
         if not row:
             return
         order, service, user = row
