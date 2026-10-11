@@ -1834,7 +1834,7 @@ async def admin_unpriced_order_detail(callback: CallbackQuery) -> None:
     ignored = {
         "order_id", "public_id", "service_code", "telegram_id", "additional_documents",
         "additional_values", "current_additional_field", "additional_step", "service_rules_accepted",
-        "service_rules_pending", "requested_service", "service_description",
+        "service_rules_pending", "service_description",
     }
     labels = {
         "full_name": "نام و نام خانوادگی",
@@ -1847,6 +1847,7 @@ async def admin_unpriced_order_detail(callback: CallbackQuery) -> None:
         "street": "خیابان",
         "alley": "کوچه",
         "plaque": "پلاک",
+        "requested_service": "خدمت درخواستی",
     }
     for key, value in data.items():
         if key in ignored or value in (None, "", [], {}):
@@ -1923,7 +1924,7 @@ async def admin_unpriced_quote_save(message: Message, state: FSMContext) -> None
             await state.clear()
             await message.answer("❌ این درخواست دیگر برای تعیین هزینه آماده نیست.", reply_markup=admin_menu())
             return
-        order, service, user = row
+        order, _service, user = row
         order.price_snapshot_toman = int(raw)
         order.status = "waiting_payment"
         public_id = order.public_id
@@ -1979,7 +1980,7 @@ async def admin_unpriced_reject(callback: CallbackQuery) -> None:
         if not row:
             await callback.answer("این درخواست دیگر در صف بررسی نیست.", show_alert=True)
             return
-        order, service, user = row
+        order, _service, user = row
         order.status = "rejected"
         public_id = order.public_id
         user_telegram_id = user.telegram_id
