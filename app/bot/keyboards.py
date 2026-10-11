@@ -160,6 +160,10 @@ def services_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🪪 تثبیت هویت", callback_data="menu:identity", style="primary")],
         [InlineKeyboardButton(text="📝 کد رهگیری خودنویس", callback_data="menu:khodnevis", style="primary")],
+        [InlineKeyboardButton(text="🪪 ثبت‌نام کد فیدا غیرحضوری", callback_data="menu:fida", style="primary")],
+        [InlineKeyboardButton(text="🔐 رفع مشکل ورود به درگاه دولت من", callback_data="menu:dolatman", style="primary")],
+        [InlineKeyboardButton(text="🎒 آزمون غربالگری دانش‌آموزان", callback_data="menu:screening", style="primary")],
+        [InlineKeyboardButton(text="🗂 درخواست خدمات دیگر", callback_data="menu:other_service", style="primary")],
         [InlineKeyboardButton(text="🔙 بازگشت به صفحه اصلی", callback_data="menu:home", style="primary")],
     ])
 
