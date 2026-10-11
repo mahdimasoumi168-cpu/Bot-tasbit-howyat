@@ -25,7 +25,7 @@ from app.bot.keyboards import (
     payment_choice_menu, wallet_menu, payment_invoice_menu, wallet_topup_choice_menu,
     optional_description_menu,
 )
-from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm, SupportForm, PaymentForm, WalletTopupForm, DirectReplyForm
+from app.bot.states import AdditionalServiceForm, IdentityForm, KhodnevisForm, RetryReceiptForm, SupportForm, PaymentForm, WalletTopupForm, DirectReplyForm
 from app.core.config import get_settings
 from app.db.models import Companion, Document, Operator, Order, Payment, Service, ServiceCode, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode, AuditLog
 from app.db.session import SessionLocal
@@ -585,6 +585,167 @@ async def inline_confirm(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer("این تأیید دیگر فعال نیست.", show_alert=True)
 
 
+
+# فرم‌های خدمات جدید
+ADDITIONAL_SERVICES = {
+ "fida": {"title":"ثبت‌نام کد فیدا غیرحضوری","fields":[
+  ("mobile","شماره موبایل در دسترس","text"),("full_name","نام و نام خانوادگی","text"),("father_name","نام پدر","text"),("birth_date","تاریخ تولد شمسی (مثال ۱۳۷۵/۰۵/۲۰)","date"),("province","استان محل سکونت","text"),("city","شهر محل سکونت","text"),("neighborhood","محله محل سکونت","text"),("street","خیابان محل سکونت","text"),("alley","کوچه محل سکونت","text"),("plaque","پلاک محل سکونت","text"),("identity_doc","عکس مدرک شناسایی","photo")]},
+ "dolatman_login": {"title":"رفع مشکل ورود به درگاه دولت من","fields":[
+  ("mobile","شماره موبایل در دسترس","text"),("own_mobile","شماره موبایل به نام خود مشترک","text"),("sim_document","سند سیم‌کارت (اختیاری)","optional_photo"),("identity_doc","عکس مدرک شناسایی","photo")]},
+ "student_screening": {"title":"آزمون غربالگری دانش‌آموزان","fields":[
+  ("mobile","شماره موبایل در دسترس","text"),("parent_mobile","شماره موبایل به نام پدر یا مادر","text"),("sim_document","سند سیم‌کارت (اختیاری)","optional_photo"),("owner_identity","عکس مدرک شناسایی صاحب سیم‌کارت","photo"),("child_identity","عکس مدرک شناسایی فرزند اول","photo"),("children_more","آیا فرزند دیگری هم برای آزمون غربالگری دارید؟","choice")]},
+ "other_service": {"title":"درخواست خدمات دیگر","fields":[
+  ("requested_service","چه خدمتی نیاز دارید؟","text"),("service_description","لطفاً توضیحات کامل درخواست را بنویسید.","longtext")]}
+}
+
+async def start_additional_service(message: Message, state: FSMContext, code: str, telegram_id: int | None = None) -> None:
+    config = ADDITIONAL_SERVICES.get(code)
+    if not config:
+        await message.answer("خدمت نامعتبر است."); return
+    uid = telegram_id or message.from_user.id
+    async with SessionLocal() as session:
+        service = (await session.execute(select(Service).where(Service.code == code))).scalar_one_or_none()
+        if service is None or not service.enabled:
+            await message.answer("این خدمت هنوز در تنظیمات فعال نیست.", reply_markup=await user_main_menu(uid)); return
+        if code != "other_service" and service.price_toman <= 0:
+            await message.answer("هزینه این خدمت هنوز توسط مدیریت تعیین نشده است.", reply_markup=await user_main_menu(uid)); return
+    await state.clear()
+    order = await create_order(message, ServiceCode(code), telegram_id=telegram_id)
+    await state.update_data(order_id=order.id, public_id=order.public_id, service_code=code, telegram_id=uid, additional_documents=[], additional_values={}, additional_step=0, child_count=1)
+    await ask_additional_field(message, state)
+
+async def ask_additional_field(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    config = ADDITIONAL_SERVICES[data["service_code"]]
+    step = int(data.get("additional_step", 0))
+    if step >= len(config["fields"]):
+        await show_additional_summary(message, state); return
+    key, prompt, kind = config["fields"][step]
+    if key == "child_identity":
+        prompt = f"عکس مدرک شناسایی فرزند شماره {data.get('child_count', 1)} را ارسال کنید."
+    await state.update_data(current_additional_field=key)
+    await state.set_state(AdditionalServiceForm.field)
+    if kind == "choice":
+        markup = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ بله، فرزند دیگری هست", callback_data="additional:children:yes", style="success")],
+            [InlineKeyboardButton(text="❌ خیر، ادامه", callback_data="additional:children:no", style="primary")],
+            [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")]])
+    elif kind == "optional_photo":
+        markup = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📸 ارسال سند سیم‌کارت", callback_data="additional:optional:send", style="primary")],
+            [InlineKeyboardButton(text="⏭️ رد کردن (اختیاری)", callback_data="additional:optional:skip", style="primary")],
+            [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")]])
+    else:
+        markup = cancel_menu()
+    await message.answer(f"{step+1}/{len(config['fields'])}\n{prompt}", reply_markup=markup)
+
+async def show_additional_summary(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    config = ADDITIONAL_SERVICES[data["service_code"]]
+    values = data.get("additional_values", {})
+    lines = [f"📋 خلاصه درخواست: {config['title']}", f"کد پیگیری: {data['public_id']}"]
+    for key, label, kind in config["fields"]:
+        if kind in {"photo", "optional_photo"}:
+            docs = [d for d in data.get("additional_documents", []) if d.get("field") == key]
+            lines.append(f"{label}: {'ارسال شده (' + str(len(docs)) + ')' if docs else 'ارسال نشده'}")
+        elif key == "children_more":
+            lines.append(f"تعداد فرزندان ثبت‌شده: {data.get('child_count', 1)}")
+        else:
+            lines.append(f"{label}: {values.get(key, '—')}")
+    lines.append("\nلطفاً اطلاعات را بررسی و تأیید کنید.")
+    await state.set_state(AdditionalServiceForm.confirm)
+    await message.answer("\n".join(lines), reply_markup=confirm_menu())
+
+async def additional_service_confirm(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    code = data.get("service_code")
+    if code not in ADDITIONAL_SERVICES:
+        await message.answer("درخواست منقضی شده است؛ لطفاً دوباره شروع کنید."); return
+    payload = {**data, **data.get("additional_values", {})}
+    payload["additional_service_title"] = ADDITIONAL_SERVICES[code]["title"]
+    if code == "other_service":
+        async with SessionLocal() as session:
+            order = await session.get(Order, data["order_id"])
+            if order is None: raise ValueError("پرونده پیدا نشد.")
+            order.data_json = json.dumps(payload, ensure_ascii=False)
+            order.status = "waiting_user"
+            await session.commit()
+        await state.clear()
+        await message.answer(f"✅ درخواست برای بررسی مدیریت ثبت شد.\nکد پیگیری: {data['public_id']}\nپس از بررسی، هزینه و مراحل بعدی اعلام می‌شود.", reply_markup=await user_main_menu(int(data.get("telegram_id") or message.from_user.id)))
+        return
+    await save_order_data(payload)
+    await show_payment_options(message, state, data["order_id"])
+
+@router.callback_query(F.data.in_({"menu:fida", "menu:dolatman", "menu:screening", "menu:other_service"}))
+async def inline_additional_service(callback: CallbackQuery, state: FSMContext) -> None:
+    code = {"menu:fida":"fida", "menu:dolatman":"dolatman_login", "menu:screening":"student_screening", "menu:other_service":"other_service"}[callback.data]
+    await callback.answer()
+    await start_additional_service(callback.message, state, code, telegram_id=callback.from_user.id)
+
+@router.message(AdditionalServiceForm.field)
+async def additional_service_field(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    config = ADDITIONAL_SERVICES.get(data.get("service_code"))
+    key = data.get("current_additional_field")
+    field = next((f for f in config["fields"] if f[0] == key), None) if config else None
+    if not field:
+        await message.answer("مرحله فرم پیدا نشد؛ لطفاً از منوی خدمات دوباره شروع کنید."); await state.clear(); return
+    _, label, kind = field
+    values, docs = data.get("additional_values", {}), data.get("additional_documents", [])
+    if kind in {"photo", "optional_photo"}:
+        if not message.photo and not message.document:
+            await message.answer("لطفاً تصویر را به‌صورت عکس یا فایل ارسال کنید.", reply_markup=cancel_menu()); return
+        file_id = message.photo[-1].file_id if message.photo else message.document.file_id
+        doc_label = f"مدرک شناسایی فرزند {data.get('child_count',1)}" if key == "child_identity" else label
+        docs.append({"field":key,"label":doc_label,"file_id":file_id})
+        await state.update_data(additional_documents=docs)
+    else:
+        value = (message.text or "").strip()
+        if not value:
+            await message.answer("لطفاً پاسخ را به‌صورت متن ارسال کنید.", reply_markup=cancel_menu()); return
+        if key in {"mobile","own_mobile","parent_mobile"} and not valid_mobile(value):
+            await message.answer("شماره موبایل معتبر نیست؛ مانند 09123456789 وارد کنید.", reply_markup=cancel_menu()); return
+        if key == "birth_date" and not re.fullmatch(r"\d{4}[/-]\d{1,2}[/-]\d{1,2}", normalize_digits(value)):
+            await message.answer("تاریخ را به‌صورت شمسی وارد کنید؛ مثال ۱۳۷۵/۰۵/۲۰.", reply_markup=cancel_menu()); return
+        values[key] = value
+        await state.update_data(additional_values=values)
+    await state.update_data(additional_step=int(data.get("additional_step",0))+1)
+    await ask_additional_field(message, state)
+
+@router.callback_query(F.data.startswith("additional:optional:"))
+async def additional_optional_document(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    if await state.get_state() != AdditionalServiceForm.field or data.get("current_additional_field") != "sim_document":
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
+    await callback.answer()
+    if callback.data.endswith(":send"):
+        await callback.message.edit_text("📸 لطفاً سند سیم‌کارت را ارسال کنید.", reply_markup=cancel_menu()); return
+    await state.update_data(additional_step=int(data.get("additional_step",0))+1)
+    await ask_additional_field(callback.message, state)
+
+@router.callback_query(F.data.startswith("additional:children:"))
+async def additional_children_choice(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    if await state.get_state() != AdditionalServiceForm.field or data.get("current_additional_field") != "children_more":
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
+    await callback.answer()
+    if callback.data.endswith(":yes"):
+        await state.update_data(child_count=int(data.get("child_count",1))+1, current_additional_field="child_identity", additional_step=4)
+        await state.set_state(AdditionalServiceForm.field)
+        await callback.message.edit_text(f"📸 عکس مدرک شناسایی فرزند شماره {int(data.get('child_count',1))+1} را ارسال کنید.", reply_markup=cancel_menu())
+    else:
+        await show_additional_summary(callback.message, state)
+
+@router.message(AdditionalServiceForm.receipt, F.photo)
+@router.message(AdditionalServiceForm.receipt, F.document)
+async def additional_service_receipt(message: Message, state: FSMContext) -> None:
+    try:
+        await save_receipt(message, state)
+    except ValueError as exc:
+        await message.answer(f"❌ {exc}", reply_markup=cancel_menu()); return
+    await state.clear()
+    await message.answer("✅ رسید شما ثبت شد و برای بررسی ارسال گردید.", reply_markup=await user_main_menu(message.from_user.id))
+
 @router.message(F.text == "🪪 تثبیت هویت")
 async def identity_start(message: Message, state: FSMContext, telegram_id: int | None = None) -> None:
     uid = telegram_id or message.from_user.id
@@ -1020,6 +1181,9 @@ async def save_order_data(data: dict) -> None:
             file_id = data.get(key)
             if file_id:
                 session.add(Document(order_id=order.id, document_type=label, telegram_file_id=file_id))
+        for item in data.get("additional_documents", []):
+            if item.get("file_id"):
+                session.add(Document(order_id=order.id, document_type=item.get("label", "مدرک پیوست"), telegram_file_id=item["file_id"]))
         await session.commit()
 
 
@@ -1396,7 +1560,7 @@ async def pay_card(callback: CallbackQuery, state: FSMContext) -> None:
     if not order_id:
         await callback.answer("درخواست پرداخت پیدا نشد.", show_alert=True)
         return
-    await state.set_state(IdentityForm.receipt if data.get("service_code") == ServiceCode.IDENTITY.value else KhodnevisForm.receipt)
+    await state.set_state(IdentityForm.receipt if data.get("service_code") == ServiceCode.IDENTITY.value else KhodnevisForm.receipt if data.get("service_code") == ServiceCode.KHODNEVIS.value else AdditionalServiceForm.receipt)
     await callback.answer()
     invoice_text = await payment_instructions(order_id)
     async with SessionLocal() as session:
