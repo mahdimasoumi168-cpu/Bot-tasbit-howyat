@@ -3,13 +3,12 @@ from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMa
 
 def main_menu(is_admin: bool = False, is_operator: bool = False) -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(text="🪪 تثبیت هویت", callback_data="menu:identity", style="primary"),
-         InlineKeyboardButton(text="📝 کد رهگیری خودنویس", callback_data="menu:khodnevis", style="primary")],
+        [InlineKeyboardButton(text="🧾 خدمات دفتر نت یار مهاجر", callback_data="menu:services", style="primary")],
         [InlineKeyboardButton(text="💰 اعتبار من", callback_data="menu:wallet", style="primary")],
-        [InlineKeyboardButton(text="📋 پیگیری درخواست‌ها", callback_data="menu:tracking", style="primary"),
-         InlineKeyboardButton(text="👤 حساب من", callback_data="menu:account", style="primary")],
-        [InlineKeyboardButton(text="📞 پشتیبانی", callback_data="menu:support", style="primary"),
-         InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart", style="primary")],
+        [InlineKeyboardButton(text="👤 حساب من", callback_data="menu:account", style="primary"),
+         InlineKeyboardButton(text="📋 پیگیری درخواست‌ها", callback_data="menu:tracking", style="primary")],
+        [InlineKeyboardButton(text="🔄 شروع مجدد", callback_data="menu:restart", style="primary"),
+         InlineKeyboardButton(text="📞 پشتیبانی", callback_data="menu:support", style="primary")],
     ]
     if is_operator and is_admin:
         rows.append([
@@ -127,4 +126,19 @@ def wallet_menu(balance: int) -> InlineKeyboardMarkup:
 def wallet_topup_cancel_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
+    ])
+
+
+def services_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🪪 تثبیت هویت", callback_data="menu:identity", style="primary")],
+        [InlineKeyboardButton(text="📝 کد رهگیری خودنویس", callback_data="menu:khodnevis", style="primary")],
+        [InlineKeyboardButton(text="🔙 بازگشت به صفحه اصلی", callback_data="menu:home", style="primary")],
+    ])
+
+
+def service_rules_menu(service_code: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ تأیید و ادامه", callback_data=f"service:accept:{service_code}", style="success")],
+        [InlineKeyboardButton(text="❌ رد و بازگشت", callback_data=f"service:reject:{service_code}", style="danger")],
     ])

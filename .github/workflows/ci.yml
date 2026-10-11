@@ -8,6 +8,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      # CI must use a writable isolated database, never Railway's persistent /data path.
+      DATABASE_URL: sqlite+aiosqlite:///./data/test.db
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
