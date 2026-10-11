@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from html import escape
 
 from aiogram import F, Router
 from aiogram.enums import ParseMode
@@ -744,7 +745,7 @@ async def show_identity_summary(message: Message, state: FSMContext) -> None:
         f"• {item['full_name']} — {item['mobile']}" for item in companions
     )
     await state.set_state(IdentityForm.confirm)
-    description = (data.get("service_description") or "").strip() or "ندارد"
+    description = escape((data.get("service_description") or "").strip() or "ندارد")
     await message.answer(
         "📋 خلاصه درخواست\n\n"
         f"نام: {data.get('full_name')}\n"
@@ -958,7 +959,7 @@ async def khodnevis_own_mobile(message: Message, state: FSMContext) -> None:
 
 async def show_khodnevis_summary(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
-    description = (data.get("service_description") or "").strip() or "ندارد"
+    description = escape((data.get("service_description") or "").strip() or "ندارد")
     await state.set_state(KhodnevisForm.confirm)
     await message.answer(
         "📋 خلاصه درخواست\n\n"
@@ -1222,6 +1223,8 @@ async def user_order_detail(callback: CallbackQuery) -> None:
     ):
         if data.get(key):
             text += f"{label}: {data[key]}\n"
+    if data.get("service_description"):
+        text += f"\n\n📝 توضیحات مشترک: {escape(str(data['service_description']))}"
     text += "\n👨‍👩‍👧 همراهان:\n" + (
         "\n".join(f"• {x.full_name} — {x.mobile}" for x in companions) if companions else "ندارد"
     )
