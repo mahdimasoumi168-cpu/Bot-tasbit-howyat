@@ -511,7 +511,12 @@ async def _show_operator_orders(callback: CallbackQuery, status_filter: str = "a
             select(Order, Service, User)
             .join(Service, Order.service_id == Service.id)
             .join(User, Order.user_id == User.id)
-            .where(Order.status.in_(statuses))
+            .join(Payment, Payment.order_id == Order.id)
+            .where(
+                Order.status.in_(statuses),
+                Payment.status == "approved",
+            )
+            .distinct()
             .order_by(Order.updated_at.desc())
             .limit(30)
         )).all()
@@ -567,10 +572,12 @@ async def operator_order_detail(callback: CallbackQuery) -> None:
             select(Order, Service, User)
             .join(Service, Service.id == Order.service_id)
             .join(User, User.id == Order.user_id)
-            .where(Order.id == order_id)
-        )).one_or_none()
+            .join(Payment, Payment.order_id == Order.id)
+            .where(Order.id == order_id, Payment.status == "approved")
+            .order_by(Payment.id.desc())
+        )).first()
         if not row:
-            await callback.answer("درخواست پیدا نشد.", show_alert=True)
+            await callback.answer("این پرونده تا تأیید رسید پرداخت قابل مشاهده نیست.", show_alert=True)
             return
         order, service, user = row
         data = json.loads(order.data_json or "{}")
@@ -993,10 +1000,12 @@ async def case_lookup(message: Message, state: FSMContext) -> None:
             select(Order, Service, User)
             .join(Service, Order.service_id == Service.id)
             .join(User, Order.user_id == User.id)
-            .where(Order.public_id == public_id)
-        )).one_or_none()
+            .join(Payment, Payment.order_id == Order.id)
+            .where(Order.public_id == public_id, Payment.status == "approved")
+            .order_by(Payment.id.desc())
+        )).first()
         if not row:
-            await message.answer("❌ پرونده‌ای با این کد پیگیری پیدا نشد. دوباره وارد کنید:", reply_markup=admin_cancel_menu())
+            await message.answer("❌ پرونده‌ای با این کد پیگیری پیدا نشد یا رسید پرداخت آن هنوز تأیید نشده است.", reply_markup=admin_cancel_menu())
             return
         order, service, user = row
         data = json.loads(order.data_json or "{}")
@@ -1370,10 +1379,12 @@ async def admin_order_detail(callback: CallbackQuery) -> None:
             select(Order, Service, User)
             .join(Service, Order.service_id == Service.id)
             .join(User, Order.user_id == User.id)
-            .where(Order.id == order_id)
-        )).one_or_none()
+            .join(Payment, Payment.order_id == Order.id)
+            .where(Order.id == order_id, Payment.status == "approved")
+            .order_by(Payment.id.desc())
+        )).first()
         if not row:
-            await callback.answer("درخواست پیدا نشد.", show_alert=True)
+            await callback.answer("این پرونده تا تأیید رسید پرداخت قابل مشاهده نیست.", show_alert=True)
             return
         order, service, user = row
         docs = (await session.execute(
@@ -1738,7 +1749,12 @@ async def orders(callback: CallbackQuery) -> None:
             select(Order, Service, User)
             .join(Service, Order.service_id == Service.id)
             .join(User, Order.user_id == User.id)
-            .where(Order.status.notin_(["draft", "waiting_payment", "waiting_receipt_review", "deleted"]))
+            .join(Payment, Payment.order_id == Order.id)
+            .where(
+                Payment.status == "approved",
+                Order.status.in_(["payment_approved", "in_progress", "waiting_user", "completed", "rejected"]),
+            )
+            .distinct()
             .order_by(Order.id.desc())
             .limit(20)
         )
@@ -1764,9 +1780,11 @@ async def send_case_to_operator(bot, order_id: int) -> None:
                 select(Order, Service, User)
                 .join(Service, Order.service_id == Service.id)
                 .join(User, Order.user_id == User.id)
-                .where(Order.id == order_id)
+                .join(Payment, Payment.order_id == Order.id)
+                .where(Order.id == order_id, Payment.status == "approved")
+                .order_by(Payment.id.desc())
             )
-        ).one_or_none()
+        ).first()
         if not row:
             return
         order, service, user = row
