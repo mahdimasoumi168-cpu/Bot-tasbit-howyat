@@ -1,6 +1,9 @@
 import asyncio
 import logging
+import os
 from pathlib import Path
+
+from aiohttp import web
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import SimpleEventIsolation
@@ -12,6 +15,7 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.seed import seed_services
 from app.db.session import init_db
+from app.payments.variza import create_web_app
 
 
 async def main() -> None:
@@ -48,10 +52,16 @@ async def main() -> None:
     dp.include_router(router)
     dp.include_router(admin_router)
 
-    logging.getLogger(__name__).info("Bot is starting")
+    runner = web.AppRunner(create_web_app(bot))
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", int(os.environ.get("PORT", "8080")))
+    await site.start()
+
+    logging.getLogger(__name__).info("Bot polling and HTTP webhook server are starting")
     try:
         await dp.start_polling(bot)
     finally:
+        await runner.cleanup()
         await storage.close()
         await bot.session.close()
 
