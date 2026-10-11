@@ -5,13 +5,14 @@ import hmac
 import json
 import logging
 import re
+from datetime import datetime
 from urllib.parse import urlparse
 
 from aiohttp import ClientSession, ClientTimeout, web
 from sqlalchemy import select, update
 
 from app.core.config import get_settings
-from app.db.models import AuditLog, DiscountCode, Order, Payment, Service, User, Wallet, WalletTopup, WalletTransaction
+from app.db.models import (\n    AuditLog, DiscountCode, Order, Payment, Service, User, Wallet, WalletTopup, WalletTransaction,\n)
 from app.db.session import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -146,7 +147,7 @@ async def handle_variza_webhook(request: web.Request, bot) -> web.Response:
                                 WalletTopup.id == topup.id,
                                 WalletTopup.status == "waiting_online_payment",
                             )
-                            .values(status="paid", reviewed_at=__import__("datetime").datetime.now())
+                            .values(status="paid", reviewed_at=datetime.now())
                         )
                         if topup_update.rowcount != 1:
                             raise _ConcurrentDelivery()
