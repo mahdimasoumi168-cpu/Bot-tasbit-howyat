@@ -581,6 +581,8 @@ async def inline_confirm(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer(); await identity_confirm(callback.message, state)
     elif current == KhodnevisForm.confirm:
         await callback.answer(); await khodnevis_confirm(callback.message, state)
+    elif current == AdditionalServiceForm.confirm:
+        await callback.answer(); await additional_service_confirm(callback.message, state)
     else:
         await callback.answer("این تأیید دیگر فعال نیست.", show_alert=True)
 
