@@ -53,16 +53,16 @@ async def create_payment_link(
             # in Railway logs. Never log request headers or the API key.
             response_text = await response.text()
             if response.status not in (200, 201):
-                detail = response_text[:1500].replace("\\n", " ").replace("\\r", " ")
+                detail = response_text[:1500].replace("\n", " ").replace("\r", " ")
                 # Defensive redaction in case the provider echoes credential-like data.
                 detail = re.sub(
-                    r"(?i)(bearer\\s+)[A-Za-z0-9._~-]+",
-                    r"\\1[REDACTED]",
+                    r"(?i)(bearer\s+)[A-Za-z0-9._~-]+",
+                    r"\1[REDACTED]",
                     detail,
                 )
                 detail = re.sub(
-                    r'(?i)("(?:api[_-]?key|token|secret|password)"\\s*:\\s*")[^"]*(")',
-                    r"\\1[REDACTED]\\2",
+                    r'(?i)("(?:api[_-]?key|token|secret|password)"\s*:\s*")[^"]*(")',
+                    r"\1[REDACTED]\2",
                     detail,
                 )
                 logger.warning(
