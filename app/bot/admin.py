@@ -12,6 +12,7 @@ from app.bot.keyboards import admin_cancel_menu
 from app.core.config import get_settings
 from app.db.models import AuditLog, Companion, Document, Order, Operator, Payment, Service, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode
 from app.db.session import SessionLocal
+from app.db.queries import find_custom_service_order_without_payment, list_unpriced_custom_service_orders
 
 router = Router()
 
@@ -1779,19 +1780,7 @@ async def admin_unpriced_orders(callback: CallbackQuery) -> None:
         await callback.answer("دسترسی ندارید.", show_alert=True)
         return
     async with SessionLocal() as session:
-        rows = (await session.execute(
-            select(Order, Service, User)
-            .join(Service, Service.id == Order.service_id)
-            .join(User, User.id == Order.user_id)
-            .outerjoin(Payment, Payment.order_id == Order.id)
-            .where(
-                Service.code == "other_service",
-                Order.status == "waiting_user",
-                Payment.id.is_(None),
-            )
-            .order_by(Order.created_at.asc())
-            .limit(30)
-        )).all()
+        rows = await list_unpriced_custom_service_orders(session, limit=30)
     buttons = [
         [ui_button(
             text=f"{order.public_id} | {user.first_name or 'بدون نام'}",
@@ -1820,18 +1809,9 @@ async def admin_unpriced_order_detail(callback: CallbackQuery) -> None:
         await callback.answer("شناسه درخواست نامعتبر است.", show_alert=True)
         return
     async with SessionLocal() as session:
-        row = (await session.execute(
-            select(Order, Service, User)
-            .join(Service, Service.id == Order.service_id)
-            .join(User, User.id == Order.user_id)
-            .outerjoin(Payment, Payment.order_id == Order.id)
-            .where(
-                Order.id == order_id,
-                Service.code == "other_service",
-                Order.status == "waiting_user",
-                Payment.id.is_(None),
-            )
-        )).one_or_none()
+        row = await find_custom_service_order_without_payment(
+            session, order_id, status="waiting_user"
+        )
         if not row:
             await callback.answer("این درخواست دیگر در صف تعیین هزینه نیست.", show_alert=True)
             return
@@ -1902,27 +1882,19 @@ async def admin_unpriced_quote_start(callback: CallbackQuery, state: FSMContext)
         await callback.answer("شناسه درخواست نامعتبر است.", show_alert=True)
         return
     async with SessionLocal() as session:
-        row = (await session.execute(
-            select(Order, User)
-            .join(Service, Service.id == Order.service_id)
-            .join(User, User.id == Order.user_id)
-            .outerjoin(Payment, Payment.order_id == Order.id)
-            .where(
-                Order.id == order_id,
-                Service.code == "other_service",
-                Order.status == "waiting_user",
-                Payment.id.is_(None),
-            )
-        )).one_or_none()
+        row = await find_custom_service_order_without_payment(
+            session, order_id, status="waiting_user"
+        )
     if not row:
         await callback.answer("این درخواست دیگر آماده تعیین هزینه نیست.", show_alert=True)
         return
+    order, _service, _user = row
     await state.clear()
     await state.set_state(AdminForm.order_quote_amount)
     await state.update_data(quote_order_id=order_id)
     await callback.answer()
     await callback.message.answer(
-        f"💰 مبلغ نهایی درخواست {row[0].public_id} را به تومان وارد کنید.\n"
+        f"💰 مبلغ نهایی درخواست {order.public_id} را به تومان وارد کنید.\n"
         "مثال: 250000\n\n"
         "پس از ثبت مبلغ، مشترک دکمه پرداخت را دریافت می‌کند.",
         reply_markup=admin_cancel_menu(),
@@ -1944,18 +1916,9 @@ async def admin_unpriced_quote_save(message: Message, state: FSMContext) -> None
         await message.answer("❌ درخواست انتخاب نشده است؛ دوباره از فهرست شروع کنید.", reply_markup=admin_menu())
         return
     async with SessionLocal() as session:
-        row = (await session.execute(
-            select(Order, Service, User)
-            .join(Service, Service.id == Order.service_id)
-            .join(User, User.id == Order.user_id)
-            .outerjoin(Payment, Payment.order_id == Order.id)
-            .where(
-                Order.id == order_id,
-                Service.code == "other_service",
-                Order.status == "waiting_user",
-                Payment.id.is_(None),
-            )
-        )).one_or_none()
+        row = await find_custom_service_order_without_payment(
+            session, int(order_id), status="waiting_user"
+        )
         if not row:
             await state.clear()
             await message.answer("❌ این درخواست دیگر برای تعیین هزینه آماده نیست.", reply_markup=admin_menu())
