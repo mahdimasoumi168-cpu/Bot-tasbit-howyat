@@ -44,6 +44,7 @@ class AdminForm(StatesGroup):
     set_card_number = State()
     set_card_holder = State()
     set_price = State()
+    order_quote_amount = State()
     user_search = State()
     operator_add = State()
     operator_permission = State()
