@@ -73,6 +73,7 @@ class PaymentForm(StatesGroup):
 
 class WalletTopupForm(StatesGroup):
     amount = State()
+    choice = State()
     receipt = State()
 
 
