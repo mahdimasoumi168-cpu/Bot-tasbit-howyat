@@ -1,4 +1,4 @@
-from app.bot.handlers import normalize_mobile, valid_mobile, valid_name
+from app.bot.handlers import normalize_mobile, valid_mobile, valid_name, valid_identity_document_number
 
 
 def test_mobile_validation_and_normalization():
@@ -50,3 +50,35 @@ def test_card_payment_requires_complete_destination_details():
     assert not card_details_ready("", "سید فرید معصومی")
     assert not card_details_ready("1234567890123456", "")
     assert not card_details_ready(None, None)
+
+
+
+def test_identity_document_number_validation():
+    assert valid_identity_document_number("A1234567")
+    assert valid_identity_document_number("۱۲۳۴۵۶۷۸")
+    assert valid_identity_document_number("AB-123 / 45")
+    assert not valid_identity_document_number(None)
+    assert not valid_identity_document_number("")
+    assert not valid_identity_document_number("1")
+    assert not valid_identity_document_number("X" * 65)
+
+
+def test_identity_form_asks_for_document_number_after_photo_and_shows_it_in_admin_case():
+    from pathlib import Path
+
+    handler_source = Path("app/bot/handlers.py").read_text(encoding="utf-8")
+    state_source = Path("app/bot/states.py").read_text(encoding="utf-8")
+    admin_source = Path("app/bot/admin.py").read_text(encoding="utf-8")
+
+    photo_step = handler_source.split(
+        '@router.message(IdentityForm.identity_document, F.photo)', 1
+    )[1].split('@router.message(IdentityForm.identity_document_number, F.text)', 1)[0]
+    number_step = handler_source.split(
+        '@router.message(IdentityForm.identity_document_number, F.text)', 1
+    )[1].split('@router.message(IdentityForm.identity_document_number)', 1)[0]
+
+    assert "IdentityForm.identity_document_number" in photo_step
+    assert "identity_document_number=value" in number_step
+    assert "IdentityForm.tazkira" in number_step
+    assert "identity_document_number = State()" in state_source
+    assert '"identity_document_number": "شماره شناسه مدرک شناسایی"' in admin_source
