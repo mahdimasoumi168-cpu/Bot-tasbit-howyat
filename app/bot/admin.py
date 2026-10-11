@@ -1268,7 +1268,7 @@ async def set_price_from_panel(message: Message, state: FSMContext) -> None:
     await message.answer(f"✅ قیمت «{name}» به {int(raw):,} تومان تغییر کرد.", reply_markup=admin_menu())
 
 
-@router.message(F.text.startswith("/setprice"))
+@router.message(F.text.regexp(r"^/(?:setprice|setserviceprice)(?:\\s|$)"))
 async def set_price(message: Message) -> None:
     if not is_admin(message):
         return
