@@ -21,7 +21,7 @@ from app.bot.keyboards import (
     cancel_menu,
     confirm_menu,
     support_menu,
-    payment_choice_menu, wallet_menu, payment_invoice_menu,
+    payment_choice_menu, wallet_menu, payment_invoice_menu, wallet_topup_choice_menu,
 )
 from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm, SupportForm, PaymentForm, WalletTopupForm, DirectReplyForm
 from app.core.config import get_settings
@@ -1426,14 +1426,104 @@ async def wallet_topup_amount(message: Message, state: FSMContext) -> None:
         await state.update_data(topup_id=topup.id)
         await session.commit()
     await state.set_state(WalletTopupForm.receipt)
+    await message.answer(
+        f"➕ درخواست افزایش اعتبار ثبت شد.\n\n💰 مبلغ: {amount:,} تومان\n\nروش پرداخت را انتخاب کنید:",
+        reply_markup=wallet_topup_choice_menu(variza_enabled=get_settings().variza_enabled),
+    )
+
+
+@router.callback_query(F.data == "wallet:topup:card")
+async def wallet_topup_card_choice(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    topup_id = data.get("topup_id")
+    if not topup_id:
+        await callback.answer("درخواست افزایش اعتبار پیدا نشد؛ دوباره تلاش کنید.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(
+                select(WalletTopup, User)
+                .join(User, WalletTopup.user_id == User.id)
+                .where(WalletTopup.id == topup_id, User.telegram_id == callback.from_user.id)
+            )
+        ).one_or_none()
+        if not row or row[0].status != "awaiting_receipt" or row[0].receipt_type == "variza":
+            await callback.answer("این درخواست افزایش اعتبار دیگر برای پرداخت کارت‌به‌کارت آماده نیست.", show_alert=True)
+            return
+        amount = row[0].amount_toman
+    await state.set_state(WalletTopupForm.receipt)
     invoice_text = await wallet_topup_invoice(amount)
     async with SessionLocal() as session:
         card_setting = (await session.execute(select(Setting).where(Setting.key == "card_number"))).scalar_one_or_none()
     card_number = card_setting.value if card_setting and card_setting.value else "تنظیم نشده"
-    await message.answer(
+    await callback.answer()
+    await callback.message.edit_text(
         invoice_text,
         reply_markup=payment_invoice_menu(card_number, amount * 10),
         parse_mode=ParseMode.HTML,
+    )
+
+
+@router.callback_query(F.data == "wallet:topup:variza")
+async def wallet_topup_variza_choice(callback: CallbackQuery, state: FSMContext) -> None:
+    settings = get_settings()
+    if not settings.variza_enabled:
+        await callback.answer("پرداخت آنلاین هنوز تنظیم نشده است؛ لطفاً کارت به کارت را انتخاب کنید.", show_alert=True)
+        return
+    data = await state.get_data()
+    topup_id = data.get("topup_id")
+    if not topup_id:
+        await callback.answer("درخواست افزایش اعتبار پیدا نشد؛ دوباره تلاش کنید.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(
+                select(WalletTopup, User)
+                .join(User, WalletTopup.user_id == User.id)
+                .where(WalletTopup.id == topup_id, User.telegram_id == callback.from_user.id)
+            )
+        ).one_or_none()
+        if not row or row[0].status != "awaiting_receipt" or row[0].receipt_type == "variza":
+            await callback.answer("این درخواست افزایش اعتبار دیگر قابل پرداخت نیست.", show_alert=True)
+            return
+        amount = int(row[0].amount_toman)
+        topup_user_id = row[1].id
+    await callback.answer("در حال ساخت لینک پرداخت امن...")
+    return_url = settings.public_base_url.rstrip("/") + "/payments/return"
+    try:
+        pay_url, slug = await create_payment_link(
+            settings.variza_api_key,
+            amount,
+            f"افزایش اعتبار کیف پول #{topup_id}",
+            return_url,
+        )
+    except Exception:
+        logging.getLogger(__name__).exception("Could not create Variza wallet top-up link")
+        await callback.message.answer(
+            "⚠️ ساخت لینک پرداخت آنلاین ناموفق بود. درخواست افزایش اعتبار شما حفظ شده است؛ می‌توانید کارت‌به‌کارت را انتخاب کنید."
+        )
+        return
+    async with SessionLocal() as session:
+        topup = await session.get(WalletTopup, topup_id)
+        if not topup or topup.user_id != topup_user_id or topup.status != "awaiting_receipt":
+            await callback.message.answer("وضعیت درخواست تغییر کرده است؛ لینک پرداخت نمایش داده نشد.")
+            return
+        topup.receipt_file_id = slug
+        topup.receipt_type = "variza"
+        topup.status = "waiting_online_payment"
+        await session.commit()
+    await state.clear()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔗 پرداخت آنلاین واریزا", url=pay_url, style="primary")],
+        [InlineKeyboardButton(text="💰 مشاهده اعتبار من", callback_data="menu:wallet", style="primary")],
+    ])
+    await callback.message.edit_text(
+        "💳 لینک پرداخت آنلاین افزایش اعتبار ساخته شد.\n\n"
+        f"💰 مبلغ شارژ: {amount:,} تومان\n"
+        f"🧾 شماره شارژ: #{topup_id}\n\n"
+        "موجودی کیف پول فقط پس از تأیید امن پرداخت توسط واریزا افزایش می‌یابد. "
+        "بازگشت از صفحه پرداخت به‌تنهایی به معنی تأیید نیست.",
+        reply_markup=keyboard,
     )
 
 
