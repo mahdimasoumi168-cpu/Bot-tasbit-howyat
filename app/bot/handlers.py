@@ -22,6 +22,7 @@ from app.bot.keyboards import (
     confirm_menu,
     support_menu,
     payment_choice_menu, wallet_menu, payment_invoice_menu, wallet_topup_choice_menu,
+    optional_description_menu,
 )
 from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm, SupportForm, PaymentForm, WalletTopupForm, DirectReplyForm
 from app.core.config import get_settings
@@ -540,7 +541,7 @@ async def inline_companion_yes(callback: CallbackQuery, state: FSMContext) -> No
 async def inline_companion_no(callback: CallbackQuery, state: FSMContext) -> None:
     if await state.get_state() != IdentityForm.companion_choice:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True); return
-    await callback.answer(); await show_identity_summary(callback.message, state)
+    await callback.answer(); await prompt_service_description(callback.message, state, "identity")
 
 @router.callback_query(F.data == "khodnevis:doc:amayesh")
 async def inline_doc_amayesh(callback: CallbackQuery, state: FSMContext) -> None:
@@ -706,7 +707,7 @@ async def identity_companion_choice(message: Message, state: FSMContext) -> None
         await state.set_state(IdentityForm.companion_name)
         await message.answer("نام و نام خانوادگی همراه را وارد کنید.\nمثال: محمد احمدی", reply_markup=cancel_menu())
     elif message.text == "❌ خیر":
-        await show_identity_summary(message, state)
+        await prompt_service_description(message, state, "identity")
     else:
         await message.answer("لطفاً «بله» یا «خیر» را انتخاب کنید.", reply_markup=yes_no_menu())
 
@@ -743,6 +744,7 @@ async def show_identity_summary(message: Message, state: FSMContext) -> None:
         f"• {item['full_name']} — {item['mobile']}" for item in companions
     )
     await state.set_state(IdentityForm.confirm)
+    description = (data.get("service_description") or "").strip() or "ندارد"
     await message.answer(
         "📋 خلاصه درخواست\n\n"
         f"نام: {data.get('full_name')}\n"
@@ -750,10 +752,56 @@ async def show_identity_summary(message: Message, state: FSMContext) -> None:
         f"تاریخ تولد: {data.get('birth_date_gregorian')}\n"
         f"آخرین بازگشت: {data.get('return_date_gregorian')}\n"
         f"کنسولگری: {data.get('consulate')}\n"
-        f"همراهان:\n{companion_text}\n\n"
+        f"همراهان:\n{companion_text}\n"
+        f"📝 توضیحات: {description}\n\n"
         "اگر اطلاعات درست است «تأیید و ادامه» را بزنید.",
         reply_markup=confirm_menu(),
     )
+
+
+async def prompt_service_description(message: Message, state: FSMContext, service_code: str) -> None:
+    if service_code == "identity":
+        await state.set_state(IdentityForm.description)
+    elif service_code == "khodnevis":
+        await state.set_state(KhodnevisForm.description)
+    else:
+        raise ValueError("خدمت نامعتبر است.")
+    await message.answer(
+        "📝 توضیحات (اختیاری)\n\nاگر نکته‌ای درباره درخواست دارید همین‌جا بنویسید.\nاگر توضیحی ندارید، دکمه «رد شدن» را بزنید.",
+        reply_markup=optional_description_menu(),
+    )
+
+
+@router.message(IdentityForm.description, F.text)
+@router.message(KhodnevisForm.description, F.text)
+async def service_description_received(message: Message, state: FSMContext) -> None:
+    value = (message.text or "").strip()
+    if not value:
+        await message.answer("اگر توضیحی ندارید، دکمه «⏭️ رد شدن» را بزنید.", reply_markup=optional_description_menu())
+        return
+    if len(value) > 2000:
+        await message.answer("توضیحات حداکثر ۲۰۰۰ نویسه باشد؛ لطفاً کوتاه‌تر بنویسید یا رد شدن را بزنید.", reply_markup=optional_description_menu())
+        return
+    await state.update_data(service_description=value)
+    current = await state.get_state()
+    if current == IdentityForm.description:
+        await show_identity_summary(message, state)
+    elif current == KhodnevisForm.description:
+        await show_khodnevis_summary(message, state)
+
+
+@router.callback_query(F.data == "service:description:skip")
+async def service_description_skip(callback: CallbackQuery, state: FSMContext) -> None:
+    current = await state.get_state()
+    if current not in {IdentityForm.description, KhodnevisForm.description}:
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True)
+        return
+    await state.update_data(service_description="")
+    await callback.answer("از توضیحات رد شدید.")
+    if current == IdentityForm.description:
+        await show_identity_summary(callback.message, state)
+    else:
+        await show_khodnevis_summary(callback.message, state)
 
 
 @router.message(IdentityForm.confirm, F.text == "✅ تأیید و ادامه")
@@ -905,14 +953,20 @@ async def khodnevis_own_mobile(message: Message, state: FSMContext) -> None:
         await message.answer("❌ شماره موبایل معتبر نیست.", reply_markup=cancel_menu())
         return
     await state.update_data(own_mobile=normalize_mobile(value))
+    await prompt_service_description(message, state, "khodnevis")
+
+
+async def show_khodnevis_summary(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
+    description = (data.get("service_description") or "").strip() or "ندارد"
     await state.set_state(KhodnevisForm.confirm)
     await message.answer(
         "📋 خلاصه درخواست\n\n"
         f"نام: {data.get('full_name')}\n"
         f"موبایل در دسترس: {data.get('mobile')}\n"
         f"مدرک: {data.get('document_type')}\n"
-        f"موبایل به نام شخص: {data.get('own_mobile')}\n\n"
+        f"موبایل به نام شخص: {data.get('own_mobile')}\n"
+        f"📝 توضیحات: {description}\n\n"
         "اگر اطلاعات درست است «تأیید و ادامه» را بزنید.",
         reply_markup=confirm_menu(),
     )
