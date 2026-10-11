@@ -57,6 +57,16 @@ async def test_custom_service_quote_queue_and_payment_gate(tmp_path):
         assert wrong_owner is None
 
         order.status = "waiting_payment"
+        order.price_snapshot_toman = None
+        no_price = await find_custom_service_order_without_payment(
+            session,
+            order.id,
+            status="waiting_payment",
+            telegram_id=user.telegram_id,
+            require_price=True,
+        )
+        assert no_price is None
+
         order.price_snapshot_toman = 250_000
         payable = await find_custom_service_order_without_payment(
             session,
@@ -67,15 +77,6 @@ async def test_custom_service_quote_queue_and_payment_gate(tmp_path):
         )
         assert payable is not None
         assert payable[0].price_snapshot_toman == 250_000
-
-        no_price = await find_custom_service_order_without_payment(
-            session,
-            order.id,
-            status="waiting_payment",
-            telegram_id=user.telegram_id,
-            require_price=True,
-        )
-        assert no_price is not None
 
         session.add(Payment(
             order_id=order.id,
