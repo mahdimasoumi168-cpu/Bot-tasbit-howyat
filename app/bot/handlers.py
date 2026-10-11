@@ -389,13 +389,21 @@ async def flow_cancel(callback: CallbackQuery, state: FSMContext) -> None:
         reply_markup=await user_main_menu(callback.from_user.id),
     )
 
+async def available_services_menu() -> InlineKeyboardMarkup:
+    async with SessionLocal() as session:
+        codes = (
+            await session.execute(select(Service.code).where(Service.enabled.is_(True)))
+        ).scalars().all()
+    return services_menu(set(codes))
+
+
 @router.callback_query(F.data == "menu:services")
 async def inline_services(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.answer()
     await callback.message.edit_text(
         "🧾 خدمات دفتر نت‌یار مهاجر\n\nلطفاً خدمت موردنظر را انتخاب کنید:",
-        reply_markup=services_menu(),
+        reply_markup=await available_services_menu(),
     )
 
 @router.callback_query(F.data == "menu:home")
@@ -448,7 +456,7 @@ async def service_rules_reject(callback: CallbackQuery, state: FSMContext) -> No
     try:
         await callback.message.edit_text(
             "خدمت شروع نشد. می‌توانید خدمت دیگری را انتخاب کنید:",
-            reply_markup=services_menu(),
+            reply_markup=await available_services_menu(),
         )
     except Exception as exc:
         if "message is not modified" not in str(exc).lower():
