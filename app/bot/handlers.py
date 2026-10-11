@@ -13,6 +13,8 @@ from app.bot.keyboards import (
     document_type_menu,
     identity_document_type_menu,
     main_menu,
+    services_menu,
+    service_rules_menu,
     optional_document_menu,
     yes_no_menu,
     cancel_menu,
@@ -230,6 +232,7 @@ STATUS_TEXT = {
     "waiting_user": "در انتظار مشترک",
     "completed": "تکمیل شده",
     "rejected": "رد شده",
+    "deleted": "حذف‌شده از فهرست فعال",
 }
 
 
@@ -376,6 +379,24 @@ async def flow_cancel(callback: CallbackQuery, state: FSMContext) -> None:
         reply_markup=await user_main_menu(callback.from_user.id),
     )
 
+@router.callback_query(F.data == "menu:services")
+async def inline_services(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer()
+    await callback.message.edit_text(
+        "🧾 خدمات دفتر نت‌یار مهاجر\n\nلطفاً خدمت موردنظر را انتخاب کنید:",
+        reply_markup=services_menu(),
+    )
+
+@router.callback_query(F.data == "menu:home")
+async def inline_home(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer()
+    await callback.message.edit_text(
+        "صفحه اصلی کمک‌یار مهاجر",
+        reply_markup=await user_main_menu(callback.from_user.id),
+    )
+
 @router.callback_query(F.data == "menu:identity")
 async def inline_identity(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
@@ -385,6 +406,37 @@ async def inline_identity(callback: CallbackQuery, state: FSMContext) -> None:
 async def inline_khodnevis(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await khodnevis_start(callback.message, state, telegram_id=callback.from_user.id)
+
+@router.callback_query(F.data.startswith("service:accept:"))
+async def service_rules_accept(callback: CallbackQuery, state: FSMContext) -> None:
+    code = callback.data.rsplit(":", 1)[1]
+    if code not in {ServiceCode.IDENTITY.value, ServiceCode.KHODNEVIS.value}:
+        await callback.answer("خدمت نامعتبر است.", show_alert=True)
+        return
+    data = await state.get_data()
+    if data.get("service_rules_pending") != code:
+        await callback.answer("این تأیید منقضی شده است؛ لطفاً خدمت را دوباره انتخاب کنید.", show_alert=True)
+        return
+    await state.update_data(service_rules_accepted=code)
+    await callback.answer("قوانین تأیید شد.")
+    if code == ServiceCode.IDENTITY.value:
+        await identity_start(callback.message, state, telegram_id=callback.from_user.id)
+    else:
+        await khodnevis_start(callback.message, state, telegram_id=callback.from_user.id)
+
+@router.callback_query(F.data.startswith("service:reject:"))
+async def service_rules_reject(callback: CallbackQuery, state: FSMContext) -> None:
+    code = callback.data.rsplit(":", 1)[1]
+    data = await state.get_data()
+    if code not in {ServiceCode.IDENTITY.value, ServiceCode.KHODNEVIS.value} or data.get("service_rules_pending") != code:
+        await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True)
+        return
+    await state.clear()
+    await callback.answer("قوانین رد شد؛ به فهرست خدمات برگشتید.")
+    await callback.message.edit_text(
+        "خدمت شروع نشد. می‌توانید خدمت دیگری را انتخاب کنید:",
+        reply_markup=services_menu(),
+    )
 
 @router.callback_query(F.data == "menu:tracking")
 async def inline_tracking(callback: CallbackQuery) -> None:
@@ -527,6 +579,24 @@ async def inline_confirm(callback: CallbackQuery, state: FSMContext) -> None:
 @router.message(F.text == "🪪 تثبیت هویت")
 async def identity_start(message: Message, state: FSMContext, telegram_id: int | None = None) -> None:
     uid = telegram_id or message.from_user.id
+    state_data = await state.get_data()
+    if state_data.get("service_rules_accepted") != ServiceCode.IDENTITY.value:
+        await state.clear()
+        async with SessionLocal() as session:
+            service = (await session.execute(select(Service).where(Service.code == ServiceCode.IDENTITY.value))).scalar_one_or_none()
+            setting = (await session.execute(select(Setting).where(Setting.key == "service_rules:identity"))).scalar_one_or_none()
+        if service is None or not service.enabled:
+            await message.answer("❌ این خدمت در حال حاضر فعال نیست.", reply_markup=await user_main_menu(uid))
+            return
+        rules = (setting.value.strip() if setting and setting.value else
+            "📜 قوانین خدمت تثبیت هویت\n\n"
+            "۱. اطلاعات و تصاویر ارسالی باید صحیح، خوانا و متعلق به متقاضی باشد.\n"
+            "۲. هزینه خدمت و مدارک لازم پیش از پرداخت نمایش داده می‌شود.\n"
+            "۳. ارسال درخواست به معنی تضمین نتیجه یا زمان نهایی انجام کار نیست.\n"
+            "۴. با ادامه فرایند، صحت اطلاعات ارسالی را تأیید می‌کنید.")
+        await state.update_data(service_rules_pending=ServiceCode.IDENTITY.value)
+        await message.answer(rules, reply_markup=service_rules_menu(ServiceCode.IDENTITY.value))
+        return
     await state.clear()
     try:
         order = await create_order(message, ServiceCode.IDENTITY, telegram_id=telegram_id)
@@ -701,6 +771,24 @@ async def identity_receipt(message: Message, state: FSMContext) -> None:
 @router.message(F.text == "📝 کد رهگیری خودنویس")
 async def khodnevis_start(message: Message, state: FSMContext, telegram_id: int | None = None) -> None:
     uid = telegram_id or message.from_user.id
+    state_data = await state.get_data()
+    if state_data.get("service_rules_accepted") != ServiceCode.KHODNEVIS.value:
+        await state.clear()
+        async with SessionLocal() as session:
+            service = (await session.execute(select(Service).where(Service.code == ServiceCode.KHODNEVIS.value))).scalar_one_or_none()
+            setting = (await session.execute(select(Setting).where(Setting.key == "service_rules:khodnevis"))).scalar_one_or_none()
+        if service is None or not service.enabled:
+            await message.answer("❌ این خدمت در حال حاضر فعال نیست.", reply_markup=await user_main_menu(uid))
+            return
+        rules = (setting.value.strip() if setting and setting.value else
+            "📜 قوانین خدمت کد رهگیری خودنویس\n\n"
+            "۱. اطلاعات و تصاویر ارسالی باید صحیح، خوانا و متعلق به متقاضی باشد.\n"
+            "۲. هزینه خدمت و مدارک لازم پیش از پرداخت نمایش داده می‌شود.\n"
+            "۳. ارسال درخواست به معنی تضمین نتیجه یا زمان نهایی انجام کار نیست.\n"
+            "۴. با ادامه فرایند، صحت اطلاعات ارسالی را تأیید می‌کنید.")
+        await state.update_data(service_rules_pending=ServiceCode.KHODNEVIS.value)
+        await message.answer(rules, reply_markup=service_rules_menu(ServiceCode.KHODNEVIS.value))
+        return
     await state.clear()
     try:
         order = await create_order(message, ServiceCode.KHODNEVIS, telegram_id=telegram_id)
@@ -999,7 +1087,7 @@ async def track_orders(message: Message, telegram_id: int | None = None) -> None
             .join(User, User.id == Order.user_id)
             .where(
                 User.telegram_id == (telegram_id or message.from_user.id),
-                Order.status.notin_(["draft", "waiting_payment"]),
+                Order.status.notin_(["draft", "waiting_payment", "deleted"]),
             )
             .order_by(Order.id.desc())
         )
