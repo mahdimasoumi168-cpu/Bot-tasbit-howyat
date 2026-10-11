@@ -126,3 +126,15 @@ def test_form_prompts_hide_internal_limits_but_validation_remains():
     assert not valid_mobile("123")
     assert valid_name("احمد محمدی")
     assert not valid_name("احمد")
+
+
+def test_setserviceprice_command_is_handled_by_unrestricted_admin_router():
+    from pathlib import Path
+
+    handlers_source = Path("app/bot/handlers.py").read_text(encoding="utf-8")
+    admin_source = Path("app/bot/admin.py").read_text(encoding="utf-8")
+
+    # handlers router is registered before admin router; a limited handler here
+    # would intercept the command and reject identity/khodnevis service codes.
+    assert '@router.message(F.text.startswith("/setserviceprice"))' not in handlers_source
+    assert '@router.message(F.text.regexp(r"^/(?:setprice|setserviceprice)(?:\\s|$)"))' in admin_source
