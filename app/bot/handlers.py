@@ -29,6 +29,7 @@ from app.bot.states import AdditionalServiceForm, IdentityForm, KhodnevisForm, R
 from app.core.config import get_settings
 from app.db.models import Companion, Document, Operator, Order, Payment, Service, ServiceCode, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode, AuditLog
 from app.db.session import SessionLocal
+from app.db.queries import find_custom_service_order_without_payment
 from app.utils.dates import gregorian_display, jalali_to_gregorian
 from app.utils.ids import public_order_id
 
@@ -1515,21 +1516,13 @@ async def user_pay_custom_quote(callback: CallbackQuery, state: FSMContext) -> N
         await callback.answer("درخواست پرداخت نامعتبر است.", show_alert=True)
         return
     async with SessionLocal() as session:
-        row = (await session.execute(
-            select(Order, Service, User)
-            .join(Service, Service.id == Order.service_id)
-            .join(User, User.id == Order.user_id)
-            .outerjoin(Payment, Payment.order_id == Order.id)
-            .where(
-                Order.id == order_id,
-                User.telegram_id == callback.from_user.id,
-                Service.code == "other_service",
-                Order.status == "waiting_payment",
-                Order.price_snapshot_toman.is_not(None),
-                Order.price_snapshot_toman > 0,
-                Payment.id.is_(None),
-            )
-        )).one_or_none()
+        row = await find_custom_service_order_without_payment(
+            session,
+            order_id,
+            status="waiting_payment",
+            telegram_id=callback.from_user.id,
+            require_price=True,
+        )
         if not row:
             await callback.answer(
                 "این درخواست برای پرداخت آماده نیست یا قبلاً پرداخت شده است.",
