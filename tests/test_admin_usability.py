@@ -211,3 +211,18 @@ def test_unapproved_receipts_stay_out_of_request_and_case_views():
 
     for block in (request_list, operator_list, admin_detail, case_lookup, case_dispatch, user_tracking):
         assert 'Payment.status == "approved"' in block
+
+
+
+def test_wallet_topup_requires_payment_choice_before_receipt_upload():
+    from pathlib import Path
+
+    source = Path("app/bot/handlers.py").read_text(encoding="utf-8")
+    amount_block = source.split(
+        "async def wallet_topup_amount", 1
+    )[1].split('@router.callback_query(F.data == "wallet:topup:card")', 1)[0]
+    card_block = source.split(
+        '@router.callback_query(F.data == "wallet:topup:card")', 1
+    )[1].split("async def wallet_topup_invoice", 1)[0]
+    assert "await state.set_state(WalletTopupForm.choice)" in amount_block
+    assert "await state.get_state() != WalletTopupForm.choice" in card_block
