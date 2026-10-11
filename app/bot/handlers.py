@@ -1377,10 +1377,13 @@ async def track_orders(message: Message, telegram_id: int | None = None) -> None
             select(Order, Service)
             .join(Service, Service.id == Order.service_id)
             .join(User, User.id == Order.user_id)
+            .join(Payment, Payment.order_id == Order.id)
             .where(
                 User.telegram_id == (telegram_id or message.from_user.id),
-                Order.status.notin_(["draft", "waiting_payment", "deleted"]),
+                Payment.status == "approved",
+                Order.status != "deleted",
             )
+            .distinct()
             .order_by(Order.id.desc())
         )
         rows = result.all()
@@ -1414,9 +1417,11 @@ async def user_order_detail(callback: CallbackQuery) -> None:
                 select(Order, Service, User)
                 .join(Service, Order.service_id == Service.id)
                 .join(User, Order.user_id == User.id)
+                .join(Payment, Payment.order_id == Order.id)
                 .where(
                     Order.id == order_id,
                     User.telegram_id == callback.from_user.id,
+                    Payment.status == "approved",
                     Order.status != "deleted",
                 )
             )

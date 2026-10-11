@@ -1082,11 +1082,25 @@ def build_case_text(order: Order, service: Service, user: User, data: dict, comp
             continue
         label = {
             "birth_date_gregorian": "تاریخ تولد",
+            "birth_date": "تاریخ تولد",
             "return_date_gregorian": "آخرین بازگشت به افغانستان",
+            "return_date": "آخرین بازگشت به افغانستان",
             "consulate": "کنسولگری",
-            "document_type": "نوع مدرک",
-            "own_mobile": "موبایل به نام شخص",
-        }.get(key, key.replace("_", " "))
+            "document_type": "نوع مدرک شناسایی",
+            "identity_document_type": "نوع مدرک شناسایی",
+            "own_mobile": "شماره موبایل به نام شخص",
+            "father_name": "نام پدر",
+            "province": "استان محل سکونت",
+            "city": "شهر محل سکونت",
+            "neighborhood": "محله محل سکونت",
+            "street": "خیابان محل سکونت",
+            "alley": "کوچه محل سکونت",
+            "plaque": "پلاک محل سکونت",
+            "address": "نشانی",
+            "fida_code": "کد فیدا",
+            "mobile": "شماره موبایل",
+            "full_name": "نام و نام خانوادگی",
+        }.get(key, "اطلاعات تکمیلی پرونده")
         if isinstance(value, list):
             continue
         lines.append(f"• {label}: {value}")
@@ -1097,7 +1111,8 @@ def build_case_text(order: Order, service: Service, user: User, data: dict, comp
     lines.append("💳 سوابق پرداخت")
     if payments:
         for p in payments:
-            lines.append(f"• {p.status} — {p.amount_toman:,} تومان — {p.created_at.strftime('%Y/%m/%d %H:%M') if p.created_at else '—'}")
+            payment_status = {"pending": "در انتظار بررسی", "approved": "تأیید شده", "rejected": "رد شده", "superseded": "جایگزین شده"}.get(p.status, "نامشخص")
+            lines.append(f"• {payment_status} — {p.amount_toman:,} تومان — {p.created_at.strftime('%Y/%m/%d %H:%M') if p.created_at else '—'}")
     else:
         lines.append("• پرداختی ثبت نشده است")
     lines.append("")
@@ -1168,23 +1183,25 @@ async def user_search(message: Message, state: FSMContext) -> None:
             await message.answer("❌ مشترک پیدا نشد. نام، نام کاربری، شناسه تلگرام یا شماره درخواست را امتحان کنید:", reply_markup=admin_cancel_menu())
             return
         orders = (await session.execute(
-            select(Order, Service).join(Service, Order.service_id == Service.id)
+            select(Order, Service)
+            .join(Service, Order.service_id == Service.id)
+            .join(Payment, Payment.order_id == Order.id)
             .where(
                 Order.user_id == user.id,
-                Order.status.notin_(["draft", "waiting_payment"]),
+                Payment.status == "approved",
+                Order.status != "deleted",
             )
+            .distinct()
             .order_by(Order.id.desc()).limit(30)
         )).all()
-    text = (
-        "👤 اطلاعات مشترک\n\n"
-        f"شناسه تلگرام: {user.telegram_id}\n"
-        f"نام: {(user.first_name or '')} {(user.last_name or '')}".strip() +
-        f"\nنام کاربری: @{user.username if user.username else 'ندارد'}\n\n"
-        "📋 آخرین درخواست‌ها:\n"
-    )
-    text += "\n".join(
-        f"{o.public_id} | {STATUS_TEXT.get(o.status, "نامشخص")} | {s.name}" for o, s in orders
-    ) or "درخواستی ندارد."
+    text = "📁 پرونده کامل مشترک\n\n"
+    if orders:
+        text += "\n\n".join(
+            f"🔖 کد پیگیری: {o.public_id}\n🧾 خدمت: {s.name}\n📌 وضعیت پرونده: {STATUS_TEXT.get(o.status, 'نامشخص')}"
+            for o, s in orders
+        )
+    else:
+        text += "هنوز پرونده‌ای با پرداخت تأییدشده برای این مشترک وجود ندارد."
     await state.clear()
     await message.answer(text, reply_markup=admin_menu())
 
