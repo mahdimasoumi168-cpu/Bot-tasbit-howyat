@@ -489,6 +489,7 @@ async def operator_back(callback: CallbackQuery) -> None:
         [ui_button(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
         [ui_button(text="🔎 جست‌وجوی پرونده با کد پیگیری", callback_data="op:case")],
         [ui_button(text="🔵 رسیدهای خدمات در انتظار بررسی", callback_data="op:pending")],
+        [ui_button(text="🔙 بازگشت به منوی اصلی", callback_data="op:home")],
     ]))
     await callback.answer()
 
@@ -667,8 +668,8 @@ async def operator_order_receipt(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "op:pending")
 async def operator_pending(callback: CallbackQuery) -> None:
     operator = await get_operator(callback.from_user.id)
-    if operator is None or not can_operator(operator, "view_orders"):
-        await callback.answer("دسترسی ندارید.", show_alert=True)
+    if operator is None or not any(can_operator(operator, permission) for permission in ("view_orders", "approve_payment", "reject_payment")):
+        await callback.answer("دسترسی مشاهده رسیدهای در انتظار بررسی را ندارید.", show_alert=True)
         return
     async with SessionLocal() as session:
         rows=(await session.execute(
