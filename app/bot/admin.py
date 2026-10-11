@@ -1225,7 +1225,7 @@ async def prices(callback: CallbackQuery) -> None:
     async with SessionLocal() as session:
         rows = (await session.execute(select(Service).order_by(Service.id))).scalars().all()
     text = "💰 قیمت فعلی خدمات:\n\n" + "\n".join(
-        f"{s.name}: {s.price_toman:,} تومان" for s in rows
+        f"{s.name} — {'هزینه هر دانش‌آموز' if s.code == ServiceCode.STUDENT_SCREENING.value else 'هزینه خدمت'}: {s.price_toman:,} تومان" for s in rows
     ) or "خدمتی ثبت نشده است."
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
