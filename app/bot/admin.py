@@ -90,6 +90,8 @@ def order_actions(
             ])
     if operator is None or can_operator(operator, "message_user"):
         rows.append([ui_button(text="💬 پیام به مشترک", callback_data=f"adm:msg:{order_id}")])
+    if operator is None and order_status != "deleted":
+        rows.append([ui_button(text="🗑 حذف پرونده", callback_data=f"adm:delete:confirm:{order_id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
