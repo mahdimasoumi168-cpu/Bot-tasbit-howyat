@@ -1660,6 +1660,18 @@ async def wallet_topup_card_choice(callback: CallbackQuery, state: FSMContext) -
     )
 
 
+async def wallet_topup_invoice(amount: int) -> str:
+    async with SessionLocal() as session:
+        number = (await session.execute(select(Setting).where(Setting.key == "card_number"))).scalar_one_or_none()
+        holder = (await session.execute(select(Setting).where(Setting.key == "card_holder"))).scalar_one_or_none()
+    card_number = number.value if number and number.value else "تنظیم نشده"
+    card_holder = holder.value if holder and holder.value else "تنظیم نشده"
+    return (f"🧾 فاکتور افزایش اعتبار\n━━━━━━━━━━━━━━\nمبلغ: <code>{amount:,}</code> تومان\nریال: <code>{amount*10}</code>\n"
+            f"💳 شماره کارت: <code>{card_number}</code>\n"
+            f"👤 به نام: {card_holder}\n"
+            "━━━━━━━━━━━━━━\n📸 رسید واریز را به صورت عکس یا فایل ارسال کنید.")
+
+
 @router.message(WalletTopupForm.receipt, F.photo)
 @router.message(WalletTopupForm.receipt, F.document)
 async def wallet_topup_receipt(message: Message, state: FSMContext) -> None:
