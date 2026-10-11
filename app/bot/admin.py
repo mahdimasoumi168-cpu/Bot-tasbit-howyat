@@ -48,6 +48,7 @@ def admin_menu() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [ui_button(text="🔵 رسیدهای در انتظار بررسی", callback_data="adm:pending")],
             [ui_button(text="📋 درخواست‌ها", callback_data="adm:orders")],
+            [ui_button(text="📨 درخواست‌های نیازمند تعیین هزینه", callback_data="adm:unpriced")],
             [ui_button(text="💬 ارسال پیام به مشترک", callback_data="adm:send_user")],
             [ui_button(text="🗄 پرونده‌های حذف‌شده", callback_data="adm:deleted")],
             [ui_button(text="🔎 پرونده با کد پیگیری", callback_data="adm:case")],
@@ -1770,6 +1771,266 @@ async def orders(callback: CallbackQuery) -> None:
     ] + [[ui_button(text="🔙 بازگشت", callback_data="adm:home")]])
     await callback.message.edit_text(text or "درخواستی ثبت نشده است.", reply_markup=keyboard)
     await callback.answer()
+
+
+@router.callback_query(F.data == "adm:unpriced")
+async def admin_unpriced_orders(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        rows = (await session.execute(
+            select(Order, Service, User)
+            .join(Service, Service.id == Order.service_id)
+            .join(User, User.id == Order.user_id)
+            .outerjoin(Payment, Payment.order_id == Order.id)
+            .where(
+                Service.code == "other_service",
+                Order.status == "waiting_user",
+                Payment.id.is_(None),
+            )
+            .order_by(Order.created_at.asc())
+            .limit(30)
+        )).all()
+    buttons = [
+        [ui_button(
+            text=f"{order.public_id} | {user.first_name or 'بدون نام'}",
+            callback_data=f"adm:unpriced:view:{order.id}",
+        )]
+        for order, _service, user in rows
+    ]
+    buttons.append([ui_button(text="🔙 بازگشت", callback_data="adm:home")])
+    body = "📨 درخواست‌های نیازمند تعیین هزینه\\n\\n"
+    body += "\\n".join(
+        f"{order.public_id} | {service.name} | {user.first_name or ''} {user.last_name or ''}"
+        for order, service, user in rows
+    ) if rows else "درخواست جدیدی برای تعیین هزینه وجود ندارد."
+    await callback.answer()
+    await callback.message.edit_text(body, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+
+
+@router.callback_query(F.data.startswith("adm:unpriced:view:"))
+async def admin_unpriced_order_detail(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("شناسه درخواست نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        row = (await session.execute(
+            select(Order, Service, User)
+            .join(Service, Service.id == Order.service_id)
+            .join(User, User.id == Order.user_id)
+            .outerjoin(Payment, Payment.order_id == Order.id)
+            .where(
+                Order.id == order_id,
+                Service.code == "other_service",
+                Order.status == "waiting_user",
+                Payment.id.is_(None),
+            )
+        )).one_or_none()
+        if not row:
+            await callback.answer("این درخواست دیگر در صف تعیین هزینه نیست.", show_alert=True)
+            return
+        order, service, user = row
+        data = json.loads(order.data_json or "{}")
+        documents = (await session.execute(
+            select(Document).where(Document.order_id == order.id).order_by(Document.id)
+        )).scalars().all()
+    lines = [
+        "📨 درخواست خدمت نیازمند تعیین هزینه",
+        "",
+        f"🔖 کد پیگیری: {order.public_id}",
+        f"🧾 خدمت: {service.name}",
+        f"👤 نام: {data.get('full_name') or user.first_name or '—'}",
+        f"📱 موبایل: {data.get('mobile') or '—'}",
+        f"📅 ثبت: {order.created_at.strftime('%Y/%m/%d %H:%M') if order.created_at else '—'}",
+        "",
+        "📝 اطلاعات ارسالی:",
+    ]
+    ignored = {
+        "order_id", "public_id", "service_code", "telegram_id", "additional_documents",
+        "additional_values", "current_additional_field", "additional_step", "service_rules_accepted",
+        "service_rules_pending", "requested_service", "service_description",
+    }
+    labels = {
+        "full_name": "نام و نام خانوادگی",
+        "mobile": "موبایل در دسترس",
+        "father_name": "نام پدر",
+        "birth_date": "تاریخ تولد",
+        "province": "استان",
+        "city": "شهر",
+        "neighborhood": "محله",
+        "street": "خیابان",
+        "alley": "کوچه",
+        "plaque": "پلاک",
+    }
+    for key, value in data.items():
+        if key in ignored or value in (None, "", [], {}):
+            continue
+        if isinstance(value, (dict, list)):
+            continue
+        lines.append(f"• {labels.get(key, key)}: {value}")
+    if data.get("service_description"):
+        lines.extend(["", f"توضیحات مشترک: {data['service_description']}"])
+    lines.extend(["", f"📎 مدارک پیوست‌شده: {len(documents)}"])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [ui_button(text="💰 تعیین هزینه و ارسال برای مشترک", callback_data=f"adm:unpriced:quote:{order.id}")],
+        [ui_button(text="❌ رد درخواست", callback_data=f"adm:unpriced:reject:{order.id}")],
+        [ui_button(text="🔙 بازگشت به فهرست", callback_data="adm:unpriced")],
+    ])
+    await callback.answer()
+    await callback.message.edit_text("\\n".join(lines), reply_markup=keyboard)
+    for doc in documents:
+        try:
+            await callback.message.answer_photo(doc.telegram_file_id, caption=f"📎 {doc.document_type} | {order.public_id}")
+        except Exception:
+            await callback.message.answer(f"⚠️ مدرک «{doc.document_type}» قابل نمایش نیست.")
+
+
+@router.callback_query(F.data.startswith("adm:unpriced:quote:"))
+async def admin_unpriced_quote_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("شناسه درخواست نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        row = (await session.execute(
+            select(Order, User)
+            .join(Service, Service.id == Order.service_id)
+            .join(User, User.id == Order.user_id)
+            .outerjoin(Payment, Payment.order_id == Order.id)
+            .where(
+                Order.id == order_id,
+                Service.code == "other_service",
+                Order.status == "waiting_user",
+                Payment.id.is_(None),
+            )
+        )).one_or_none()
+    if not row:
+        await callback.answer("این درخواست دیگر آماده تعیین هزینه نیست.", show_alert=True)
+        return
+    await state.clear()
+    await state.set_state(AdminForm.order_quote_amount)
+    await state.update_data(quote_order_id=order_id)
+    await callback.answer()
+    await callback.message.answer(
+        f"💰 مبلغ نهایی درخواست {row[0].public_id} را به تومان وارد کنید.\\n"
+        "مثال: 250000\\n\\n"
+        "پس از ثبت مبلغ، مشترک دکمه پرداخت را دریافت می‌کند.",
+        reply_markup=admin_cancel_menu(),
+    )
+
+
+@router.message(AdminForm.order_quote_amount)
+async def admin_unpriced_quote_save(message: Message, state: FSMContext) -> None:
+    if not is_admin(message):
+        return
+    raw = normalize_digits_admin((message.text or "").replace(",", "").replace("٬", "").replace(" ", ""))
+    if not raw.isdigit() or int(raw) <= 0:
+        await message.answer("❌ مبلغ معتبر نیست. مبلغ مثبت را به تومان وارد کنید؛ نمونه: 250000", reply_markup=admin_cancel_menu())
+        return
+    data = await state.get_data()
+    order_id = data.get("quote_order_id")
+    if not order_id:
+        await state.clear()
+        await message.answer("❌ درخواست انتخاب نشده است؛ دوباره از فهرست شروع کنید.", reply_markup=admin_menu())
+        return
+    async with SessionLocal() as session:
+        row = (await session.execute(
+            select(Order, Service, User)
+            .join(Service, Service.id == Order.service_id)
+            .join(User, User.id == Order.user_id)
+            .outerjoin(Payment, Payment.order_id == Order.id)
+            .where(
+                Order.id == order_id,
+                Service.code == "other_service",
+                Order.status == "waiting_user",
+                Payment.id.is_(None),
+            )
+        )).one_or_none()
+        if not row:
+            await state.clear()
+            await message.answer("❌ این درخواست دیگر برای تعیین هزینه آماده نیست.", reply_markup=admin_menu())
+            return
+        order, service, user = row
+        order.price_snapshot_toman = int(raw)
+        order.status = "waiting_payment"
+        public_id = order.public_id
+        user_telegram_id = user.telegram_id
+        await session.commit()
+    await state.clear()
+    await audit(message.from_user.id, "custom_service_quote_set", order_id, {"amount_toman": int(raw)})
+    await message.answer(
+        f"✅ هزینه درخواست {public_id} ثبت شد: {int(raw):,} تومان.\\n"
+        "درخواست برای مشترک ارسال شد.",
+        reply_markup=admin_menu(),
+    )
+    try:
+        await message.bot.send_message(
+            user_telegram_id,
+            f"✅ درخواست {public_id} بررسی شد.\\n"
+            f"💰 هزینه خدمت: {int(raw):,} تومان\\n"
+            "برای انتخاب روش پرداخت، دکمه زیر را بزنید.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [ui_button(text="💳 مشاهده روش‌های پرداخت", callback_data=f"user:payquote:{order_id}")]
+            ]),
+        )
+    except Exception:
+        await message.answer(
+            "⚠️ هزینه ذخیره شد، اما ارسال پیام به مشترک انجام نشد. از بخش «ارسال پیام به مشترک» اطلاع‌رسانی کنید.",
+            reply_markup=admin_menu(),
+        )
+
+
+@router.callback_query(F.data.startswith("adm:unpriced:reject:"))
+async def admin_unpriced_reject(callback: CallbackQuery) -> None:
+    if callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("شناسه درخواست نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        row = (await session.execute(
+            select(Order, Service, User)
+            .join(Service, Service.id == Order.service_id)
+            .join(User, User.id == Order.user_id)
+            .outerjoin(Payment, Payment.order_id == Order.id)
+            .where(
+                Order.id == order_id,
+                Service.code == "other_service",
+                Order.status == "waiting_user",
+                Payment.id.is_(None),
+            )
+        )).one_or_none()
+        if not row:
+            await callback.answer("این درخواست دیگر در صف بررسی نیست.", show_alert=True)
+            return
+        order, service, user = row
+        order.status = "rejected"
+        public_id = order.public_id
+        user_telegram_id = user.telegram_id
+        await session.commit()
+    await audit(callback.from_user.id, "custom_service_request_rejected", order_id)
+    await callback.answer("درخواست رد شد.")
+    await callback.message.edit_text("❌ درخواست رد شد.", reply_markup=admin_menu())
+    try:
+        await callback.bot.send_message(
+            user_telegram_id,
+            f"❌ درخواست {public_id} پس از بررسی مدیریت قابل انجام نیست. برای راهنمایی با پشتیبانی تماس بگیرید.",
+        )
+    except Exception:
+        pass
 
 
 async def send_case_to_operator(bot, order_id: int) -> None:
