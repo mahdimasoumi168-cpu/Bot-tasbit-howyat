@@ -156,16 +156,29 @@ def wallet_topup_choice_menu(variza_enabled: bool = False) -> InlineKeyboardMark
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def services_menu() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🪪 تثبیت هویت", callback_data="menu:identity", style="primary")],
-        [InlineKeyboardButton(text="📝 کد رهگیری خودنویس", callback_data="menu:khodnevis", style="primary")],
-        [InlineKeyboardButton(text="🪪 ثبت‌نام کد فیدا غیرحضوری", callback_data="menu:fida", style="primary")],
-        [InlineKeyboardButton(text="🔐 رفع مشکل ورود به درگاه دولت من", callback_data="menu:dolatman", style="primary")],
-        [InlineKeyboardButton(text="🎒 آزمون غربالگری دانش‌آموزان", callback_data="menu:screening", style="primary")],
-        [InlineKeyboardButton(text="🗂 درخواست خدمات دیگر", callback_data="menu:other_service", style="primary")],
-        [InlineKeyboardButton(text="🔙 بازگشت به صفحه اصلی", callback_data="menu:home", style="primary")],
+def services_menu(enabled_codes: set[str] | None = None) -> InlineKeyboardMarkup:
+    """Build the service menu, optionally restricting it to enabled database service codes."""
+    available = [
+        ("identity", "🪪 تثبیت هویت", "menu:identity"),
+        ("khodnevis", "📝 کد رهگیری خودنویس", "menu:khodnevis"),
+        ("fida", "🪪 ثبت‌نام کد فیدا غیرحضوری", "menu:fida"),
+        ("dolatman_login", "🔐 رفع مشکل ورود به درگاه دولت من", "menu:dolatman"),
+        ("student_screening", "🎒 آزمون غربالگری دانش‌آموزان", "menu:screening"),
+        ("other_service", "🗂 درخواست خدمات دیگر", "menu:other_service"),
+    ]
+    rows = [
+        [InlineKeyboardButton(text=label, callback_data=callback, style="primary")]
+        for code, label, callback in available
+        if enabled_codes is None or code in enabled_codes
+    ]
+    rows.append([
+        InlineKeyboardButton(
+            text="🔙 بازگشت به صفحه اصلی",
+            callback_data="menu:home",
+            style="primary",
+        )
     ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def service_rules_menu(service_code: str) -> InlineKeyboardMarkup:
