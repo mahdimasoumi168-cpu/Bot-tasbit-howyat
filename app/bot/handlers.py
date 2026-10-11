@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 
 from aiogram import F, Router
@@ -28,6 +29,7 @@ from app.db.models import Companion, Document, Operator, Order, Payment, Service
 from app.db.session import SessionLocal
 from app.utils.dates import gregorian_display, jalali_to_gregorian
 from app.utils.ids import public_order_id
+from app.payments.variza import create_payment_link
 
 router = Router()
 
@@ -136,7 +138,7 @@ async def show_payment_options(message: Message, state: FSMContext, order_id: in
         f"💳 روش پرداخت را انتخاب کنید.\n\nمبلغ نهایی: {amount:,} تومان{extra}\n"
         f"💰 موجودی اعتبار شما: {credit:,} تومان\n\n"
         "اگر اعتبار کافی داشته باشید، می‌توانید مبلغ را از اعتبار کم کنید؛ در غیر این صورت کارت به کارت را انتخاب کنید.",
-        reply_markup=payment_choice_menu(credit),
+        reply_markup=payment_choice_menu(credit, variza_enabled=get_settings().variza_enabled),
     )
 
 
@@ -1225,6 +1227,109 @@ async def pay_wallet(callback: CallbackQuery, state: FSMContext) -> None:
             await callback.bot.send_message(admin_id, f"💰 پرداخت با اعتبار تأیید شد.\nشماره درخواست: {order_id}")
         except Exception:
             pass
+
+
+@router.callback_query(F.data == "pay:variza")
+async def pay_variza(callback: CallbackQuery, state: FSMContext) -> None:
+    settings = get_settings()
+    if not settings.variza_enabled:
+        await callback.answer("پرداخت آنلاین هنوز تنظیم نشده است؛ لطفاً کارت به کارت را انتخاب کنید.", show_alert=True)
+        return
+
+    data = await state.get_data()
+    order_id = data.get("order_id")
+    if not order_id:
+        await callback.answer("درخواست پرداخت پیدا نشد.", show_alert=True)
+        return
+
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(
+                select(Order, User, Service)
+                .join(User, Order.user_id == User.id)
+                .join(Service, Order.service_id == Service.id)
+                .where(Order.id == order_id, User.telegram_id == callback.from_user.id)
+            )
+        ).one_or_none()
+        if row is None:
+            await callback.answer("این درخواست متعلق به حساب شما نیست یا پیدا نشد.", show_alert=True)
+            return
+        order, _user, service = row
+        if order.status != "waiting_payment":
+            await callback.answer("این درخواست دیگر در انتظار پرداخت نیست.", show_alert=True)
+            return
+        amount, _discount, _coupon = await order_amount_and_coupon(order_id)
+        public_id = order.public_id
+        service_name = service.name
+
+    await callback.answer("در حال ساخت لینک پرداخت امن...")
+    return_url = settings.public_base_url.rstrip("/") + "/payments/return"
+    try:
+        pay_url, slug = await create_payment_link(
+            settings.variza_api_key,
+            amount,
+            f"{service_name} | {public_id}",
+            return_url,
+        )
+    except Exception:
+        logging.getLogger(__name__).exception("Could not create Variza payment link")
+        await callback.message.answer(
+            "⚠️ ساخت لینک پرداخت آنلاین ناموفق بود. لطفاً کمی بعد دوباره تلاش کنید یا کارت به کارت را انتخاب کنید."
+        )
+        return
+
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(
+                select(Order, User)
+                .join(User, Order.user_id == User.id)
+                .where(Order.id == order_id, User.telegram_id == callback.from_user.id)
+            )
+        ).one_or_none()
+        if row is None or row[0].status != "waiting_payment":
+            await callback.message.answer(
+                "وضعیت درخواست تغییر کرده است؛ لینک پرداخت نمایش داده نشد. برای بررسی وضعیت، از منوی پیگیری درخواست‌ها استفاده کنید."
+            )
+            return
+        order = row[0]
+        payload = json.loads(order.data_json or "{}")
+        payload["variza_payment_slug"] = slug
+        payload["variza_pay_url"] = pay_url
+        order.data_json = json.dumps(payload, ensure_ascii=False)
+        await session.execute(
+            update(Payment)
+            .where(
+                Payment.order_id == order.id,
+                Payment.receipt_type == "variza",
+                Payment.status == "pending",
+            )
+            .values(status="superseded")
+        )
+        session.add(
+            Payment(
+                order_id=order.id,
+                amount_toman=amount,
+                receipt_file_id=slug,
+                receipt_type="variza",
+                status="pending",
+            )
+        )
+        await session.commit()
+
+    await state.clear()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔗 پرداخت آنلاین واریزا", url=pay_url, style="primary")],
+        [InlineKeyboardButton(text="📋 پیگیری درخواست‌ها", callback_data="menu:tracking", style="primary")],
+    ])
+    await callback.message.edit_text(
+        "💳 لینک پرداخت آنلاین ساخته شد.\n\n"
+        f"🧾 خدمت: {service_name}\n"
+        f"📋 شماره درخواست: {public_id}\n"
+        f"💰 مبلغ: {amount:,} تومان\n\n"
+        "پس از پرداخت، واریزا نتیجه را به‌صورت امن به ربات اعلام می‌کند. "
+        "تا دریافت تأیید نهایی، این پیام را به‌عنوان رسید پرداخت در نظر نگیرید.",
+        reply_markup=keyboard,
+    )
 
 
 @router.callback_query(F.data == "pay:card")
