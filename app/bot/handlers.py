@@ -1348,15 +1348,16 @@ async def wallet_topup_receipt(message: Message, state: FSMContext) -> None:
         )).scalar_one_or_none()
         if (
             not topup or not user or topup.user_id != user.id
-            or topup.status != "waiting_receipt_review"
+            or topup.status != "awaiting_receipt"
         ):
             await message.answer(
-                "❌ این درخواست افزایش اعتبار قابل ثبت نیست.",
+                "❌ این درخواست افزایش اعتبار قابل ثبت نیست یا قبلاً رسید آن ارسال شده است.",
                 reply_markup=cancel_menu(),
             )
             return
         topup.receipt_file_id = message.photo[-1].file_id if message.photo else message.document.file_id
         topup.receipt_type = "photo" if message.photo else "document"
+        topup.status = "waiting_receipt_review"
         amount = topup.amount_toman
         await session.commit()
 
