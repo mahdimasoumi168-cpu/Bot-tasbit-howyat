@@ -475,7 +475,7 @@ async def operator_button(message: Message, state: FSMContext) -> None:
         [ui_button(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
         [ui_button(text="🔎 جست‌وجوی پرونده با کد پیگیری", callback_data="op:case")],
         [ui_button(text="🔵 رسیدهای خدمات در انتظار بررسی", callback_data="op:pending")],
-        [ui_button(text="🔙 بازگشت", callback_data="op:back")],
+        [ui_button(text="🔙 بازگشت به منوی اصلی", callback_data="op:home")],
     ])
     await message.answer("👨‍💼 پنل اپراتور\n\nدسترسی‌های شما بر اساس تنظیمات مدیریت نمایش داده می‌شود.", reply_markup=keyboard)
 
@@ -719,9 +719,24 @@ async def inline_operator_open(callback: CallbackQuery, state: FSMContext) -> No
         [ui_button(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
         [ui_button(text="🔎 جست‌وجوی پرونده با کد پیگیری", callback_data="op:case")],
         [ui_button(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
-        [ui_button(text="🔙 بازگشت به منوی اصلی", callback_data="op:back")],
+        [ui_button(text="🔙 بازگشت به منوی اصلی", callback_data="op:home")],
     ])
     await callback.message.edit_text("👨‍💼 پنل اپراتور\n\nبخش موردنظر را انتخاب کنید:", reply_markup=keyboard)
+
+
+@router.callback_query(F.data == "op:home")
+async def operator_home(callback: CallbackQuery) -> None:
+    operator = await get_operator(callback.from_user.id)
+    is_admin_user = callback.from_user.id in get_settings().admin_id_set
+    if operator is None and not is_admin_user:
+        await callback.answer("دسترسی ندارید.", show_alert=True)
+        return
+    from app.bot.keyboards import main_menu
+    await callback.answer()
+    await callback.message.edit_text(
+        "صفحه اصلی کمک‌یار مهاجر",
+        reply_markup=main_menu(is_admin=is_admin_user, is_operator=operator is not None),
+    )
 
 
 @router.message(F.text == "/admin")
@@ -809,8 +824,8 @@ async def settings_panel(callback: CallbackQuery) -> None:
         return
     await callback.message.edit_text(
         "⚙️ تنظیمات مدیریت\n\n"
-        "مدیریت اطلاعات حساس و تنظیمات پایه از همین پنل انجام می‌شود.\n"
-        "در این بخش فعلاً اطلاعات کارت و قیمت خدمات قابل مدیریت است.",
+        "از این بخش می‌توانید تعرفه و وضعیت خدمات، قوانین اختصاصی هر خدمت، اطلاعات کارت، کدهای تخفیف، اعتبار مشترکان و تنظیمات عملیاتی را مدیریت کنید.\n"
+        "کلیدهای محرمانه درگاه پرداخت فقط از متغیرهای امن محیط اجرا خوانده می‌شوند.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [ui_button(text="💳 اطلاعات کارت", callback_data="adm:card")],
             [ui_button(text="💰 قیمت خدمات", callback_data="adm:prices")],
@@ -857,9 +872,6 @@ async def service_rules_edit_start(callback: CallbackQuery, state: FSMContext) -
         await callback.answer("دسترسی ندارید.", show_alert=True)
         return
     code = callback.data.rsplit(":", 1)[1]
-    if code not in {"identity", "khodnevis"}:
-        await callback.answer("خدمت نامعتبر است.", show_alert=True)
-        return
     async with SessionLocal() as session:
         service = (await session.execute(select(Service).where(Service.code == code))).scalar_one_or_none()
         setting = (await session.execute(select(Setting).where(Setting.key == f"service_rules:{code}"))).scalar_one_or_none()
@@ -887,9 +899,11 @@ async def service_rules_save(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     code = data.get("service_rules_code")
     value = (message.text or "").strip()
-    if code not in {"identity", "khodnevis"}:
+    async with SessionLocal() as session:
+        service_check = (await session.execute(select(Service).where(Service.code == code))).scalar_one_or_none() if code else None
+    if service_check is None:
         await state.clear()
-        await message.answer("❌ فرایند تنظیم قوانین منقضی شده است.", reply_markup=admin_menu())
+        await message.answer("❌ فرایند تنظیم قوانین منقضی شده است؛ خدمت پیدا نشد.", reply_markup=admin_menu())
         return
     if not value:
         await message.answer("❌ متن قوانین نمی‌تواند خالی باشد. متن را ارسال کنید.", reply_markup=admin_cancel_menu())
