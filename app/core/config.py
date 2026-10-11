@@ -14,7 +14,6 @@ class Settings(BaseSettings):
     admin_ids: str = Field(default="", validation_alias="ADMIN_IDS")
     support_telegram_id: int | None = Field(default=8937359321, validation_alias="SUPPORT_TELEGRAM_ID")
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
-    public_base_url: str = Field(default="", validation_alias="PUBLIC_BASE_URL")
 
     model_config = SettingsConfigDict(
         env_file=".env",
