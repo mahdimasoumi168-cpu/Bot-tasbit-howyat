@@ -119,7 +119,7 @@ class WalletTopup(Base):
     amount_toman: Mapped[int] = mapped_column(Integer)
     receipt_file_id: Mapped[str | None] = mapped_column(String(512))
     receipt_type: Mapped[str] = mapped_column(String(16), default="photo")
-    status: Mapped[str] = mapped_column(String(32), default="waiting_receipt_review", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="awaiting_receipt", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
 

@@ -336,7 +336,10 @@ async def admin_topups(callback: CallbackQuery) -> None:
     async with SessionLocal() as session:
         rows = (await session.execute(
             select(WalletTopup, User).join(User, WalletTopup.user_id == User.id)
-            .where(WalletTopup.status == "waiting_receipt_review")
+            .where(
+                WalletTopup.status == "waiting_receipt_review",
+                WalletTopup.receipt_file_id.is_not(None),
+            )
             .order_by(WalletTopup.created_at.asc()).limit(30)
         )).all()
     if not rows:
@@ -360,13 +363,23 @@ async def admin_topup_view(callback: CallbackQuery) -> None:
         await callback.answer("شارژ پیدا نشد.", show_alert=True); return
     topup, user = row
     await callback.answer()
-    await callback.message.edit_text(
-        f"➕ شارژ اعتبار #{topup.id}\n👤 {user.first_name or ''} {user.last_name or ''}\n🆔 {user.telegram_id}\n💰 {topup.amount_toman:,} تومان",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+    reviewable = topup.status == "waiting_receipt_review" and bool(topup.receipt_file_id)
+    view_text = (
+        f"➕ شارژ اعتبار #{topup.id}\n👤 {user.first_name or ''} {user.last_name or ''}\n"
+        f"🆔 {user.telegram_id}\n💰 {topup.amount_toman:,} تومان"
+    )
+    buttons = []
+    if reviewable:
+        buttons.extend([
             [ui_button(text="✅ تأیید و افزایش اعتبار", callback_data=f"adm:topup:approve:{topup.id}")],
             [ui_button(text="❌ رد شارژ", callback_data=f"adm:topup:reject:{topup.id}")],
-            [ui_button(text="🔙 بازگشت", callback_data="adm:topups")],
         ])
+    else:
+        view_text += "\n\n⚠️ هنوز رسیدی برای این شارژ ثبت نشده است؛ تأیید یا رد آن مجاز نیست."
+    buttons.append([ui_button(text="🔙 بازگشت", callback_data="adm:topups")])
+    await callback.message.edit_text(
+        view_text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
     if topup.receipt_file_id:
         if topup.receipt_type == "document":
@@ -1872,11 +1885,15 @@ async def admin_topup_approve(callback: CallbackQuery) -> None:
         if not topup:
             await callback.answer("شارژ پیدا نشد.", show_alert=True)
             return
+        if topup.status != "waiting_receipt_review" or not topup.receipt_file_id:
+            await callback.answer("این شارژ هنوز رسید قابل بررسی ندارد.", show_alert=True)
+            return
         claim = await session.execute(
             update(WalletTopup)
             .where(
                 WalletTopup.id == topup_id,
                 WalletTopup.status == "waiting_receipt_review",
+                WalletTopup.receipt_file_id.is_not(None),
             )
             .values(status="approved", reviewed_at=__import__("datetime").datetime.now())
         )
@@ -1932,11 +1949,15 @@ async def admin_topup_reject(callback: CallbackQuery) -> None:
         if not topup:
             await callback.answer("شارژ پیدا نشد.", show_alert=True)
             return
+        if topup.status != "waiting_receipt_review" or not topup.receipt_file_id:
+            await callback.answer("این شارژ هنوز رسید قابل بررسی ندارد.", show_alert=True)
+            return
         claim = await session.execute(
             update(WalletTopup)
             .where(
                 WalletTopup.id == topup_id,
                 WalletTopup.status == "waiting_receipt_review",
+                WalletTopup.receipt_file_id.is_not(None),
             )
             .values(status="rejected", reviewed_at=__import__("datetime").datetime.now())
         )

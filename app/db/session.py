@@ -72,7 +72,7 @@ async def init_db() -> None:
             wallet_names = {row[1] for row in wallet_columns.fetchall()}
             if not wallet_names:
                 await conn.execute(text("CREATE TABLE IF NOT EXISTS wallets (id INTEGER PRIMARY KEY, user_id INTEGER UNIQUE NOT NULL, balance_toman INTEGER NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)"))
-            await conn.execute(text("CREATE TABLE IF NOT EXISTS wallet_topups (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, amount_toman INTEGER NOT NULL, receipt_file_id VARCHAR(512), receipt_type VARCHAR(16) DEFAULT 'photo', status VARCHAR(32) DEFAULT 'waiting_receipt_review', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, reviewed_at DATETIME)"))
+            await conn.execute(text("CREATE TABLE IF NOT EXISTS wallet_topups (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, amount_toman INTEGER NOT NULL, receipt_file_id VARCHAR(512), receipt_type VARCHAR(16) DEFAULT 'photo', status VARCHAR(32) DEFAULT 'awaiting_receipt', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, reviewed_at DATETIME)"))
             await conn.execute(text("CREATE TABLE IF NOT EXISTS wallet_transactions (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, amount_toman INTEGER NOT NULL, balance_after_toman INTEGER NOT NULL, kind VARCHAR(32) NOT NULL, description VARCHAR(512) NOT NULL, order_id INTEGER, topup_id INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"))
             await conn.execute(text("CREATE TABLE IF NOT EXISTS discount_codes (id INTEGER PRIMARY KEY, code VARCHAR(64) UNIQUE NOT NULL, kind VARCHAR(16) DEFAULT 'percent', value INTEGER NOT NULL, active BOOLEAN DEFAULT 1, max_uses INTEGER, used_count INTEGER DEFAULT 0, expires_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"))
             payment_columns = await conn.execute(text("PRAGMA table_info(payments)"))
@@ -94,3 +94,10 @@ async def init_db() -> None:
                 await conn.execute(text(
                     "ALTER TABLE documents ADD COLUMN reviewed_at DATETIME"
                 ))
+
+        # Older releases created top-ups as reviewable before a receipt was submitted.
+        # Move those incomplete rows back to the receipt-upload step before exposing review actions.
+        await conn.execute(text(
+            "UPDATE wallet_topups SET status = 'awaiting_receipt' "
+            "WHERE status = 'waiting_receipt_review' AND receipt_file_id IS NULL"
+        ))
