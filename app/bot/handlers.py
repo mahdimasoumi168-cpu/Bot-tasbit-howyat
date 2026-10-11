@@ -1424,8 +1424,20 @@ async def user_order_detail(callback: CallbackQuery) -> None:
     ):
         if data.get(key):
             text += f"{label}: {data[key]}\n"
+    extra_labels = {
+        "father_name": "نام پدر", "birth_date": "تاریخ تولد",
+        "province": "استان", "city": "شهر", "neighborhood": "محله",
+        "street": "خیابان", "alley": "کوچه", "plaque": "پلاک",
+        "parent_mobile": "موبایل به نام پدر/مادر",
+        "requested_service": "خدمت درخواستی",
+    }
+    for key, label in extra_labels.items():
+        if data.get(key):
+            text += f"\\n{label}: {escape(str(data[key]))}"
+    if data.get("child_count"):
+        text += f"\\nتعداد دانش‌آموزان ثبت‌شده: {int(data['child_count'])}"
     if data.get("service_description"):
-        text += f"\n\n📝 توضیحات مشترک: {escape(str(data['service_description']))}"
+        text += f"\\n\\n📝 توضیحات مشترک: {escape(str(data['service_description']))}"
     text += "\n👨‍👩‍👧 همراهان:\n" + (
         "\n".join(f"• {x.full_name} — {x.mobile}" for x in companions) if companions else "ندارد"
     )
