@@ -1207,7 +1207,7 @@ async def pay_wallet(callback: CallbackQuery, state: FSMContext) -> None:
         try:
             await callback.message.edit_text(
                 f"💰 اعتبار شما: {credit:,} تومان\n\nاعتبار کافی نیست. لطفاً روش کارت به کارت را انتخاب کنید.",
-                reply_markup=payment_choice_menu(credit),
+                reply_markup=payment_choice_menu(credit, variza_enabled=get_settings().variza_enabled),
             )
         except Exception as exc:
             # Clicking the same wallet button again can produce an identical message;
