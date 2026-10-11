@@ -1305,8 +1305,8 @@ async def set_price(message: Message) -> None:
         await message.answer("فرمت درست: /setserviceprice <کد_خدمت> <مبلغ_تومان>\nنمونه: /setserviceprice fida 100")
         return
     price = int(parts[2])
-    if price < 0:
-        await message.answer("❌ مبلغ نمی‌تواند منفی باشد.", reply_markup=admin_cancel_menu())
+    if price <= 0:
+        await message.answer("❌ مبلغ خدمت باید بیشتر از صفر باشد.", reply_markup=admin_cancel_menu())
         return
     async with SessionLocal() as session:
         service = (
