@@ -54,6 +54,51 @@ engine = create_async_engine(settings.database_url, future=True)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
+async def _ensure_sqlite_columns(conn) -> None:
+    """Add columns introduced after the first SQLite schema was created."""
+    migrations = {
+        "users": {"updated_at": "DATETIME"},
+        "wallets": {"updated_at": "DATETIME"},
+        "wallet_topups": {
+            "receipt_type": "VARCHAR(16) NOT NULL DEFAULT 'photo'",
+            "reviewed_at": "DATETIME",
+        },
+        "wallet_transactions": {"topup_id": "INTEGER"},
+        "operators": {
+            "role": "VARCHAR(32) NOT NULL DEFAULT 'operator'",
+            "permissions_json": "TEXT NOT NULL DEFAULT '{}'",
+            "active": "BOOLEAN NOT NULL DEFAULT 1",
+            "updated_at": "DATETIME",
+        },
+        "tickets": {"updated_at": "DATETIME"},
+        "ticket_messages": {
+            "content_type": "VARCHAR(32) NOT NULL DEFAULT 'text'",
+            "file_id": "VARCHAR(512)",
+        },
+        "discount_codes": {
+            "kind": "VARCHAR(16) NOT NULL DEFAULT 'percent'",
+            "active": "BOOLEAN NOT NULL DEFAULT 1",
+            "max_uses": "INTEGER",
+            "used_count": "INTEGER NOT NULL DEFAULT 0",
+            "expires_at": "DATETIME",
+        },
+    }
+    for table, additions in migrations.items():
+        result = await conn.execute(text(f"PRAGMA table_info({table})"))
+        existing = {row[1] for row in result.fetchall()}
+        if not existing:
+            continue
+        for column, definition in additions.items():
+            if column not in existing:
+                await conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+                )
+        if "updated_at" in additions:
+            await conn.execute(
+                text(f"UPDATE {table} SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL")
+            )
+
+
 async def init_db() -> None:
     _backup_sqlite(settings.database_url)
     async with engine.begin() as conn:
@@ -94,6 +139,7 @@ async def init_db() -> None:
                 await conn.execute(text(
                     "ALTER TABLE documents ADD COLUMN reviewed_at DATETIME"
                 ))
+            await _ensure_sqlite_columns(conn)
 
         # Older releases created top-ups as reviewable before a receipt was submitted.
         # Move those incomplete rows back to the receipt-upload step before exposing review actions.
