@@ -54,11 +54,8 @@ async def safe_step_message(
     text: str,
     reply_markup: InlineKeyboardMarkup | None = None,
 ) -> None:
-    """Show the next form question even if editing the previous Telegram message fails."""
-    try:
-        await callback.message.edit_text(text, reply_markup=reply_markup)
-    except Exception:
-        await callback.message.answer(text, reply_markup=reply_markup)
+    """Send every next form question as a new message so previous steps remain visible."""
+    await callback.message.answer(text, reply_markup=reply_markup)
 
 async def is_active_operator(telegram_id: int) -> bool:
     async with SessionLocal() as session:
@@ -580,7 +577,7 @@ async def inline_optional_document(callback: CallbackQuery, state: FSMContext) -
     await callback.answer()
     if action == "send":
         target = "صفحه تمدید پاسپورت" if current == KhodnevisForm.passport_renewal else "صفحه تمدید اقامت/ویزا"
-        await callback.message.edit_text(f"📸 تصویر {target} را ارسال کنید.", reply_markup=cancel_menu()); return
+        await callback.message.answer(f"📸 تصویر {target} را ارسال کنید.", reply_markup=cancel_menu()); return
     if current == KhodnevisForm.passport_renewal:
         await state.update_data(passport_renewal=None); await state.set_state(KhodnevisForm.residence_renewal)
         await safe_step_message(callback, "صفحه تمدید اقامت/ویزا را دارید؟", reply_markup=optional_document_menu())
