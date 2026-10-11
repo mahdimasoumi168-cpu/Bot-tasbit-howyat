@@ -22,7 +22,7 @@ from app.bot.keyboards import (
     support_menu,
     payment_choice_menu, wallet_menu, payment_invoice_menu,
 )
-from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm, SupportForm, PaymentForm, WalletTopupForm
+from app.bot.states import IdentityForm, KhodnevisForm, RetryReceiptForm, SupportForm, PaymentForm, WalletTopupForm, DirectReplyForm
 from app.core.config import get_settings
 from app.db.models import Companion, Document, Operator, Order, Payment, Service, ServiceCode, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode, AuditLog
 from app.db.session import SessionLocal
@@ -1424,6 +1424,60 @@ async def account(message: Message, telegram_id: int | None = None) -> None:
         reply_markup=await user_main_menu(telegram_id or message.from_user.id),
     )
 
+
+
+@router.callback_query(F.data.startswith("user:direct_reply:"))
+async def user_direct_reply_start(callback: CallbackQuery, state: FSMContext) -> None:
+    try:
+        recipient_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("شناسه فرستنده نامعتبر است.", show_alert=True)
+        return
+    settings = get_settings()
+    trusted = recipient_id in settings.admin_id_set or recipient_id == settings.support_telegram_id
+    operator = None if trusted else await get_operator_for_support(recipient_id)
+    if not trusted and (operator is None or not _operator_can_support_message(operator)):
+        await callback.answer("فرستنده دیگر مجاز به دریافت پاسخ نیست.", show_alert=True)
+        return
+    await state.clear()
+    await state.update_data(direct_reply_to_id=recipient_id)
+    await state.set_state(DirectReplyForm.message)
+    await callback.answer()
+    await callback.message.answer(
+        "↩️ پاسخ مستقیم به پیام مدیریت\n\n"
+        "حالا متن، عکس، ویدیو، فایل یا صوت خود را ارسال کنید. پاسخ شما مستقیم برای فرستنده پیام می‌رود.",
+        reply_markup=cancel_menu(),
+    )
+
+
+@router.message(DirectReplyForm.message)
+async def user_direct_reply_send(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    recipient_id = data.get("direct_reply_to_id")
+    if not recipient_id:
+        await state.clear()
+        await message.answer("❌ مقصد پاسخ مشخص نیست. لطفاً از دکمه پاسخ زیر پیام مدیریت دوباره اقدام کنید.", reply_markup=await user_main_menu(message.from_user.id))
+        return
+    admin_reply_keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        ui_button(text="↩️ پاسخ به مشترک", callback_data=f"adm:direct_reply:{message.from_user.id}")
+    ]])
+    try:
+        await message.bot.send_message(
+            int(recipient_id),
+            f"🔔 پاسخ جدید به پیام مستقیم\n👤 شناسه مشترک: {message.from_user.id}\n"
+            f"نام: {(message.from_user.full_name or 'نامشخص')}\n\n"
+            "برای ادامه گفت‌وگو، دکمه پاسخ زیر پیام را بزنید.",
+        )
+        await message.copy_to(int(recipient_id), reply_markup=admin_reply_keyboard)
+    except Exception:
+        await state.clear()
+        await message.answer(
+            "⚠️ پاسخ ارسال نشد. لطفاً از منوی اصلی دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.",
+            reply_markup=await user_main_menu(message.from_user.id),
+        )
+        return
+    await state.clear()
+    await message.answer("✅ پاسخ شما برای فرستنده پیام ارسال شد.", reply_markup=await user_main_menu(message.from_user.id))
 
 
 @router.callback_query(F.data.startswith("user:reply:"))
