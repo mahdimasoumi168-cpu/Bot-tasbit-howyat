@@ -136,11 +136,15 @@ async def show_payment_options(message: Message, state: FSMContext, order_id: in
     credit = await get_wallet_balance(telegram_id)
     extra = f"\n🏷️ تخفیف: {discount:,} تومان" if discount else ""
     await state.set_state(PaymentForm.choice)
+    variza_ready = get_settings().variza_enabled and amount >= 1000
+    variza_note = ""
+    if get_settings().variza_enabled and amount < 1000:
+        variza_note = "\n\nℹ️ حداقل مبلغ درگاه واریزا ۱٬۰۰۰ تومان است؛ چون مبلغ این درخواست کمتر است، پرداخت واریزا نمایش داده نمی‌شود."
     await message.answer(
         f"💳 روش پرداخت را انتخاب کنید.\n\nمبلغ نهایی: {amount:,} تومان{extra}\n"
-        f"💰 موجودی اعتبار شما: {credit:,} تومان\n\n"
+        f"💰 موجودی اعتبار شما: {credit:,} تومان{variza_note}\n\n"
         "اگر اعتبار کافی داشته باشید، می‌توانید مبلغ را از اعتبار کم کنید؛ در غیر این صورت کارت به کارت را انتخاب کنید.",
-        reply_markup=payment_choice_menu(credit, variza_enabled=get_settings().variza_enabled),
+        reply_markup=payment_choice_menu(credit, variza_enabled=variza_ready),
     )
 
 
@@ -419,33 +423,43 @@ async def inline_khodnevis(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data.startswith("service:accept:"))
 async def service_rules_accept(callback: CallbackQuery, state: FSMContext) -> None:
     code = callback.data.rsplit(":", 1)[1]
-    if code not in {ServiceCode.IDENTITY.value, ServiceCode.KHODNEVIS.value}:
-        await callback.answer("خدمت نامعتبر است.", show_alert=True)
-        return
+    allowed = {item.value for item in ServiceCode}
     data = await state.get_data()
-    if data.get("service_rules_pending") != code:
+    if code not in allowed or data.get("service_rules_pending") != code:
         await callback.answer("این تأیید منقضی شده است؛ لطفاً خدمت را دوباره انتخاب کنید.", show_alert=True)
         return
-    await state.update_data(service_rules_accepted=code)
     await callback.answer("قوانین تأیید شد.")
     if code == ServiceCode.IDENTITY.value:
+        await state.update_data(service_rules_accepted=code)
         await identity_start(callback.message, state, telegram_id=callback.from_user.id)
-    else:
+    elif code == ServiceCode.KHODNEVIS.value:
+        await state.update_data(service_rules_accepted=code)
         await khodnevis_start(callback.message, state, telegram_id=callback.from_user.id)
+    else:
+        await state.update_data(service_rules_accepted=code)
+        await start_additional_service(callback.message, state, code, telegram_id=callback.from_user.id)
 
 @router.callback_query(F.data.startswith("service:reject:"))
 async def service_rules_reject(callback: CallbackQuery, state: FSMContext) -> None:
     code = callback.data.rsplit(":", 1)[1]
     data = await state.get_data()
-    if code not in {ServiceCode.IDENTITY.value, ServiceCode.KHODNEVIS.value} or data.get("service_rules_pending") != code:
+    if code not in {item.value for item in ServiceCode} or data.get("service_rules_pending") != code:
         await callback.answer("این گزینه دیگر فعال نیست.", show_alert=True)
         return
     await state.clear()
     await callback.answer("قوانین رد شد؛ به فهرست خدمات برگشتید.")
-    await callback.message.edit_text(
-        "خدمت شروع نشد. می‌توانید خدمت دیگری را انتخاب کنید:",
-        reply_markup=services_menu(),
-    )
+    try:
+        await callback.message.edit_text(
+            "خدمت شروع نشد. می‌توانید خدمت دیگری را انتخاب کنید:",
+            reply_markup=services_menu(),
+        )
+    except Exception as exc:
+        if "message is not modified" not in str(exc).lower():
+            logging.getLogger(__name__).exception("Could not return to services menu")
+            await callback.message.answer(
+                "خدمت شروع نشد. می‌توانید خدمت دیگری را انتخاب کنید:",
+                reply_markup=services_menu(),
+            )
 
 @router.callback_query(F.data == "menu:tracking")
 async def inline_tracking(callback: CallbackQuery) -> None:
@@ -600,15 +614,62 @@ ADDITIONAL_SERVICES = {
   ("requested_service","چه خدمتی نیاز دارید؟","text"),("service_description","لطفاً توضیحات کامل درخواست را بنویسید.","longtext")]}
 }
 
+DEFAULT_ADDITIONAL_SERVICE_RULES = {
+    "fida": (
+        "📜 قوانین ثبت‌نام کد فیدا غیرحضوری\n\n"
+        "۱. اطلاعات هویتی و آدرس باید دقیق و مطابق مدارک باشد.\n"
+        "۲. تصویر مدرک باید واضح و متعلق به متقاضی باشد.\n"
+        "۳. هرگونه نقص یا مغایرت ممکن است باعث درخواست اصلاح یا تأخیر شود.\n"
+        "۴. ثبت درخواست تضمین صدور کد یا زمان قطعی انجام نیست.\n"
+        "۵. تعرفه و روش پرداخت پیش از پرداخت نمایش داده می‌شود."
+    ),
+    "dolatman_login": (
+        "📜 قوانین رفع مشکل ورود به درگاه دولت من\n\n"
+        "۱. شماره‌های تماس باید در دسترس و صحیح باشند.\n"
+        "۲. در صورت درخواست سند سیم‌کارت، تصویر باید خوانا باشد.\n"
+        "۳. فقط اطلاعات و مدارکی را ارسال کنید که مجاز به ارائه آن هستید.\n"
+        "۴. ثبت درخواست تضمین رفع قطعی مشکل نیست و ممکن است بررسی بیشتری لازم باشد.\n"
+        "۵. هزینه پیش از پرداخت نمایش داده می‌شود."
+    ),
+    "student_screening": (
+        "📜 قوانین آزمون غربالگری دانش‌آموزان\n\n"
+        "۱. شماره موبایل و مدارک صاحب سیم‌کارت و هر فرزند باید صحیح و خوانا باشند.\n"
+        "۲. مدارک فرزندان را به ترتیب و برای هر فرزند جداگانه ارسال کنید.\n"
+        "۳. اطلاعات و تصاویر اشخاص دیگر فقط با اجازه و اختیار قانونی ارسال شود.\n"
+        "۴. ثبت درخواست تضمین تأیید نهایی سامانه نیست.\n"
+        "۵. تعرفه پیش از پرداخت نمایش داده می‌شود."
+    ),
+    "other_service": (
+        "📜 قوانین درخواست خدمات دیگر\n\n"
+        "۱. نوع خدمت و توضیحات را کامل و دقیق بنویسید.\n"
+        "۲. ثبت درخواست به معنی پذیرش قطعی انجام خدمت نیست؛ ابتدا امکان انجام و هزینه بررسی می‌شود.\n"
+        "۳. تا زمان اعلام هزینه و تأیید مراحل بعدی، پرداختی انجام ندهید.\n"
+        "۴. از ارسال رمز عبور، رمز یک‌بارمصرف یا اطلاعات بانکی محرمانه خودداری کنید."
+    ),
+}
+
+
 async def start_additional_service(message: Message, state: FSMContext, code: str, telegram_id: int | None = None) -> None:
     config = ADDITIONAL_SERVICES.get(code)
     if not config:
         await message.answer("خدمت نامعتبر است."); return
     uid = telegram_id or message.from_user.id
+    current = await state.get_data()
+    if current.get("service_rules_accepted") != code:
+        await state.clear()
+        async with SessionLocal() as session:
+            service = (await session.execute(select(Service).where(Service.code == code))).scalar_one_or_none()
+            setting = (await session.execute(select(Setting).where(Setting.key == f"service_rules:{code}"))).scalar_one_or_none()
+        if service is None or not service.enabled:
+            await message.answer("این خدمت در حال حاضر فعال نیست.", reply_markup=await user_main_menu(uid)); return
+        rules = setting.value.strip() if setting and setting.value and setting.value.strip() else DEFAULT_ADDITIONAL_SERVICE_RULES.get(code, "📜 لطفاً پیش از ادامه، قوانین خدمت را با دقت مطالعه کنید.")
+        await state.update_data(service_rules_pending=code)
+        await message.answer(rules, reply_markup=service_rules_menu(code))
+        return
     async with SessionLocal() as session:
         service = (await session.execute(select(Service).where(Service.code == code))).scalar_one_or_none()
         if service is None or not service.enabled:
-            await message.answer("این خدمت هنوز در تنظیمات فعال نیست.", reply_markup=await user_main_menu(uid)); return
+            await message.answer("این خدمت در حال حاضر فعال نیست.", reply_markup=await user_main_menu(uid)); return
         if code != "other_service" and service.price_toman <= 0:
             await message.answer("هزینه این خدمت هنوز توسط مدیریت تعیین نشده است.", reply_markup=await user_main_menu(uid)); return
     await state.clear()
@@ -1480,7 +1541,10 @@ async def pay_wallet(callback: CallbackQuery, state: FSMContext) -> None:
         try:
             await callback.message.edit_text(
                 f"💰 اعتبار شما: {credit:,} تومان\n\nاعتبار کافی نیست. لطفاً روش کارت به کارت را انتخاب کنید.",
-                reply_markup=payment_choice_menu(credit, variza_enabled=get_settings().variza_enabled),
+                reply_markup=payment_choice_menu(
+                    credit,
+                    variza_enabled=get_settings().variza_enabled and (await order_amount_and_coupon(order_id))[0] >= 1000,
+                ),
             )
         except Exception as exc:
             # Clicking the same wallet button again can produce an identical message;
@@ -1534,6 +1598,12 @@ async def pay_variza(callback: CallbackQuery, state: FSMContext) -> None:
         amount, _discount, _coupon = await order_amount_and_coupon(order_id)
         public_id = order.public_id
         service_name = service.name
+        if amount < 1000:
+            await callback.answer(
+                "حداقل مبلغ واریزا ۱٬۰۰۰ تومان است. لطفاً از اعتبار یا کارت‌به‌کارت استفاده کنید.",
+                show_alert=True,
+            )
+            return
 
     await callback.answer("در حال ساخت لینک پرداخت امن...")
     return_url = settings.public_base_url.rstrip("/") + "/payments/return"
@@ -1591,16 +1661,20 @@ async def pay_variza(callback: CallbackQuery, state: FSMContext) -> None:
 
     await state.clear()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔗 پرداخت آنلاین واریزا", url=pay_url, style="primary")],
-        [InlineKeyboardButton(text="📋 پیگیری درخواست‌ها", callback_data="menu:tracking", style="primary")],
+        [InlineKeyboardButton(text="🔗 باز کردن صفحه پرداخت واریزا", url=pay_url, style="primary")],
+        [InlineKeyboardButton(text="🔙 بازگشت به ربات / پیگیری درخواست", callback_data="menu:tracking", style="primary")],
     ])
     await callback.message.edit_text(
-        "💳 لینک پرداخت آنلاین ساخته شد.\n\n"
+        "💳 لینک پرداخت آنلاین واریزا آماده است.\n\n"
         f"🧾 خدمت: {service_name}\n"
         f"📋 شماره درخواست: {public_id}\n"
-        f"💰 مبلغ: {amount:,} تومان\n\n"
-        "پس از پرداخت، واریزا نتیجه را به‌صورت امن به ربات اعلام می‌کند. "
-        "تا دریافت تأیید نهایی، این پیام را به‌عنوان رسید پرداخت در نظر نگیرید.",
+        f"💰 مبلغ دقیق: {amount:,} تومان\n\n"
+        "۱. دکمه «پرداخت آنلاین واریزا» را بزنید و صفحه پرداخت را باز کنید.\n"
+        "۲. پرداخت را فقط از طریق همراه‌بانک انجام دهید.\n"
+        "۳. مبلغ را دقیقاً برابر مبلغ نمایش‌داده‌شده وارد کنید؛ نه کمتر و نه بیشتر.\n"
+        "۴. در صفحه واریزا منتظر بمانید تا نتیجه و تأیید پرداخت نمایش داده شود.\n"
+        "۵. سپس گزینه «بازگشت به ربات» را در صفحه پرداخت بزنید و در ربات، پیگیری درخواست‌ها را بررسی کنید.\n\n"
+        "⚠️ صرفاً بازگشت به ربات به معنی تأیید پرداخت نیست؛ وضعیت فقط پس از تأیید امن واریزا تغییر می‌کند.",
         reply_markup=keyboard,
     )
 
@@ -1761,6 +1835,9 @@ async def wallet_topup_variza_choice(callback: CallbackQuery, state: FSMContext)
             return
         amount = int(row[0].amount_toman)
         topup_user_id = row[1].id
+    if amount < 1000:
+        await callback.answer("حداقل مبلغ پرداخت واریزا ۱٬۰۰۰ تومان است؛ برای این مبلغ کارت‌به‌کارت را انتخاب کنید.", show_alert=True)
+        return
     await callback.answer("در حال ساخت لینک پرداخت امن...")
     return_url = settings.public_base_url.rstrip("/") + "/payments/return"
     try:
@@ -1806,11 +1883,13 @@ async def wallet_topup_variza_choice(callback: CallbackQuery, state: FSMContext)
         [InlineKeyboardButton(text="💰 مشاهده اعتبار من", callback_data="menu:wallet", style="primary")],
     ])
     await callback.message.edit_text(
-        "💳 لینک پرداخت آنلاین افزایش اعتبار ساخته شد.\n\n"
-        f"💰 مبلغ شارژ: {amount:,} تومان\n"
+        "💳 لینک پرداخت آنلاین افزایش اعتبار واریزا آماده است.\n\n"
+        f"💰 مبلغ دقیق شارژ: {amount:,} تومان\n"
         f"🧾 شماره شارژ: #{topup_id}\n\n"
-        "موجودی کیف پول فقط پس از تأیید امن پرداخت توسط واریزا افزایش می‌یابد. "
-        "بازگشت از صفحه پرداخت به‌تنهایی به معنی تأیید نیست.",
+        "۱. صفحه پرداخت را با دکمه بالا باز کنید.\n"
+        "۲. پرداخت را فقط از طریق همراه‌بانک انجام دهید و مبلغ را دقیقاً مطابق فاکتور وارد کنید.\n"
+        "۳. در صفحه واریزا منتظر تأیید پرداخت بمانید؛ سپس «بازگشت به ربات» را بزنید.\n\n"
+        "⚠️ اعتبار فقط پس از تأیید امن واریزا افزایش می‌یابد؛ صرف بازگشت به ربات به معنی تأیید نیست.",
         reply_markup=keyboard,
     )
 
