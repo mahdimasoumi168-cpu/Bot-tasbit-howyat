@@ -1200,8 +1200,11 @@ async def prices(callback: CallbackQuery) -> None:
     ) or "خدمتی ثبت نشده است."
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [ui_button(text="🪪 تغییر قیمت تثبیت هویت", callback_data="adm:setprice:identity")],
-            [ui_button(text="📝 تغییر قیمت کد رهگیری خودنویس", callback_data="adm:setprice:khodnevis")],
+            *[
+                [ui_button(text=f"✏️ تغییر قیمت | {service.name}", callback_data=f"adm:setprice:{service.code}")]
+                for service in rows
+            ],
+            [ui_button(text="🔄 تازه‌سازی فهرست قیمت‌ها", callback_data="adm:prices")],
             [ui_button(text="🔙 بازگشت به پنل", callback_data="adm:home")],
         ]
     )
@@ -1223,8 +1226,10 @@ async def set_price_start(callback: CallbackQuery, state: FSMContext) -> None:
     if callback.from_user.id not in get_settings().admin_id_set:
         return
     service_code = callback.data.rsplit(":", 1)[1]
-    if service_code not in {"identity", "khodnevis"}:
-        await callback.answer("خدمت نامعتبر است.", show_alert=True)
+    async with SessionLocal() as session:
+        service_exists = (await session.execute(select(Service).where(Service.code == service_code))).scalar_one_or_none()
+    if service_exists is None:
+        await callback.answer("خدمت پیدا نشد؛ فهرست قیمت‌ها را تازه‌سازی کنید.", show_alert=True)
         return
     await state.clear()
     await state.update_data(price_service=service_code)
@@ -1246,7 +1251,7 @@ async def set_price_from_panel(message: Message, state: FSMContext) -> None:
         return
     data = await state.get_data()
     service_code = data.get("price_service")
-    if service_code not in {"identity", "khodnevis"}:
+    if not service_code:
         await state.clear()
         await message.answer("❌ خدمت مشخص نیست.", reply_markup=admin_menu())
         return
@@ -1268,12 +1273,12 @@ async def set_price(message: Message) -> None:
     if not is_admin(message):
         return
     parts = normalize_digits_admin(message.text or "").split()
-    if len(parts) != 3 or parts[1] not in {"identity", "khodnevis"} or not parts[2].isdigit():
-        await message.answer("برای تغییر قیمت، از بخش «💰 قیمت خدمات» در پنل مدیریت استفاده کنید.")
+    if len(parts) != 3 or not parts[1] or not parts[2].isdigit():
+        await message.answer("فرمت درست: /setserviceprice <کد_خدمت> <مبلغ_تومان>\nنمونه: /setserviceprice fida 100")
         return
     price = int(parts[2])
-    if price <= 0:
-        await message.answer("❌ مبلغ باید بیشتر از صفر باشد.", reply_markup=admin_cancel_menu())
+    if price < 0:
+        await message.answer("❌ مبلغ نمی‌تواند منفی باشد.", reply_markup=admin_cancel_menu())
         return
     async with SessionLocal() as session:
         service = (
@@ -1284,7 +1289,7 @@ async def set_price(message: Message) -> None:
             return
         service.price_toman = price
         await session.commit()
-    await message.answer("✅ قیمت ذخیره شد.", reply_markup=admin_menu())
+    await message.answer(f"✅ قیمت «{service.name}» به {price:,} تومان ذخیره شد.", reply_markup=admin_menu())
 
 
 
