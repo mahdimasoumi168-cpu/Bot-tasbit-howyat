@@ -1800,8 +1800,8 @@ async def admin_unpriced_orders(callback: CallbackQuery) -> None:
         for order, _service, user in rows
     ]
     buttons.append([ui_button(text="🔙 بازگشت", callback_data="adm:home")])
-    body = "📨 درخواست‌های نیازمند تعیین هزینه\\n\\n"
-    body += "\\n".join(
+    body = "📨 درخواست‌های نیازمند تعیین هزینه\n\n"
+    body += "\n".join(
         f"{order.public_id} | {service.name} | {user.first_name or ''} {user.last_name or ''}"
         for order, service, user in rows
     ) if rows else "درخواست جدیدی برای تعیین هزینه وجود ندارد."
@@ -1883,7 +1883,7 @@ async def admin_unpriced_order_detail(callback: CallbackQuery) -> None:
         [ui_button(text="🔙 بازگشت به فهرست", callback_data="adm:unpriced")],
     ])
     await callback.answer()
-    await callback.message.edit_text("\\n".join(lines), reply_markup=keyboard)
+    await callback.message.edit_text("\n".join(lines), reply_markup=keyboard)
     for doc in documents:
         try:
             await callback.message.answer_photo(doc.telegram_file_id, caption=f"📎 {doc.document_type} | {order.public_id}")
@@ -1922,8 +1922,8 @@ async def admin_unpriced_quote_start(callback: CallbackQuery, state: FSMContext)
     await state.update_data(quote_order_id=order_id)
     await callback.answer()
     await callback.message.answer(
-        f"💰 مبلغ نهایی درخواست {row[0].public_id} را به تومان وارد کنید.\\n"
-        "مثال: 250000\\n\\n"
+        f"💰 مبلغ نهایی درخواست {row[0].public_id} را به تومان وارد کنید.\n"
+        "مثال: 250000\n\n"
         "پس از ثبت مبلغ، مشترک دکمه پرداخت را دریافت می‌کند.",
         reply_markup=admin_cancel_menu(),
     )
@@ -1969,15 +1969,15 @@ async def admin_unpriced_quote_save(message: Message, state: FSMContext) -> None
     await state.clear()
     await audit(message.from_user.id, "custom_service_quote_set", order_id, {"amount_toman": int(raw)})
     await message.answer(
-        f"✅ هزینه درخواست {public_id} ثبت شد: {int(raw):,} تومان.\\n"
+        f"✅ هزینه درخواست {public_id} ثبت شد: {int(raw):,} تومان.\n"
         "درخواست برای مشترک ارسال شد.",
         reply_markup=admin_menu(),
     )
     try:
         await message.bot.send_message(
             user_telegram_id,
-            f"✅ درخواست {public_id} بررسی شد.\\n"
-            f"💰 هزینه خدمت: {int(raw):,} تومان\\n"
+            f"✅ درخواست {public_id} بررسی شد.\n"
+            f"💰 هزینه خدمت: {int(raw):,} تومان\n"
             "برای انتخاب روش پرداخت، دکمه زیر را بزنید.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [ui_button(text="💳 مشاهده روش‌های پرداخت", callback_data=f"user:payquote:{order_id}")]
