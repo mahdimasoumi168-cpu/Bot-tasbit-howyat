@@ -102,3 +102,27 @@ def test_admin_menu_exposes_direct_message_action():
         for button in row
     }
     assert "adm:send_user" in callbacks
+
+
+def test_admin_pending_receipts_includes_service_and_wallet_topups():
+    from pathlib import Path
+
+    source = Path("app/bot/admin.py").read_text(encoding="utf-8")
+    pending_block = source.split('@router.callback_query(F.data == "adm:pending")', 1)[1].split(
+        '@router.callback_query(F.data == "adm:orders")', 1
+    )[0]
+    assert "select(Payment, Order, Service, User)" in pending_block
+    assert "select(WalletTopup, User)" in pending_block
+    assert "adm:topup:view:" in pending_block
+
+
+def test_form_prompts_hide_internal_limits_but_validation_remains():
+    from app.bot.handlers import valid_mobile, valid_name
+    from pathlib import Path
+
+    source = Path("app/bot/handlers.py").read_text(encoding="utf-8")
+    assert "محدودیت:" not in source
+    assert valid_mobile("09123456789")
+    assert not valid_mobile("123")
+    assert valid_name("احمد محمدی")
+    assert not valid_name("احمد")
