@@ -70,12 +70,17 @@ async def create_payment_link(
                     response.status,
                     detail or "<empty>",
                 )
-                # Translate this known provider-side limitation into an actionable
-                # error for the bot handler; do not infer it from the HTTP code alone.
+                # Decode JSON escapes before classifying a known provider-side
+                # limitation; raw response text may contain Persian as \\uXXXX.
+                try:
+                    error_payload = json.loads(response_text)
+                    searchable_error = json.dumps(error_payload, ensure_ascii=False)
+                except (ValueError, json.JSONDecodeError):
+                    searchable_error = response_text
                 if (
                     response.status == 422
-                    and "محدودیت اشتراک فعلی" in response_text
-                    and "لینک پرداخت فعال جدید" in response_text
+                    and "محدودیت اشتراک فعلی" in searchable_error
+                    and "لینک پرداخت فعال جدید" in searchable_error
                 ):
                     raise RuntimeError("VARIZA_ACTIVE_LINK_SUBSCRIPTION_LIMIT")
                 raise RuntimeError(
