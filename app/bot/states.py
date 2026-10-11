@@ -13,6 +13,7 @@ class IdentityForm(StatesGroup):
     companion_choice = State()
     companion_name = State()
     companion_mobile = State()
+    description = State()
     confirm = State()
     receipt = State()
 
@@ -26,6 +27,7 @@ class KhodnevisForm(StatesGroup):
     passport_renewal = State()
     residence_renewal = State()
     own_mobile = State()
+    description = State()
     confirm = State()
     receipt = State()
 
