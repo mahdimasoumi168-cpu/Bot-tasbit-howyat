@@ -684,6 +684,41 @@ async def inline_additional_service(callback: CallbackQuery, state: FSMContext) 
     await callback.answer()
     await start_additional_service(callback.message, state, code, telegram_id=callback.from_user.id)
 
+@router.message(F.text.startswith("/setserviceprice"))
+async def set_additional_service_price(message: Message) -> None:
+    settings = get_settings()
+    if not message.from_user or message.from_user.id not in settings.admin_id_set:
+        await message.answer("⛔ فقط مدیر اصلی اجازه تغییر تعرفه خدمات را دارد.")
+        return
+    parts = (message.text or "").split()
+    if len(parts) != 3:
+        await message.answer(
+            "روش استفاده:\n/setserviceprice <code> <price_toman>\n\n"
+            "کدها: fida، dolatman_login، student_screening، other_service\n"
+            "مثال: /setserviceprice fida 250000"
+        )
+        return
+    code = parts[1].strip().lower()
+    if code not in ADDITIONAL_SERVICES:
+        await message.answer("کد خدمت معتبر نیست.")
+        return
+    try:
+        price = int(parts[2])
+        if price < 0 or (code != "other_service" and price <= 0):
+            raise ValueError
+    except ValueError:
+        await message.answer("مبلغ باید عدد صحیح مثبت و به تومان باشد.")
+        return
+    async with SessionLocal() as session:
+        service = (await session.execute(select(Service).where(Service.code == code))).scalar_one_or_none()
+        if service is None:
+            await message.answer("خدمت در پایگاه داده پیدا نشد.")
+            return
+        service.price_toman = price
+        service.enabled = True
+        await session.commit()
+    await message.answer(f"✅ تعرفه «{ADDITIONAL_SERVICES[code]['title']}» روی {price:,} تومان تنظیم شد و خدمت فعال است.")
+
 @router.message(AdditionalServiceForm.field)
 async def additional_service_field(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
