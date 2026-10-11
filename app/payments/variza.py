@@ -12,7 +12,9 @@ from aiohttp import ClientSession, ClientTimeout, web
 from sqlalchemy import select, update
 
 from app.core.config import get_settings
-from app.db.models import (\n    AuditLog, DiscountCode, Order, Payment, Service, User, Wallet, WalletTopup, WalletTransaction,\n)
+from app.db.models import (
+    AuditLog, DiscountCode, Order, Payment, Service, User, Wallet, WalletTopup, WalletTransaction,
+)
 from app.db.session import SessionLocal
 
 logger = logging.getLogger(__name__)
