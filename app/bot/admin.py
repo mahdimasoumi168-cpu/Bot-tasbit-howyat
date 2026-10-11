@@ -191,7 +191,7 @@ async def admin_wallet_edit_user(callback: CallbackQuery, state: FSMContext) -> 
         "مبلغ را با علامت وارد کنید:\n"
         "+50000 برای افزایش ۵۰٬۰۰۰ تومان\n"
         "-20000 برای کاهش ۲۰٬۰۰۰ تومان\n"
-        "محدودیت: عدد صحیح، فقط تومان؛ موجودی منفی مجاز نیست.",
+        "مبلغ را به تومان وارد کنید.",
         reply_markup=admin_cancel_menu(),
     )
 
@@ -376,7 +376,7 @@ async def admin_topup_view(callback: CallbackQuery) -> None:
         ])
     else:
         view_text += "\n\n⚠️ هنوز رسیدی برای این شارژ ثبت نشده است؛ تأیید یا رد آن مجاز نیست."
-    buttons.append([ui_button(text="🔙 بازگشت", callback_data="adm:topups")])
+    buttons.append([ui_button(text="🔙 بازگشت به رسیدهای در انتظار", callback_data="adm:pending")])
     await callback.message.edit_text(
         view_text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
@@ -474,7 +474,7 @@ async def operator_button(message: Message, state: FSMContext) -> None:
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [ui_button(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
         [ui_button(text="🔎 جست‌وجوی پرونده با کد پیگیری", callback_data="op:case")],
-        [ui_button(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
+        [ui_button(text="🔵 رسیدهای خدمات در انتظار بررسی", callback_data="op:pending")],
         [ui_button(text="🔙 بازگشت", callback_data="op:back")],
     ])
     await message.answer("👨‍💼 پنل اپراتور\n\nدسترسی‌های شما بر اساس تنظیمات مدیریت نمایش داده می‌شود.", reply_markup=keyboard)
@@ -488,7 +488,7 @@ async def operator_back(callback: CallbackQuery) -> None:
     await callback.message.edit_text("👨‍💼 پنل اپراتور", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
         [ui_button(text="📋 درخواست‌های قابل رسیدگی", callback_data="op:orders")],
         [ui_button(text="🔎 جست‌وجوی پرونده با کد پیگیری", callback_data="op:case")],
-        [ui_button(text="🔵 رسیدهای در انتظار بررسی", callback_data="op:pending")],
+        [ui_button(text="🔵 رسیدهای خدمات در انتظار بررسی", callback_data="op:pending")],
     ]))
     await callback.answer()
 
@@ -745,7 +745,7 @@ async def set_card_start(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AdminForm.set_card_number)
     await callback.answer()
     await callback.message.answer(
-        "💳 مرحله ۱ از ۲\nشماره کارت ۱۶ رقمی را فقط به صورت عددی ارسال کنید.\nمثال: 6037991234567890\nمحدودیت: دقیقاً ۱۶ رقم.",
+        "💳 مرحله ۱ از ۲\nشماره کارت ۱۶ رقمی را فقط به صورت عددی ارسال کنید.\nمثال: 6037991234567890",
         reply_markup=admin_cancel_menu(),
     )
 
@@ -760,7 +760,7 @@ async def set_card_number_save(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(card_number=value)
     await state.set_state(AdminForm.set_card_holder)
-    await message.answer("💳 مرحله ۲ از ۲\nنام صاحب کارت را وارد کنید.\nمثال: علی احمدی\nمحدودیت: ۳ تا ۸۰ نویسه.", reply_markup=admin_cancel_menu())
+    await message.answer("💳 مرحله ۲ از ۲\nنام صاحب کارت را وارد کنید.\nمثال: علی احمدی", reply_markup=admin_cancel_menu())
 
 
 @router.message(AdminForm.set_card_holder)
@@ -875,7 +875,7 @@ async def service_rules_edit_start(callback: CallbackQuery, state: FSMContext) -
         f"📜 تنظیم قوانین: {service.name}\n\n"
         f"متن فعلی:\n{current}\n\n"
         "متن کامل قوانین جدید را در یک پیام ارسال کنید. این متن پیش از شروع خدمت به مشترک نمایش داده می‌شود.\n"
-        "حداکثر طول: ۳۵۰۰ نویسه.",
+        "پیام خود را ارسال کنید.",
         reply_markup=admin_cancel_menu(),
     )
 
@@ -957,7 +957,7 @@ async def case_lookup_start(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await callback.message.answer(
         "🔎 مشاهده پرونده کامل\n\n"
-        "کد پیگیری را وارد کنید.\nمثال: #10001 یا 10001\nمحدودیت: فقط کد پیگیری عددی.",
+        "کد پیگیری را وارد کنید.\nمثال: #10001 یا 10001",
         reply_markup=admin_cancel_menu(),
     )
 
@@ -1216,7 +1216,7 @@ async def set_price_start(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AdminForm.set_price)
     await callback.answer()
     await callback.message.answer(
-        "💰 مبلغ جدید را فقط به تومان و به صورت عددی ارسال کنید.\nمثال: 280000\nمحدودیت: عدد صحیح بزرگ‌تر از صفر.",
+        "💰 مبلغ جدید را فقط به تومان و به صورت عددی ارسال کنید.\nمثال: 280000",
         reply_markup=admin_cancel_menu(),
     )
 
@@ -1623,31 +1623,72 @@ async def pending(callback: CallbackQuery) -> None:
     if callback.from_user.id not in get_settings().admin_id_set:
         return
     async with SessionLocal() as session:
-        result = await session.execute(
+        service_result = await session.execute(
             select(Payment, Order, Service, User)
             .join(Order, Payment.order_id == Order.id)
             .join(Service, Order.service_id == Service.id)
             .join(User, Order.user_id == User.id)
-            .where(Payment.status == "pending", Order.status == "waiting_receipt_review")
+            .where(
+                Payment.status == "pending",
+                Payment.receipt_file_id.is_not(None),
+                Order.status == "waiting_receipt_review",
+            )
             .order_by(Payment.id.desc())
-            .limit(20)
+            .limit(30)
         )
-        rows = result.all()
-    if not rows:
-        await callback.message.edit_text("رسید در انتظار بررسی وجود ندارد.", reply_markup=admin_menu())
+        service_receipts = service_result.all()
+        topup_result = await session.execute(
+            select(WalletTopup, User)
+            .join(User, WalletTopup.user_id == User.id)
+            .where(
+                WalletTopup.status == "waiting_receipt_review",
+                WalletTopup.receipt_file_id.is_not(None),
+            )
+            .order_by(WalletTopup.created_at.asc())
+            .limit(30)
+        )
+        topup_receipts = topup_result.all()
+    if not service_receipts and not topup_receipts:
+        await callback.message.edit_text(
+            "رسید خدمات یا شارژِ در انتظار بررسی وجود ندارد.",
+            reply_markup=admin_menu(),
+        )
         await callback.answer()
         return
-    await callback.message.edit_text("🔵 رسیدهای در انتظار بررسی:")
-    for payment, order, service, user in rows:
+    await callback.message.edit_text(
+        "🔵 رسیدهای در انتظار بررسی\n"
+        f"🧾 رسید خدمات: {len(service_receipts)}\n"
+        f"➕ رسید شارژ اعتبار: {len(topup_receipts)}"
+    )
+    for payment, order, service, user in service_receipts:
         await callback.message.answer(
-            f"{status_header(order, service)}\n"
+            f"🧾 رسید خدمت\n{status_header(order, service)}\n"
             f"👤 مشترک: {user.first_name or ''} {user.last_name or ''}\n"
             f"📱 شناسه تلگرام: {user.telegram_id}\n"
             f"💰 مبلغ: {payment.amount_toman:,} تومان",
             reply_markup=order_actions(order.id, order_status=order.status),
         )
-        if payment.receipt_file_id:
-            await send_payment_receipt(callback.bot, callback.from_user.id, payment, f"🧾 رسید {order.public_id}")
+        await send_payment_receipt(
+            callback.bot, callback.from_user.id, payment, f"🧾 رسید خدمت {order.public_id}"
+        )
+    for topup, user in topup_receipts:
+        await callback.message.answer(
+            f"➕ رسید شارژ اعتبار #{topup.id}\n"
+            f"👤 مشترک: {user.first_name or ''} {user.last_name or ''}\n"
+            f"📱 شناسه تلگرام: {user.telegram_id}\n"
+            f"💰 مبلغ شارژ: {topup.amount_toman:,} تومان",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [ui_button(text="🔎 بررسی شارژ و رسید", callback_data=f"adm:topup:view:{topup.id}")]
+            ]),
+        )
+        if topup.receipt_type == "document":
+            await callback.message.answer_document(
+                topup.receipt_file_id, caption=f"🧾 رسید شارژ #{topup.id}"
+            )
+        else:
+            await callback.message.answer_photo(
+                topup.receipt_file_id, caption=f"🧾 رسید شارژ #{topup.id}"
+            )
     await callback.answer()
 
 
@@ -2250,7 +2291,7 @@ async def operator_add_start(callback: CallbackQuery, state: FSMContext) -> None
     await state.clear()
     await state.set_state(AdminForm.operator_add)
     await callback.answer()
-    await callback.message.answer("👨‍💼 شناسه عددی تلگرام اپراتور را ارسال کنید.\nمثال: 7165912028\nمحدودیت: فقط عدد.", reply_markup=admin_cancel_menu())
+    await callback.message.answer("👨‍💼 شناسه عددی تلگرام اپراتور را ارسال کنید.\nمثال: 7165912028", reply_markup=admin_cancel_menu())
 
 
 @router.message(AdminForm.operator_add)
@@ -2451,7 +2492,7 @@ async def operator_remove_start(callback: CallbackQuery, state: FSMContext) -> N
     await state.clear()
     await state.set_state(AdminForm.operator_remove)
     await callback.answer()
-    await callback.message.answer("🚫 شناسه عددی اپراتور را برای غیرفعال‌سازی ارسال کنید.\nمثال: 7165912028\nمحدودیت: فقط عدد.", reply_markup=admin_cancel_menu())
+    await callback.message.answer("🚫 شناسه عددی اپراتور را برای غیرفعال‌سازی ارسال کنید.\nمثال: 7165912028", reply_markup=admin_cancel_menu())
 
 
 @router.message(AdminForm.operator_remove)
