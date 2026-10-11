@@ -10,7 +10,7 @@ from app.bot.handlers import STATUS_TEXT, normalize_digits as normalize_digits_a
 from app.bot.states import AdminForm
 from app.bot.keyboards import admin_cancel_menu
 from app.core.config import get_settings
-from app.db.models import AuditLog, Companion, Document, Order, Operator, Payment, Service, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode
+from app.db.models import AuditLog, Companion, Document, Order, Operator, Payment, Service, ServiceCode, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode
 from app.db.session import SessionLocal
 from app.db.queries import find_custom_service_order_without_payment, list_unpriced_custom_service_orders
 
