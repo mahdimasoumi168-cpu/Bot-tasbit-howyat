@@ -41,3 +41,12 @@ def test_receipt_retry_is_only_available_after_payment_receipt_rejection():
     assert not can_retry_receipt("completed", "rejected")
     assert not can_retry_receipt("deleted", "rejected")
     assert not can_retry_receipt("rejected", None)
+
+
+def test_card_payment_requires_complete_destination_details():
+    from app.bot.handlers import card_details_ready
+
+    assert card_details_ready("1234567890123456", "سید فرید معصومی")
+    assert not card_details_ready("", "سید فرید معصومی")
+    assert not card_details_ready("1234567890123456", "")
+    assert not card_details_ready(None, None)
