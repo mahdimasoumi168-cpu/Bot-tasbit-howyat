@@ -99,6 +99,13 @@ def single_action_menu(text: str = "🔄 شروع مجدد") -> InlineKeyboardMa
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=callback, style="primary")]])
 
 
+def optional_description_menu() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏭️ رد شدن", callback_data="service:description:skip", style="primary")],
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
+    ])
+
+
 def confirm_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ تأیید و ادامه", callback_data="order:confirm", style="success")],
