@@ -42,6 +42,15 @@ def valid_identity_document_number(value: str | None) -> bool:
     return 2 <= len(normalized) <= 64
 
 
+def screening_total_amount(unit_price_toman: int, child_count: int) -> int:
+    """Calculate screening fees using the configured per-student price."""
+    if unit_price_toman <= 0:
+        raise ValueError("تعرفه هر دانش‌آموز باید بیشتر از صفر باشد.")
+    if child_count < 1:
+        raise ValueError("تعداد دانش‌آموزان باید حداقل یک نفر باشد.")
+    return unit_price_toman * child_count
+
+
 def ui_button(text: str, **kwargs):
     """Create consistently styled Telegram inline buttons: blue by default, semantic red/green when appropriate."""
     if "style" not in kwargs:
@@ -730,6 +739,17 @@ async def show_additional_summary(message: Message, state: FSMContext) -> None:
     if data.get("service_code") == "fida":
         address_parts = [values.get(k, "").strip() for k in ("province", "city", "neighborhood", "street", "alley", "plaque") if values.get(k)]
         lines.append("آدرس کامل: " + "، ".join(address_parts))
+    if data.get("service_code") == "student_screening":
+        async with SessionLocal() as session:
+            order = await session.get(Order, data["order_id"])
+        unit_price = int(order.price_snapshot_toman or 0) if order else 0
+        child_count = max(1, int(data.get("child_count", 1)))
+        total = screening_total_amount(unit_price, child_count)
+        lines.extend([
+            f"💵 هزینه هر دانش‌آموز: {unit_price:,} تومان",
+            f"👨‍🎓 تعداد دانش‌آموزان: {child_count}",
+            f"💰 مجموع هزینه: {total:,} تومان",
+        ])
     lines.append("\nلطفاً اطلاعات را بررسی و تأیید کنید.")
     await state.set_state(AdditionalServiceForm.confirm)
     await message.answer("\n".join(lines), reply_markup=confirm_menu())
@@ -741,6 +761,18 @@ async def additional_service_confirm(message: Message, state: FSMContext) -> Non
         await message.answer("درخواست منقضی شده است؛ لطفاً دوباره شروع کنید."); return
     payload = {**data, **data.get("additional_values", {})}
     payload["additional_service_title"] = ADDITIONAL_SERVICES[code]["title"]
+    if code == "student_screening":
+        async with SessionLocal() as session:
+            order = await session.get(Order, data["order_id"])
+            if order is None:
+                await message.answer("❌ پرونده پیدا نشد؛ لطفاً دوباره شروع کنید.")
+                await state.clear()
+                return
+            unit_price = int(order.price_snapshot_toman or 0)
+        child_count = max(1, int(data.get("child_count", 1)))
+        payload["screening_unit_price_toman"] = unit_price
+        payload["screening_total_toman"] = screening_total_amount(unit_price, child_count)
+        payload["child_count"] = child_count
     if code == "other_service":
         async with SessionLocal() as session:
             order = await session.get(Order, data["order_id"])
@@ -1269,6 +1301,14 @@ async def save_order_data(data: dict) -> None:
         order = await session.get(Order, order_id)
         if order is None:
             raise ValueError("درخواست پیدا نشد.")
+        if data.get("service_code") == "student_screening":
+            unit_price = int(data.get("screening_unit_price_toman", order.price_snapshot_toman or 0))
+            child_count = max(1, int(data.get("child_count", 1)))
+            total = screening_total_amount(unit_price, child_count)
+            payload["screening_unit_price_toman"] = unit_price
+            payload["screening_total_toman"] = total
+            payload["child_count"] = child_count
+            order.price_snapshot_toman = total
         order.data_json = json.dumps(payload, ensure_ascii=False)
         order.status = "waiting_payment"
         await session.execute(delete(Companion).where(Companion.order_id == order.id))

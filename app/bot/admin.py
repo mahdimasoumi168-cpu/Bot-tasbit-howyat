@@ -10,7 +10,7 @@ from app.bot.handlers import STATUS_TEXT, normalize_digits as normalize_digits_a
 from app.bot.states import AdminForm
 from app.bot.keyboards import admin_cancel_menu
 from app.core.config import get_settings
-from app.db.models import AuditLog, Companion, Document, Order, Operator, Payment, Service, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode
+from app.db.models import AuditLog, Companion, Document, Order, Operator, Payment, Service, ServiceCode, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode
 from app.db.session import SessionLocal
 from app.db.queries import find_custom_service_order_without_payment, list_unpriced_custom_service_orders
 
@@ -1225,7 +1225,7 @@ async def prices(callback: CallbackQuery) -> None:
     async with SessionLocal() as session:
         rows = (await session.execute(select(Service).order_by(Service.id))).scalars().all()
     text = "💰 قیمت فعلی خدمات:\n\n" + "\n".join(
-        f"{s.name}: {s.price_toman:,} تومان" for s in rows
+        f"{s.name} — {'هزینه هر دانش‌آموز' if s.code == ServiceCode.STUDENT_SCREENING.value else 'هزینه خدمت'}: {s.price_toman:,} تومان" for s in rows
     ) or "خدمتی ثبت نشده است."
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
