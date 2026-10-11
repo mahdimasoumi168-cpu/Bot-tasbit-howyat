@@ -15,7 +15,6 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.seed import seed_services
 from app.db.session import init_db
-from app.payments.variza import create_web_app
 
 
 async def main() -> None:
@@ -52,7 +51,12 @@ async def main() -> None:
     dp.include_router(router)
     dp.include_router(admin_router)
 
-    runner = web.AppRunner(create_web_app(bot))
+    async def health(_request: web.Request) -> web.Response:
+        return web.json_response({"status": "ok"})
+
+    app = web.Application()
+    app.router.add_get("/health", health)
+    runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", int(os.environ.get("PORT", "8080")))
     await site.start()
