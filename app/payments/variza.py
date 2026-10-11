@@ -70,6 +70,14 @@ async def create_payment_link(
                     response.status,
                     detail or "<empty>",
                 )
+                # Translate this known provider-side limitation into an actionable
+                # error for the bot handler; do not infer it from the HTTP code alone.
+                if (
+                    response.status == 422
+                    and "محدودیت اشتراک فعلی" in response_text
+                    and "لینک پرداخت فعال جدید" in response_text
+                ):
+                    raise RuntimeError("VARIZA_ACTIVE_LINK_SUBSCRIPTION_LIMIT")
                 raise RuntimeError(
                     f"واریزا نتوانست لینک پرداخت را بسازد (HTTP {response.status})؛ "
                     "جزئیات فنی در گزارش امن سرور ثبت شد."
