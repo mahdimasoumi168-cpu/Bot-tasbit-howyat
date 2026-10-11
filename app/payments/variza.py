@@ -383,8 +383,11 @@ def create_web_app(bot) -> web.Application:
                 "<meta name='viewport' content='width=device-width, initial-scale=1'>"
                 "<title>کمک‌یار مهاجر</title><body style='font-family:sans-serif;padding:2rem'>"
                 "<h2>درخواست پرداخت شما دریافت شد</h2>"
-                "<p>برای مشاهده وضعیت نهایی، به ربات تلگرام «کمک‌یار مهاجر» برگردید. "
+                "<p>اگر پرداخت را انجام داده‌اید، منتظر بمانید تا تأیید در صفحه پرداخت نمایش داده شود. "
                 "وضعیت پرداخت فقط پس از تأیید امن واریزا به‌روزرسانی می‌شود.</p>"
+                "<p><a href='https://t.me/Yare_Mohajer_bot' "
+                "style='display:inline-block;padding:12px 18px;background:#1683d8;color:#fff;"
+                "text-decoration:none;border-radius:8px'>بازگشت به ربات کمک‌یار مهاجر</a></p>"
                 "</body></html>"
             ),
             content_type="text/html",
