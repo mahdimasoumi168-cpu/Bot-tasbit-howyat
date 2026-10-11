@@ -98,6 +98,11 @@ async def ensure_wallet(session, user_id: int) -> Wallet:
     return wallet
 
 
+def card_details_ready(card_number: str | None, card_holder: str | None) -> bool:
+    """Card-to-card payment is available only after both destination details are configured."""
+    return bool(card_number and card_number.strip() and card_holder and card_holder.strip())
+
+
 def calculate_discount(base_amount: int, coupon: DiscountCode | None) -> int:
     if coupon is None:
         return 0
@@ -1588,12 +1593,17 @@ async def pay_card(callback: CallbackQuery, state: FSMContext) -> None:
     if not order_id:
         await callback.answer("درخواست پرداخت پیدا نشد.", show_alert=True)
         return
+    async with SessionLocal() as session:
+        card_setting = (await session.execute(select(Setting).where(Setting.key == "card_number"))).scalar_one_or_none()
+        holder_setting = (await session.execute(select(Setting).where(Setting.key == "card_holder"))).scalar_one_or_none()
+    card_number = card_setting.value if card_setting and card_setting.value else ""
+    card_holder = holder_setting.value if holder_setting and holder_setting.value else ""
+    if not card_details_ready(card_number, card_holder):
+        await callback.answer("اطلاعات کارت مقصد هنوز کامل نشده است؛ لطفاً با پشتیبانی تماس بگیرید.", show_alert=True)
+        return
     await state.set_state(IdentityForm.receipt if data.get("service_code") == ServiceCode.IDENTITY.value else KhodnevisForm.receipt if data.get("service_code") == ServiceCode.KHODNEVIS.value else AdditionalServiceForm.receipt)
     await callback.answer()
     invoice_text = await payment_instructions(order_id)
-    async with SessionLocal() as session:
-        card_setting = (await session.execute(select(Setting).where(Setting.key == "card_number"))).scalar_one_or_none()
-    card_number = card_setting.value if card_setting and card_setting.value else "تنظیم نشده"
     amount_toman, _, _ = await order_amount_and_coupon(order_id)
     await callback.message.edit_text(
         invoice_text,
@@ -1700,11 +1710,16 @@ async def wallet_topup_card_choice(callback: CallbackQuery, state: FSMContext) -
             await callback.answer("این درخواست افزایش اعتبار دیگر برای پرداخت کارت‌به‌کارت آماده نیست.", show_alert=True)
             return
         amount = row[0].amount_toman
-    await state.set_state(WalletTopupForm.receipt)
-    invoice_text = await wallet_topup_invoice(amount)
     async with SessionLocal() as session:
         card_setting = (await session.execute(select(Setting).where(Setting.key == "card_number"))).scalar_one_or_none()
-    card_number = card_setting.value if card_setting and card_setting.value else "تنظیم نشده"
+        holder_setting = (await session.execute(select(Setting).where(Setting.key == "card_holder"))).scalar_one_or_none()
+    card_number = card_setting.value if card_setting and card_setting.value else ""
+    card_holder = holder_setting.value if holder_setting and holder_setting.value else ""
+    if not card_details_ready(card_number, card_holder):
+        await callback.answer("اطلاعات کارت مقصد هنوز کامل نشده است؛ لطفاً با پشتیبانی تماس بگیرید.", show_alert=True)
+        return
+    await state.set_state(WalletTopupForm.receipt)
+    invoice_text = await wallet_topup_invoice(amount)
     await callback.answer()
     await callback.message.edit_text(
         invoice_text,
