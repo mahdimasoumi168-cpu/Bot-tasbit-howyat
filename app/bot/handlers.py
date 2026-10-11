@@ -1554,10 +1554,25 @@ async def wallet_topup_variza_choice(callback: CallbackQuery, state: FSMContext)
             f"افزایش اعتبار کیف پول #{topup_id}",
             return_url,
         )
-    except Exception:
+    except Exception as exc:
         logging.getLogger(__name__).exception("Could not create Variza wallet top-up link")
+        if str(exc) == "VARIZA_ACTIVE_LINK_SUBSCRIPTION_LIMIT":
+            error_text = (
+                "⚠️ محدودیت اشتراک واریزا اجازه ساخت لینک پرداخت جدید را نمی‌دهد.\n\n"
+                "برای فعال‌شدن پرداخت آنلاین، در پنل واریزا لینک‌های فعال اضافی را مدیریت کنید "
+                "یا اشتراک دارای لینک فعال نامحدود تهیه کنید.\n\n"
+                "درخواست افزایش اعتبار شما حفظ شده و می‌توانید فعلاً کارت‌به‌کارت را انتخاب کنید."
+            )
+        else:
+            error_text = (
+                "⚠️ ساخت لینک پرداخت آنلاین ناموفق بود. درخواست افزایش اعتبار شما حفظ شده است؛ "
+                "می‌توانید کارت‌به‌کارت را انتخاب کنید."
+            )
         await callback.message.answer(
-            "⚠️ ساخت لینک پرداخت آنلاین ناموفق بود. درخواست افزایش اعتبار شما حفظ شده است؛ می‌توانید کارت‌به‌کارت را انتخاب کنید."
+            error_text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💳 پرداخت کارت‌به‌کارت", callback_data="wallet:topup:card", style="primary")]
+            ]),
         )
         return
     async with SessionLocal() as session:
