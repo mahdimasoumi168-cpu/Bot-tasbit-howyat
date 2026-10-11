@@ -654,6 +654,9 @@ async def show_additional_summary(message: Message, state: FSMContext) -> None:
             lines.append(f"تعداد فرزندان ثبت‌شده: {data.get('child_count', 1)}")
         else:
             lines.append(f"{label}: {values.get(key, '—')}")
+    if data.get("service_code") == "fida":
+        address_parts = [values.get(k, "").strip() for k in ("province", "city", "neighborhood", "street", "alley", "plaque") if values.get(k)]
+        lines.append("آدرس کامل: " + "، ".join(address_parts))
     lines.append("\nلطفاً اطلاعات را بررسی و تأیید کنید.")
     await state.set_state(AdditionalServiceForm.confirm)
     await message.answer("\n".join(lines), reply_markup=confirm_menu())
