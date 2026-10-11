@@ -134,6 +134,21 @@ def wallet_topup_cancel_menu() -> InlineKeyboardMarkup:
     ])
 
 
+def wallet_topup_choice_menu(variza_enabled: bool = False) -> InlineKeyboardMarkup:
+    rows = []
+    if variza_enabled:
+        rows.append([InlineKeyboardButton(
+            text="💳 پرداخت آنلاین واریزا",
+            callback_data="wallet:topup:variza",
+            style="primary",
+        )])
+    rows.extend([
+        [InlineKeyboardButton(text="💳 کارت به کارت", callback_data="wallet:topup:card", style="primary")],
+        [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
+    ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def services_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🪪 تثبیت هویت", callback_data="menu:identity", style="primary")],
