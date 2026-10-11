@@ -6,6 +6,10 @@ async def seed_services():
     defaults=[
         (ServiceCode.IDENTITY.value,"تثبیت هویت",280_000,"خدمت تثبیت هویت"),
         (ServiceCode.KHODNEVIS.value,"کد رهگیری خودنویس",1_700_000,"خدمت کد رهگیری خودنویس"),
+        (ServiceCode.FIDA.value,"ثبت‌نام کد فیدا غیرحضوری",0,"ثبت‌نام کد فیدا غیرحضوری"),
+        (ServiceCode.DOLATMAN_LOGIN.value,"رفع مشکل ورود به درگاه دولت من",0,"رفع مشکل ورود به درگاه دولت من"),
+        (ServiceCode.STUDENT_SCREENING.value,"آزمون غربالگری دانش‌آموزان",0,"آزمون غربالگری دانش‌آموزان"),
+        (ServiceCode.OTHER_SERVICE.value,"درخواست خدمات دیگر",0,"ثبت درخواست خدمت دیگر"),
     ]
     async with SessionLocal() as session:
         for code,name,price,description in defaults:

@@ -10,6 +10,10 @@ from app.db.base import Base
 class ServiceCode(StrEnum):
     IDENTITY = "identity"
     KHODNEVIS = "khodnevis"
+    FIDA = "fida"
+    DOLATMAN_LOGIN = "dolatman_login"
+    STUDENT_SCREENING = "student_screening"
+    OTHER_SERVICE = "other_service"
 
 
 class OrderStatus(StrEnum):

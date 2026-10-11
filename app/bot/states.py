@@ -32,6 +32,12 @@ class KhodnevisForm(StatesGroup):
     receipt = State()
 
 
+class AdditionalServiceForm(StatesGroup):
+    field = State()
+    confirm = State()
+    receipt = State()
+
+
 class AdminForm(StatesGroup):
     case_lookup = State()
     send_message = State()
