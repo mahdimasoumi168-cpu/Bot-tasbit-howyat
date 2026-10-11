@@ -1507,6 +1507,47 @@ async def user_order_detail(callback: CallbackQuery) -> None:
 
 
 
+@router.callback_query(F.data.startswith("user:payquote:"))
+async def user_pay_custom_quote(callback: CallbackQuery, state: FSMContext) -> None:
+    try:
+        order_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("درخواست پرداخت نامعتبر است.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        row = (await session.execute(
+            select(Order, Service, User)
+            .join(Service, Service.id == Order.service_id)
+            .join(User, User.id == Order.user_id)
+            .outerjoin(Payment, Payment.order_id == Order.id)
+            .where(
+                Order.id == order_id,
+                User.telegram_id == callback.from_user.id,
+                Service.code == "other_service",
+                Order.status == "waiting_payment",
+                Order.price_snapshot_toman.is_not(None),
+                Order.price_snapshot_toman > 0,
+                Payment.id.is_(None),
+            )
+        )).one_or_none()
+        if not row:
+            await callback.answer(
+                "این درخواست برای پرداخت آماده نیست یا قبلاً پرداخت شده است.",
+                show_alert=True,
+            )
+            return
+        order, service, user = row
+    await state.clear()
+    await state.update_data(
+        order_id=order.id,
+        public_id=order.public_id,
+        service_code=service.code,
+        telegram_id=user.telegram_id,
+    )
+    await callback.answer()
+    await show_payment_options(callback.message, state, order.id)
+
+
 @router.callback_query(F.data == "pay:wallet")
 async def pay_wallet(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
