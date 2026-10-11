@@ -1684,7 +1684,7 @@ async def wallet_topup_amount(message: Message, state: FSMContext) -> None:
         await session.flush()
         await state.update_data(topup_id=topup.id)
         await session.commit()
-    await state.set_state(WalletTopupForm.receipt)
+    await state.set_state(WalletTopupForm.choice)
     await message.answer(
         f"➕ درخواست افزایش اعتبار ثبت شد.\n\n💰 مبلغ: {amount:,} تومان\n\nروش پرداخت را انتخاب کنید:",
         reply_markup=wallet_topup_choice_menu(),
@@ -1693,6 +1693,9 @@ async def wallet_topup_amount(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(F.data == "wallet:topup:card")
 async def wallet_topup_card_choice(callback: CallbackQuery, state: FSMContext) -> None:
+    if await state.get_state() != WalletTopupForm.choice:
+        await callback.answer("این مرحله دیگر فعال نیست؛ دوباره افزایش اعتبار را شروع کنید.", show_alert=True)
+        return
     data = await state.get_data()
     topup_id = data.get("topup_id")
     if not topup_id:
