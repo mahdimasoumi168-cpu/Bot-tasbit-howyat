@@ -382,7 +382,7 @@ def create_web_app(bot) -> web.Application:
                 "<!doctype html><html lang='fa' dir='rtl'><meta charset='utf-8'>"
                 "<meta name='viewport' content='width=device-width, initial-scale=1'>"
                 "<title>کمک‌یار مهاجر</title><body style='font-family:sans-serif;padding:2rem'>"
-                "<h2>درخواست پرداخت شما دریافت شد</h2>"
+                "<h2>بازگشت از درگاه پرداخت</h2>"
                 "<p>اگر پرداخت را انجام داده‌اید، منتظر بمانید تا تأیید در صفحه پرداخت نمایش داده شود. "
                 "وضعیت پرداخت فقط پس از تأیید امن واریزا به‌روزرسانی می‌شود.</p>"
                 "<p><a href='https://t.me/Yare_Mohajer_bot' "
