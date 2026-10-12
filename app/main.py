@@ -71,10 +71,10 @@ async def main() -> None:
                     if user_id:
                         await bot.send_message(
                             user_id,
-                            f"✅ پرداخت واریزا تأیید شد.\\n"
-                            f"🔢 شماره درخواست: {result.get('public_id', '—')}\\n"
-                            f"📌 خدمت: {result.get('service_name', 'خدمت')}\\n"
-                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\\n\\n"
+                            f"✅ پرداخت واریزا تأیید شد.\n"
+                            f"🔢 شماره درخواست: {result.get('public_id', '—')}\n"
+                            f"📌 خدمت: {result.get('service_name', 'خدمت')}\n"
+                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\n\n"
                             "پرونده برای بررسی و انجام خدمت در صف قرار گرفت.",
                         )
                     try:
@@ -89,8 +89,8 @@ async def main() -> None:
                     if user_id:
                         await bot.send_message(
                             user_id,
-                            f"✅ افزایش اعتبار با واریزا تأیید شد.\\n"
-                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\\n"
+                            f"✅ افزایش اعتبار با واریزا تأیید شد.\n"
+                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\n"
                             f"💳 موجودی جدید: {int(result.get('new_balance_toman', 0)):,} تومان",
                         )
                 elif action == "already_paid":
@@ -99,7 +99,7 @@ async def main() -> None:
                             await bot.send_message(
                                 admin_id,
                                 "⚠️ واریزا یک پرداخت موفق دیگر برای پرونده/شارژ ثبت‌شده ارسال کرد، "
-                                "اما مورد قبلاً پرداخت شده بود. لطفاً تراکنش را در پنل واریزا بررسی کنید.\\n"
+                                "اما مورد قبلاً پرداخت شده بود. لطفاً تراکنش را در پنل واریزا بررسی کنید.\n"
                                 f"جزئیات: {json.dumps(result, ensure_ascii=False)}",
                             )
                         except Exception:
