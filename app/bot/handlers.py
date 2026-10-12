@@ -1732,11 +1732,13 @@ async def pay_variza(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     extra = f"\n🏷️ تخفیف: {discount:,} تومان" if discount else ""
     await callback.message.edit_text(
-        f"⚡ <b>پرداخت آنلاین با واریزا</b>\n\n"
+        f"💳 <b>درگاه کارت به کارت تایید سریع متصل به درگاه واریزا</b>\n\n"
+        "این درگاه، پرداخت کارت‌به‌کارت شما را سریع‌تر تأیید می‌کند و خدمات و درخواست شما با اولویت بیشتری به کارشناسان ارجاع می‌شود.\n\n"
         f"📌 خدمت: {service.name}\n🔢 شماره درخواست: <code>{public_id}</code>\n"
-        f"💰 مبلغ: <code>{amount:,}</code> تومان{extra}\n\n"
-        "پس از پرداخت، تأیید به‌صورت خودکار دریافت می‌شود. لطفاً تا دریافت پیام تأیید ربات، "
-        "از پرداخت دوباره همین درخواست خودداری کنید.",
+        f"💰 مبلغ دقیق قابل پرداخت: <code>{amount:,}</code> تومان{extra}\n\n"
+        "⚠️ لطفاً دقیقاً همان مبلغی را که در درگاه نمایش داده می‌شود پرداخت کنید؛ مبلغ اضافه‌ای وارد یا پرداخت نکنید.\n"
+        "🏧 امکان پرداخت از طریق عابربانک یا همراه‌بانک وجود دارد.\n\n"
+        "پس از پرداخت، تأیید به‌صورت خودکار دریافت می‌شود. لطفاً تا دریافت پیام تأیید ربات، از پرداخت دوباره همین درخواست خودداری کنید.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔗 پرداخت با واریزا", url=pay_url, style="primary")],
             [InlineKeyboardButton(text="🔙 بازگشت به روش‌های پرداخت", callback_data="pay:back", style="primary")],
@@ -1913,10 +1915,12 @@ async def wallet_topup_variza(callback: CallbackQuery, state: FSMContext) -> Non
         return
     await callback.answer()
     await callback.message.edit_text(
-        f"⚡ <b>افزایش اعتبار با واریزا</b>\n\n"
-        f"💰 مبلغ: <code>{amount:,}</code> تومان\n"
-        "پس از پرداخت موفق، اعتبار شما به‌صورت خودکار افزایش می‌یابد. "
-        "لطفاً تا دریافت پیام تأیید ربات، پرداخت را تکرار نکنید.",
+        f"💳 <b>درگاه کارت به کارت تایید سریع متصل به درگاه واریزا</b>\n\n"
+        "این درگاه، پرداخت کارت‌به‌کارت شما را سریع‌تر تأیید می‌کند و درخواست شما برای افزایش اعتبار با اولویت بیشتری پیگیری می‌شود.\n\n"
+        f"💰 مبلغ دقیق قابل پرداخت: <code>{amount:,}</code> تومان\n"
+        "⚠️ لطفاً دقیقاً همان مبلغی را که در درگاه نمایش داده می‌شود پرداخت کنید؛ مبلغ اضافه‌ای وارد یا پرداخت نکنید.\n"
+        "🏧 امکان پرداخت از طریق عابربانک یا همراه‌بانک وجود دارد.\n\n"
+        "پس از پرداخت موفق، اعتبار شما به‌صورت خودکار افزایش می‌یابد. لطفاً تا دریافت پیام تأیید ربات، پرداخت را تکرار نکنید.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔗 پرداخت با واریزا", url=pay_url, style="primary")],
             [InlineKeyboardButton(text="🔙 بازگشت به روش‌های پرداخت", callback_data="wallet:topup:back", style="primary")],
