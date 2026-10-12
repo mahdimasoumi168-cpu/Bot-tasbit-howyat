@@ -86,7 +86,7 @@ async def create_variza_link(
             "اتصال واریزا کامل تنظیم نشده است؛ لطفاً از کارت‌به‌کارت استفاده کنید یا با پشتیبانی تماس بگیرید."
         )
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     async with SessionLocal() as session:
         query = select(VarizaPayment).where(
             VarizaPayment.kind == kind,
@@ -233,7 +233,7 @@ async def process_webhook(raw_body: bytes, signature: str) -> tuple[int, dict[st
                 await session.commit()
                 return 200, {"ok": True, "action": "duplicate_attempt"}
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         if record.kind == "order":
             order = await session.get(Order, record.order_id)
             if order is None:
