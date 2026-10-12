@@ -91,6 +91,24 @@ class Payment(Base):
     order: Mapped["Order"] = relationship(back_populates="payments")
 
 
+class VarizaPayment(Base):
+    __tablename__ = "variza_payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)  # order | topup
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), index=True)
+    topup_id: Mapped[int | None] = mapped_column(ForeignKey("wallet_topups.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    amount_toman: Mapped[int] = mapped_column(Integer)
+    pay_url: Mapped[str] = mapped_column(String(1024))
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    attempt_code: Mapped[str | None] = mapped_column(String(128), index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
 class Wallet(Base):
     __tablename__ = "wallets"
 
