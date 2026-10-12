@@ -56,7 +56,7 @@ def _parse_expiry(value: str | None) -> datetime | None:
 
 def _public_base_url() -> str:
     settings = get_settings()
-    base = settings.public_base_url.strip().rstrip("/")
+    base = settings.public_base_url.strip().rstrip("/") or "https://bot-tasbit-howyat-production.up.railway.app"
     if not base.startswith("https://"):
         raise VarizaError(
             "آدرس عمومی ربات باید با https شروع شود؛ متغیر PUBLIC_BASE_URL را بررسی کنید."
