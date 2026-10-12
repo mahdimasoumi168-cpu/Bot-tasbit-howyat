@@ -122,7 +122,8 @@ async def create_variza_link(
             ) as response:
                 raw_text = await response.text()
                 try:
-                    body: dict[str, Any] = json.loads(raw_text)
+                    parsed_body = json.loads(raw_text)
+                    body: dict[str, Any] = parsed_body if isinstance(parsed_body, dict) else {}
                 except (json.JSONDecodeError, TypeError):
                     body = {}
                 if response.status not in {200, 201}:
@@ -188,6 +189,8 @@ async def process_webhook(raw_body: bytes, signature: str) -> tuple[int, dict[st
     try:
         event = json.loads(raw_body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
+        return 400, {"ok": False, "error": "invalid_json"}
+    if not isinstance(event, dict):
         return 400, {"ok": False, "error": "invalid_json"}
     if event.get("event") != "payment.paid" or event.get("status") != "paid":
         return 200, {"ok": True, "action": "ignored_event"}
