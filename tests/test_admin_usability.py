@@ -35,7 +35,7 @@ def test_payment_choice_displays_live_credit_amount():
     assert "125,000 تومان" in wallet_button.text
 
 
-def test_payment_options_have_no_online_gateway():
+def test_payment_options_include_variza_gateway():
     from app.bot.keyboards import wallet_topup_choice_menu
 
     payment_buttons = [
@@ -50,12 +50,11 @@ def test_payment_options_have_no_online_gateway():
     ]
 
     assert {button.callback_data for button in payment_buttons} >= {
-        "pay:wallet", "pay:card", "pay:coupon"
+        "pay:wallet", "pay:card", "pay:coupon", "pay:variza"
     }
     assert {button.callback_data for button in topup_buttons} == {
-        "wallet:topup:card", "flow:cancel"
+        "wallet:topup:variza", "wallet:topup:card", "flow:cancel"
     }
-    assert all("variza" not in (button.callback_data or "").lower() for button in payment_buttons + topup_buttons)
 
 
 def test_direct_support_link_uses_requested_account():
