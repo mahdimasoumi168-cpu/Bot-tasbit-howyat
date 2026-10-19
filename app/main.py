@@ -120,6 +120,17 @@ async def main() -> None:
                             f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\n"
                             f"💳 موجودی جدید: {int(result.get('new_balance_toman', 0)):,} تومان",
                         )
+                elif action == "paid_vpn":
+                    user_id = result.get("user_telegram_id")
+                    if user_id:
+                        await bot.send_message(
+                            user_id,
+                            "✅ پرداخت VPN با ریالیت از سمت درگاه تأیید شد.\n"
+                            f"⏳ مدت انتخابی: {int(result.get('months') or 0)} ماه\n"
+                            f"📦 حجم: {int(result.get('gigabytes') or 0)} گیگابایت\n"
+                            f"💰 مبلغ: {int(result.get('amount_toman') or 0):,} تومان\n\n"
+                            "توجه: تأیید پرداخت ثبت شد؛ فعال‌سازی خودکار اشتراک VPN هنوز به سامانه تأمین‌کننده متصل نیست.",
+                        )
                 elif action == "already_paid":
                     for admin_id in get_settings().admin_id_set:
                         try:
