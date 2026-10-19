@@ -30,6 +30,7 @@ from app.core.config import get_settings
 from app.db.models import Companion, Document, Operator, Order, Payment, Service, ServiceCode, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode, AuditLog
 from app.db.session import SessionLocal
 from app.payments.variza import VarizaError, create_variza_link
+from app.payments.rialit import RialitError, create_rialit_link
 from app.db.queries import find_custom_service_order_without_payment
 from app.utils.dates import gregorian_display, jalali_to_gregorian
 from app.utils.ids import public_order_id
@@ -1748,6 +1749,50 @@ async def pay_variza(callback: CallbackQuery, state: FSMContext) -> None:
     )
 
 
+
+@router.callback_query(F.data == "pay:rialit")
+async def pay_rialit(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    order_id = data.get("order_id")
+    if not order_id:
+        await callback.answer("درخواست پرداخت پیدا نشد؛ دوباره وارد پرونده شوید.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        row = (await session.execute(
+            select(Order, Service, User)
+            .join(Service, Order.service_id == Service.id)
+            .join(User, Order.user_id == User.id)
+            .where(Order.id == order_id, User.telegram_id == callback.from_user.id)
+        )).one_or_none()
+        if not row:
+            await callback.answer("این درخواست متعلق به حساب شما نیست یا پیدا نشد.", show_alert=True)
+            return
+        order, service, user = row
+        if order.status not in {"waiting_payment", "waiting_receipt_review"}:
+            await callback.answer("این پرونده دیگر برای پرداخت آماده نیست.", show_alert=True)
+            return
+        public_id, user_db_id = order.public_id, user.id
+    amount, discount, _ = await order_amount_and_coupon(order_id)
+    try:
+        pay_url = await create_rialit_link(kind="order", user_id=user_db_id,
+            order_id=order_id, amount_toman=amount, title=f"{service.name} | {public_id}")
+    except RialitError as exc:
+        await callback.answer(str(exc)[:190], show_alert=True)
+        return
+    await callback.answer()
+    extra = f"\\n🏷️ تخفیف: {discount:,} تومان" if discount else ""
+    await callback.message.edit_text(
+        f"💠 <b>پرداخت آنلاین با ریالیت</b>\\n\\n📌 خدمت: {service.name}\\n🔢 شماره درخواست: <code>{public_id}</code>\\n"
+        f"💰 مبلغ دقیق: <code>{amount:,}</code> تومان{extra}\\n\\n"
+        "لطفاً دقیقاً همین مبلغ را پرداخت کنید. پس از پرداخت، درگاه به‌صورت سمت سرور بررسی می‌شود؛ "
+        "بازگشت از صفحه به‌تنهایی تأیید پرداخت نیست. تا پیام تأیید ربات، پرداخت را تکرار نکنید.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔗 پرداخت با ریالیت", url=pay_url, style="primary")],
+            [InlineKeyboardButton(text="🔙 بازگشت به روش‌های پرداخت", callback_data="pay:back", style="primary")],
+            [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
+        ]), parse_mode=ParseMode.HTML,
+    )
+
 @router.callback_query(F.data == "pay:back")
 async def pay_variza_back(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
@@ -1877,6 +1922,47 @@ async def wallet_topup_card_choice(callback: CallbackQuery, state: FSMContext) -
         parse_mode=ParseMode.HTML,
     )
 
+
+
+@router.callback_query(F.data == "wallet:topup:rialit")
+async def wallet_topup_rialit(callback: CallbackQuery, state: FSMContext) -> None:
+    if await state.get_state() != WalletTopupForm.choice:
+        await callback.answer("این مرحله دیگر فعال نیست؛ دوباره افزایش اعتبار را شروع کنید.", show_alert=True)
+        return
+    data = await state.get_data()
+    topup_id = data.get("topup_id")
+    if not topup_id:
+        await callback.answer("درخواست افزایش اعتبار پیدا نشد؛ دوباره تلاش کنید.", show_alert=True)
+        return
+    async with SessionLocal() as session:
+        row = (await session.execute(
+            select(WalletTopup, User)
+            .join(User, WalletTopup.user_id == User.id)
+            .where(WalletTopup.id == topup_id, User.telegram_id == callback.from_user.id)
+        )).one_or_none()
+        if not row or row[0].status != "awaiting_receipt":
+            await callback.answer("این درخواست افزایش اعتبار دیگر برای پرداخت آماده نیست.", show_alert=True)
+            return
+        topup, user = row
+        amount, user_db_id = topup.amount_toman, user.id
+    try:
+        pay_url = await create_rialit_link(kind="topup", user_id=user_db_id,
+            topup_id=topup_id, amount_toman=amount,
+            title=f"افزایش اعتبار کمک‌یار مهاجر #{topup_id}")
+    except RialitError as exc:
+        await callback.answer(str(exc)[:190], show_alert=True)
+        return
+    await callback.answer()
+    await callback.message.edit_text(
+        f"💠 <b>پرداخت آنلاین با ریالیت</b>\\n\\n💰 مبلغ دقیق افزایش اعتبار: <code>{amount:,}</code> تومان\\n\\n"
+        "لطفاً دقیقاً همین مبلغ را پرداخت کنید. اعتبار فقط پس از تأیید سمت سرور افزایش می‌یابد. "
+        "تا پیام تأیید ربات، پرداخت را تکرار نکنید.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔗 پرداخت با ریالیت", url=pay_url, style="primary")],
+            [InlineKeyboardButton(text="🔙 بازگشت به روش‌های پرداخت", callback_data="wallet:topup:back", style="primary")],
+            [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
+        ]), parse_mode=ParseMode.HTML,
+    )
 
 @router.callback_query(F.data == "wallet:topup:variza")
 async def wallet_topup_variza(callback: CallbackQuery, state: FSMContext) -> None:
