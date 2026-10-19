@@ -1780,10 +1780,10 @@ async def pay_rialit(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer(str(exc)[:190], show_alert=True)
         return
     await callback.answer()
-    extra = f"\\n🏷️ تخفیف: {discount:,} تومان" if discount else ""
+    extra = f"\n🏷️ تخفیف: {discount:,} تومان" if discount else ""
     await callback.message.edit_text(
-        f"💠 <b>پرداخت آنلاین با ریالیت</b>\\n\\n📌 خدمت: {service.name}\\n🔢 شماره درخواست: <code>{public_id}</code>\\n"
-        f"💰 مبلغ دقیق: <code>{amount:,}</code> تومان{extra}\\n\\n"
+        f"💠 <b>پرداخت آنلاین با ریالیت</b>\n\n📌 خدمت: {service.name}\n🔢 شماره درخواست: <code>{public_id}</code>\n"
+        f"💰 مبلغ دقیق: <code>{amount:,}</code> تومان{extra}\n\n"
         "لطفاً دقیقاً همین مبلغ را پرداخت کنید. پس از پرداخت، درگاه به‌صورت سمت سرور بررسی می‌شود؛ "
         "بازگشت از صفحه به‌تنهایی تأیید پرداخت نیست. تا پیام تأیید ربات، پرداخت را تکرار نکنید.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -1954,7 +1954,7 @@ async def wallet_topup_rialit(callback: CallbackQuery, state: FSMContext) -> Non
         return
     await callback.answer()
     await callback.message.edit_text(
-        f"💠 <b>پرداخت آنلاین با ریالیت</b>\\n\\n💰 مبلغ دقیق افزایش اعتبار: <code>{amount:,}</code> تومان\\n\\n"
+        f"💠 <b>پرداخت آنلاین با ریالیت</b>\n\n💰 مبلغ دقیق افزایش اعتبار: <code>{amount:,}</code> تومان\n\n"
         "لطفاً دقیقاً همین مبلغ را پرداخت کنید. اعتبار فقط پس از تأیید سمت سرور افزایش می‌یابد. "
         "تا پیام تأیید ربات، پرداخت را تکرار نکنید.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
