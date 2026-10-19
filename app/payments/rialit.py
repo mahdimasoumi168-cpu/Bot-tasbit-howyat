@@ -63,7 +63,7 @@ async def create_rialit_link(*, kind: str, user_id: int, amount_toman: int,
         "amount": amount_toman,
         "callback_url": _base_url() + "/webhooks/rialit",
         "order_id": f"{kind}-{order_id if kind == 'order' else topup_id if kind == 'topup' else f'{user_id}-{vpn_months}-{vpn_gigabytes}'}-{int(datetime.now(timezone.utc).timestamp())}",
-        "user_id": str(user_id),
+        "user_id": int(user_id),
     }
     timeout = aiohttp.ClientTimeout(total=25)
     try:
@@ -85,7 +85,7 @@ async def create_rialit_link(*, kind: str, user_id: int, amount_toman: int,
         raise RialitError("ارتباط با درگاه ریالیت برقرار نشد؛ کمی بعد دوباره تلاش کنید.") from exc
     nested = body.get("data") if isinstance(body.get("data"), dict) else {}
     token = str(body.get("token") or nested.get("token") or "").strip()
-    if not token or len(token) > 512 or any(ch in token for ch in "/?#"):
+    if not token or len(token) > 64 or any(ch in token for ch in "/?#"):
         raise RialitError("پاسخ درگاه ریالیت برای ساخت لینک معتبر نبود.")
     pay_url = f"{API_ROOT}/redirect/{token}"
     async with SessionLocal() as session:
