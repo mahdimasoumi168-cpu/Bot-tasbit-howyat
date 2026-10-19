@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     variza_api_key: str = Field(default="", validation_alias="VARIZA_API_KEY")
     variza_webhook_secret: str = Field(default="", validation_alias="VARIZA_WEBHOOK_SECRET")
+    rialit_api_key: str = Field(default="", validation_alias="RIALIT_API_KEY")
     public_base_url: str = Field(
         default="https://bot-tasbit-howyat-production.up.railway.app",
         validation_alias="PUBLIC_BASE_URL",
