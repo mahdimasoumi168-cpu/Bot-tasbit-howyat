@@ -87,6 +87,30 @@ async def main() -> None:
                         logging.getLogger(__name__).exception(
                             "Variza payment succeeded but operator notification failed"
                         )
+                elif action == "paid_vpn":
+                    user_id = result.get("user_telegram_id")
+                    months = result.get("months") or "—"
+                    gigabytes = result.get("gigabytes") or "—"
+                    if user_id:
+                        await bot.send_message(
+                            user_id,
+                            "✅ پرداخت VPN با ریالیت تأیید شد.\n"
+                            f"⏳ مدت انتخابی: {months} ماه\n"
+                            f"📦 حجم: {gigabytes} گیگابایت\n"
+                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\n\n"
+                            "⚠️ پرداخت ثبت شده است؛ فعال‌سازی خودکار VPN در این نسخه انجام نمی‌شود."
+                        )
+                    for admin_id in get_settings().admin_id_set:
+                        try:
+                            await bot.send_message(
+                                admin_id,
+                                "🔔 پرداخت VPN تأیید شد و برای فعال‌سازی دستی نیاز به بررسی دارد.\n"
+                                f"شناسه تلگرام: {user_id or '—'}\n"
+                                f"مدت: {months} ماه | حجم: {gigabytes} گیگابایت\n"
+                                f"مبلغ: {int(result.get('amount_toman', 0)):,} تومان"
+                            )
+                        except Exception:
+                            pass
                 elif action == "paid_topup":
                     user_id = result.get("user_telegram_id")
                     if user_id:
