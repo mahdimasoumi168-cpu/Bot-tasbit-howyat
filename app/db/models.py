@@ -120,6 +120,8 @@ class RialitPayment(Base):
     topup_id: Mapped[int | None] = mapped_column(ForeignKey("wallet_topups.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     amount_toman: Mapped[int] = mapped_column(Integer)
+    vpn_months: Mapped[int | None] = mapped_column(Integer)
+    vpn_gigabytes: Mapped[int | None] = mapped_column(Integer)
     pay_url: Mapped[str] = mapped_column(String(1024))
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
