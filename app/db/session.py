@@ -63,6 +63,10 @@ async def _ensure_sqlite_columns(conn) -> None:
             "receipt_type": "VARCHAR(16) NOT NULL DEFAULT 'photo'",
             "reviewed_at": "DATETIME",
         },
+        "rialit_payments": {
+            "vpn_months": "INTEGER",
+            "vpn_gigabytes": "INTEGER",
+        },
         "wallet_transactions": {"topup_id": "INTEGER"},
         "operators": {
             "role": "VARCHAR(32) NOT NULL DEFAULT 'operator'",
