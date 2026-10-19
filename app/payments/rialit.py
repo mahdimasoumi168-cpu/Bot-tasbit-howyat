@@ -32,9 +32,13 @@ def _base_url() -> str:
 
 async def create_rialit_link(*, kind: str, user_id: int, amount_toman: int,
                              title: str, order_id: int | None = None,
-                             topup_id: int | None = None) -> str:
-    if kind not in {"order", "topup"} or amount_toman <= 0:
+                             topup_id: int | None = None,
+                             vpn_months: int | None = None,
+                             vpn_gigabytes: int | None = None) -> str:
+    if kind not in {"order", "topup", "vpn"} or amount_toman <= 0:
         raise RialitError("اطلاعات پرداخت معتبر نیست.")
+    if kind == "vpn" and (vpn_months not in (1, 2, 3, 4) or vpn_gigabytes not in range(10, 101, 10)):
+        raise RialitError("بسته VPN معتبر نیست.")
     settings = get_settings()
     api_key = settings.rialit_api_key.strip()
     if not api_key:
@@ -44,14 +48,21 @@ async def create_rialit_link(*, kind: str, user_id: int, amount_toman: int,
             RialitPayment.kind == kind, RialitPayment.status == "pending",
             RialitPayment.amount_toman == amount_toman
         )
-        q = q.where(RialitPayment.order_id == order_id) if kind == "order" else q.where(RialitPayment.topup_id == topup_id)
+        if kind == "order":
+            q = q.where(RialitPayment.order_id == order_id)
+        elif kind == "topup":
+            q = q.where(RialitPayment.topup_id == topup_id)
+        else:
+            q = q.where(RialitPayment.vpn_months == vpn_months,
+                         RialitPayment.vpn_gigabytes == vpn_gigabytes,
+                         RialitPayment.user_id == user_id)
         existing = (await session.execute(q.order_by(RialitPayment.id.desc()))).scalars().first()
         if existing and existing.pay_url:
             return existing.pay_url
     payload = {
         "amount": amount_toman,
         "callback_url": _base_url() + "/webhooks/rialit",
-        "order_id": f"{kind}-{order_id if kind == 'order' else topup_id}-{int(datetime.now(timezone.utc).timestamp())}",
+        "order_id": f"{kind}-{order_id if kind == 'order' else topup_id if kind == 'topup' else f'{user_id}-{vpn_months}-{vpn_gigabytes}'}-{int(datetime.now(timezone.utc).timestamp())}",
         "user_id": str(user_id),
     }
     timeout = aiohttp.ClientTimeout(total=25)
@@ -80,7 +91,10 @@ async def create_rialit_link(*, kind: str, user_id: int, amount_toman: int,
     async with SessionLocal() as session:
         session.add(RialitPayment(
             token=token, kind=kind, order_id=order_id, topup_id=topup_id,
-            user_id=user_id, amount_toman=amount_toman, pay_url=pay_url, status="pending"
+            user_id=user_id, amount_toman=amount_toman,
+            vpn_months=vpn_months if kind == "vpn" else None,
+            vpn_gigabytes=vpn_gigabytes if kind == "vpn" else None,
+            pay_url=pay_url, status="pending"
         ))
         await session.commit()
     return pay_url
@@ -157,6 +171,15 @@ async def process_rialit_webhook(payload: dict[str, Any]) -> tuple[int, dict[str
             return 200, {"ok": True, "action": "duplicate"}
         if record.status != "pending":
             return 200, {"ok": True, "action": "already_handled"}
+        if record.kind == "vpn":
+            user = await session.get(User, record.user_id)
+            record.status, record.paid_at = "paid", now
+            await session.commit()
+            return 200, {"ok": True, "action": "paid_vpn",
+                         "user_telegram_id": user.telegram_id if user else None,
+                         "amount_toman": record.amount_toman,
+                         "months": record.vpn_months,
+                         "gigabytes": record.vpn_gigabytes}
         if record.kind == "order":
             claim = await session.execute(update(Order).where(
                 Order.id == record.order_id,
