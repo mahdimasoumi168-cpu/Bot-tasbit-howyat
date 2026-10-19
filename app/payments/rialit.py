@@ -72,7 +72,7 @@ async def create_rialit_link(*, kind: str, user_id: int, amount_toman: int,
     except aiohttp.ClientError as exc:
         logger.warning("Rialit request failed: %s", type(exc).__name__)
         raise RialitError("ارتباط با درگاه ریالیت برقرار نشد؛ کمی بعد دوباره تلاش کنید.") from exc
-    token = str(body.get("token") or body.get("data", {}).get("token") or "").strip()
+    nested = body.get("data") if isinstance(body.get("data"), dict) else {}\n    token = str(body.get("token") or nested.get("token") or "").strip()
     if not token or len(token) > 512 or any(ch in token for ch in "/?#"):
         raise RialitError("پاسخ درگاه ریالیت برای ساخت لینک معتبر نبود.")
     pay_url = f"{API_ROOT}/redirect/{token}"
@@ -139,7 +139,7 @@ async def process_rialit_webhook(payload: dict[str, Any]) -> tuple[int, dict[str
     if status != 3:
         return 202, {"ok": True, "action": "pending"}
     try:
-        verified_amount = int(data.get("amount", data.get("paid_amount", expected_amount)))
+        verified_amount_raw = data.get("amount", data.get("paid_amount"))\n        if verified_amount_raw is None:\n            return 502, {"ok": False, "error": "verified_amount_missing"}\n        verified_amount = int(verified_amount_raw)
     except (TypeError, ValueError):
         return 400, {"ok": False, "error": "invalid_verified_amount"}
     if verified_amount != expected_amount:
