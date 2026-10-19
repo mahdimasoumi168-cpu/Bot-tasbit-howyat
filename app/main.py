@@ -33,7 +33,7 @@ async def main() -> None:
     bot = Bot(token=settings.bot_token)
 
     if settings.database_url.startswith("sqlite"):
-        raw_db_path = settings.database_url.split(":/// ", 1)[-1] if ":/// " in settings.database_url else settings.database_url.split(":///", 1)[-1]
+        raw_db_path = settings.database_url.split(":///", 1)[-1]
         db_path = Path(raw_db_path)
         fsm_path = db_path.with_name("fsm.db")
         persistent_root = Path("/data").resolve()
