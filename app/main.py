@@ -165,12 +165,20 @@ async def main() -> None:
         )
 
     async def rialit_webhook(request: web.Request) -> web.Response:
-        try:
-            payload = await request.json()
-        except (json.JSONDecodeError, ValueError):
-            return web.json_response({"ok": False, "error": "invalid_json"}, status=400)
-        if not isinstance(payload, dict):
-            return web.json_response({"ok": False, "error": "invalid_json"}, status=400)
+        # Rialit may return to callback_url with a token query parameter.
+        # Accept query parameters and JSON bodies; server-side verification
+        # in process_rialit_webhook remains the only payment confirmation.
+        payload = dict(request.query)
+        if request.can_read_body:
+            try:
+                body = await request.json()
+                if isinstance(body, dict):
+                    payload.update(body)
+            except (json.JSONDecodeError, ValueError):
+                if not payload:
+                    return web.json_response({"ok": False, "error": "invalid_json"}, status=400)
+        if not payload:
+            return web.json_response({"ok": False, "error": "missing_token"}, status=400)
         status_code, result = await process_rialit_webhook(payload)
         if status_code == 200:
             action = result.get("action")
@@ -220,6 +228,7 @@ async def main() -> None:
 
     app.router.add_post("/webhooks/variza", variza_webhook)
     app.router.add_post("/webhooks/rialit", rialit_webhook)
+    app.router.add_get("/webhooks/rialit", rialit_webhook)
     app.router.add_get("/payments/variza/return", variza_return)
     runner = web.AppRunner(app)
     await runner.setup()
