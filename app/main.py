@@ -11,6 +11,7 @@ from aiogram.fsm.storage.memory import SimpleEventIsolation
 
 from app.bot.admin import router as admin_router
 from app.bot.handlers import router
+from app.bot.vpn import router as vpn_router
 from app.bot.sqlite_fsm import SQLiteFSMStorage
 from app.core.config import get_settings
 from app.core.logging import configure_logging
@@ -51,6 +52,7 @@ async def main() -> None:
     storage = SQLiteFSMStorage(str(fsm_path))
     dp = Dispatcher(storage=storage, events_isolation=SimpleEventIsolation())
     dp.include_router(router)
+    dp.include_router(vpn_router)
     dp.include_router(admin_router)
 
     async def health(_request: web.Request) -> web.Response:

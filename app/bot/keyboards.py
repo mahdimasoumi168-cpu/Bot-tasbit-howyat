@@ -4,6 +4,7 @@ from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMa
 def main_menu(is_admin: bool = False, is_operator: bool = False) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text="🧾 خدمات دفتر نت یار مهاجر", callback_data="menu:services", style="primary")],
+        [InlineKeyboardButton(text="🔐 VPN فیلترشکن", callback_data="vpn:start", style="primary")],
         [InlineKeyboardButton(text="💰 اعتبار من", callback_data="menu:wallet", style="primary")],
         [InlineKeyboardButton(text="👤 حساب من", callback_data="menu:account", style="primary"),
          InlineKeyboardButton(text="📋 پیگیری درخواست‌ها", callback_data="menu:tracking", style="primary")],
