@@ -1,5 +1,10 @@
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from sqlalchemy import select
+
+from app.db.models import User
+from app.db.session import SessionLocal
+from app.payments.rialit import RialitError, create_rialit_link
 
 router = Router()
 
@@ -103,7 +108,8 @@ async def vpn_choose_data(callback: CallbackQuery) -> None:
         f"📦 حجم: {gigabytes} گیگابایت\n"
         f"💰 قیمت هر گیگابایت: {VPN_PRICE_PER_GB_TOMAN:,} تومان\n"
         f"💵 مبلغ کل: {amount:,} تومان\n\n"
-        "درگاه پرداخت در حال حاضر متصل نیست؛ برای جلوگیری از پرداخت ناموفق، قبل از فعال‌شدن درگاه هیچ مبلغی واریز نکنید.",
+        "برای پرداخت، گزینه «ادامه به پرداخت» را بزنید تا لینک امن ریالیت ساخته شود. "
+        "پرداخت فقط پس از تأیید سمت سرور ثبت خواهد شد. فعال‌سازی خودکار VPN در این مرحله انجام نمی‌شود.",
         reply_markup=vpn_summary_menu(months, gigabytes),
     )
 
@@ -121,9 +127,36 @@ async def vpn_payment_unavailable(callback: CallbackQuery) -> None:
     if months not in (1, 2, 3, 4):
         await callback.answer("مدت اشتراک معتبر نیست.", show_alert=True)
         return
-    await callback.answer("درگاه متصل نمی‌باشد.", show_alert=True)
+    amount = vpn_price_toman(gigabytes)
+    async with SessionLocal() as session:
+        user = (await session.execute(
+            select(User).where(User.telegram_id == callback.from_user.id)
+        )).scalar_one_or_none()
+    if user is None:
+        await callback.answer("ابتدا ربات را با /start راه‌اندازی کنید.", show_alert=True)
+        return
+    try:
+        pay_url = await create_rialit_link(
+            kind="vpn", user_id=user.id, amount_toman=amount,
+            title=f"خرید VPN، {months} ماه، {gigabytes} گیگابایت",
+            vpn_months=months, vpn_gigabytes=gigabytes,
+        )
+    except RialitError as exc:
+        await callback.answer(str(exc), show_alert=True)
+        return
+    except Exception:
+        await callback.answer("ساخت لینک پرداخت فعلاً ناموفق بود؛ دوباره تلاش کنید.", show_alert=True)
+        return
+    await callback.answer()
     await callback.message.answer(
-        "⚠️ درگاه پرداخت VPN متصل نمی‌باشد.\n\n"
-        "فعلاً امکان پرداخت یا ثبت نهایی سفارش وجود ندارد. لطفاً هیچ مبلغی واریز نکنید؛ "
-        "پس از اتصال درگاه، امکان خرید اعلام خواهد شد."
+        "💠 پرداخت VPN از طریق ریالیت\n\n"
+        f"⏳ مدت انتخابی: {months} ماه\n"
+        f"📦 حجم: {gigabytes} گیگابایت\n"
+        f"💰 مبلغ دقیق: {amount:,} تومان\n\n"
+        "پس از پرداخت، نتیجه از سمت درگاه بررسی می‌شود. این نسخه پرداخت را ثبت می‌کند؛ "
+        "فعال‌سازی خودکار VPN یا ساخت حساب/اشتراک انجام نمی‌شود.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💳 پرداخت با ریالیت", url=pay_url, style="primary")],
+            [InlineKeyboardButton(text="🔙 بازگشت به منوی VPN", callback_data="vpn:start", style="primary")],
+        ]),
     )

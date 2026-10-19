@@ -53,7 +53,7 @@ def test_payment_options_include_variza_gateway():
         "pay:wallet", "pay:card", "pay:coupon", "pay:variza"
     }
     assert {button.callback_data for button in topup_buttons} == {
-        "wallet:topup:variza", "wallet:topup:card", "flow:cancel"
+        "wallet:topup:variza", "wallet:topup:rialit", "wallet:topup:card", "flow:cancel"
     }
 
 

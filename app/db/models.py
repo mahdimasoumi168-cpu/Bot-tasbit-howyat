@@ -109,6 +109,25 @@ class VarizaPayment(Base):
     paid_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
+
+class RialitPayment(Base):
+    __tablename__ = "rialit_payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(512), unique=True, index=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), index=True)
+    topup_id: Mapped[int | None] = mapped_column(ForeignKey("wallet_topups.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    amount_toman: Mapped[int] = mapped_column(Integer)
+    vpn_months: Mapped[int | None] = mapped_column(Integer)
+    vpn_gigabytes: Mapped[int | None] = mapped_column(Integer)
+    pay_url: Mapped[str] = mapped_column(String(1024))
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
 class Wallet(Base):
     __tablename__ = "wallets"
 
