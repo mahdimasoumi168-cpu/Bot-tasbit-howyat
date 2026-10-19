@@ -18,6 +18,7 @@ from app.core.logging import configure_logging
 from app.db.seed import seed_services
 from app.db.session import init_db
 from app.payments.variza import process_webhook
+from app.payments.rialit import process_rialit_webhook
 
 
 async def main() -> None:
@@ -129,6 +130,7 @@ async def main() -> None:
         )
 
     app.router.add_post("/webhooks/variza", variza_webhook)
+    app.router.add_post("/webhooks/rialit", rialit_webhook)
     app.router.add_get("/payments/variza/return", variza_return)
     runner = web.AppRunner(app)
     await runner.setup()
