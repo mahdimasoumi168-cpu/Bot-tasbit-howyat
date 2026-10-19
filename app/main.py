@@ -129,6 +129,60 @@ async def main() -> None:
             charset="utf-8",
         )
 
+    async def rialit_webhook(request: web.Request) -> web.Response:
+        try:
+            payload = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return web.json_response({"ok": False, "error": "invalid_json"}, status=400)
+        if not isinstance(payload, dict):
+            return web.json_response({"ok": False, "error": "invalid_json"}, status=400)
+        status_code, result = await process_rialit_webhook(payload)
+        if status_code == 200:
+            action = result.get("action")
+            try:
+                if action == "paid_order":
+                    user_id = result.get("user_telegram_id")
+                    if user_id:
+                        await bot.send_message(
+                            user_id,
+                            f"✅ پرداخت ریالیت تأیید شد.\\n"
+                            f"🔢 شماره درخواست: {result.get('public_id', '—')}\\n"
+                            f"📌 خدمت: {result.get('service_name', 'خدمت')}\\n"
+                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\\n\\n"
+                            "پرونده برای بررسی و انجام خدمت در صف قرار گرفت.",
+                        )
+                    try:
+                        from app.bot.admin import send_case_to_operator
+                        await send_case_to_operator(bot, int(result["order_id"]))
+                    except Exception:
+                        logging.getLogger(__name__).exception(
+                            "Rialit payment succeeded but operator notification failed"
+                        )
+                elif action == "paid_topup":
+                    user_id = result.get("user_telegram_id")
+                    if user_id:
+                        await bot.send_message(
+                            user_id,
+                            f"✅ افزایش اعتبار با ریالیت تأیید شد.\\n"
+                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\\n"
+                            f"💳 موجودی جدید: {int(result.get('new_balance_toman', 0)):,} تومان",
+                        )
+                elif action == "already_paid":
+                    for admin_id in get_settings().admin_id_set:
+                        try:
+                            await bot.send_message(
+                                admin_id,
+                                "⚠️ ریالیت پرداختی برای پرونده/شارژ ثبت کرد که قبلاً پرداخت شده بود؛ لطفاً تراکنش را بررسی کنید.\\n"
+                                f"جزئیات: {json.dumps(result, ensure_ascii=False)}",
+                            )
+                        except Exception:
+                            pass
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Rialit webhook processed but notification failed"
+                )
+        return web.json_response(result, status=status_code)
+
     app.router.add_post("/webhooks/variza", variza_webhook)
     app.router.add_post("/webhooks/rialit", rialit_webhook)
     app.router.add_get("/payments/variza/return", variza_return)
