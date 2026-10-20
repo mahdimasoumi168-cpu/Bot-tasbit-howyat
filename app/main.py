@@ -178,7 +178,10 @@ async def main() -> None:
                 if not payload:
                     return web.json_response({"ok": False, "error": "invalid_json"}, status=400)
         if not payload:
-            return web.json_response({"ok": False, "error": "missing_token"}, status=400)
+            # Rialit dashboard test deliveries may be empty. Acknowledge the ping
+            # without treating it as a payment or changing any order/wallet state.
+            logging.getLogger(__name__).info("Rialit empty webhook/test ping acknowledged")
+            return web.json_response({"ok": True, "action": "test_acknowledged"}, status=200)
         status_code, result = await process_rialit_webhook(payload)
         if status_code == 200:
             action = result.get("action")
