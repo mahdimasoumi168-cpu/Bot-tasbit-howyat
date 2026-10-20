@@ -169,17 +169,26 @@ async def main() -> None:
         # Accept query parameters and JSON bodies; server-side verification
         # in process_rialit_webhook remains the only payment confirmation.
         payload = dict(request.query)
-        if request.can_read_body:
+        # Read raw bytes first: aiohttp may report that a POST can have a body
+        # even when Rialit's dashboard test sends an actually empty body.
+        raw_body = await request.read()
+        if raw_body.strip():
             try:
-                body = await request.json()
+                body = json.loads(raw_body.decode("utf-8"))
                 if isinstance(body, dict):
                     payload.update(body)
-            except (json.JSONDecodeError, ValueError):
+                else:
+                    return web.json_response(
+                        {"ok": False, "error": "invalid_json_object"}, status=400
+                    )
+            except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
                 if not payload:
-                    return web.json_response({"ok": False, "error": "invalid_json"}, status=400)
+                    return web.json_response(
+                        {"ok": False, "error": "invalid_json"}, status=400
+                    )
         if not payload:
-            # Rialit dashboard test deliveries may be empty. Acknowledge the ping
-            # without treating it as a payment or changing any order/wallet state.
+            # Empty dashboard test deliveries are acknowledged without treating
+            # them as payments or changing any order/wallet state.
             logging.getLogger(__name__).info("Rialit empty webhook/test ping acknowledged")
             return web.json_response({"ok": True, "action": "test_acknowledged"}, status=200)
         status_code, result = await process_rialit_webhook(payload)
