@@ -1,0 +1,16 @@
+name = "bot-tasbit-howyat"
+main = "cloudflare/src/worker.js"
+compatibility_date = "2026-10-21"
+workers_dev = true
+
+# After creating the D1 database, replace the placeholder with its actual ID.
+[[d1_databases]]
+binding = "DB"
+database_name = "bot-tasbit-howyat-db"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+# Set secrets using Wrangler or Cloudflare dashboard; never add values here:
+# npx wrangler secret put BOT_TOKEN
+# npx wrangler secret put WEBHOOK_SECRET
+# Use a non-secret variable for admin Telegram IDs only if you accept that it is visible
+# in Worker settings; otherwise use an access-controlled D1 setting.
