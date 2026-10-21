@@ -94,7 +94,7 @@ const SERVICE_LABELS = {
 
 const HOME_KEYBOARD = {
   inline_keyboard: [
-    [{ text: "🚀 باز کردن مینی‌اپ", web_app: { url: "https://bot-tasbit-howyat.mahdi-masoumi168.workers.dev/app" } }],
+    [{ text: "🚀 باز کردن مینی‌اپ", web_app: { url: "https://bot-tasbit-howyat-migration.mahdi-masoumi168.workers.dev/app" } }],
     [{ text: "🧾 خدمات دفتر نت‌یار مهاجر", callback_data: "menu:services" }],
     [{ text: "💰 اعتبار من", callback_data: "menu:wallet" }, { text: "👤 حساب من", callback_data: "menu:account" }],
     [{ text: "📋 پیگیری درخواست‌ها", callback_data: "menu:tracking" }],
