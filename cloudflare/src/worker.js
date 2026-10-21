@@ -350,13 +350,17 @@ async function handleMessage(env, message) {
       return sendMessage(env, chatId, "فرم تکمیل شد، اما پایگاه داده هنوز متصل نیست؛ درخواست ثبت نشد. لطفاً بعداً تلاش کنید.", HOME_KEYBOARD);
     }
     const user = await env.DB.prepare("SELECT id FROM users WHERE telegram_id=?").bind(String(userId)).first();
-    const service = await env.DB.prepare("SELECT price_toman FROM services WHERE code=?").bind(current.data.service_code).first();
-    if (!user || !service) return sendMessage(env, chatId, "ثبت درخواست ناموفق بود؛ لطفاً با پشتیبانی تماس بگیرید.", HOME_KEYBOARD);
-    const publicId = `NY${Date.now().toString(36).toUpperCase()}`;
-    await env.DB.prepare("INSERT INTO orders(public_id,user_id,service_code,status,amount_toman,data_json,description) VALUES(?,?,?,'awaiting_payment',?,?,?)")
+    const service = await env.DB.prepare("SELECT price_toman,enabled FROM services WHERE code=?").bind(current.data.service_code).first();
+    if (!user || !service) return sendMessage(env, chatId, "ذخیره اطلاعات ناموفق بود؛ لطفاً با پشتیبانی تماس بگیرید.", HOME_KEYBOARD);
+    if (!service.enabled || !Number.isSafeInteger(service.price_toman) || service.price_toman <= 0) {
+      await saveState(env, userId, "idle", {});
+      return sendMessage(env, chatId, "این خدمت هنوز در نسخه مهاجرتی فعال نشده است؛ تعرفه و قوانین باید توسط مدیریت تأیید شود. هیچ پرونده یا پرداختی ثبت نشد.", HOME_KEYBOARD);
+    }
+    const publicId = `DRAFT-${Date.now().toString(36).toUpperCase()}`;
+    await env.DB.prepare("INSERT INTO order_drafts(public_id,user_id,service_code,status,amount_toman,data_json,description) VALUES(?,?,?,'awaiting_payment',?,?,?)")
       .bind(publicId, user.id, current.data.service_code, service.price_toman, JSON.stringify(answers), answers.description || "").run();
     await saveState(env, userId, "idle", {});
-    return sendMessage(env, chatId, `✅ فرم شما ثبت شد.\n🔢 کد پیگیری: ${publicId}\n💰 مبلغ پایه: ${Number(service.price_toman).toLocaleString("fa-IR")} تومان\n\nتوجه: اتصال پرداخت و پنل بررسی هنوز منتقل نشده است؛ این نسخه از شما وجه دریافت نمی‌کند.`, HOME_KEYBOARD);
+    return sendMessage(env, chatId, `اطلاعات فرم ذخیره شد، اما هنوز پرونده نهایی ایجاد نشده است.\n\nدرگاه پرداخت و بررسی رسید هنوز منتقل نشده‌اند؛ این نسخه هیچ وجهی دریافت نمی‌کند و اطلاعات شما تا تکمیل مهاجرت در پیش‌نویس نگهداری می‌شود.\nشناسه پیش‌نویس: ${publicId}`, HOME_KEYBOARD);
   }
   return sendMessage(env, chatId, "برای شروع، /start را بزنید.", HOME_KEYBOARD);
 }
@@ -381,11 +385,18 @@ export default {
     try { update = await request.json(); } catch { return json({ ok: false, error: "invalid_json" }, 400); }
     try {
       if (env.DB && Number.isInteger(update.update_id)) {
-        const inserted = await env.DB.prepare("INSERT OR IGNORE INTO processed_updates(update_id) VALUES(?)").bind(update.update_id).run();
-        if (inserted.meta?.changes === 0) return json({ ok: true, duplicate: true });
+        const inserted = await env.DB.prepare("INSERT OR IGNORE INTO processed_updates(update_id,status) VALUES(?,'processing')").bind(update.update_id).run();
+        if (inserted.meta?.changes === 0) {
+          const previous = await env.DB.prepare("SELECT status FROM processed_updates WHERE update_id=?").bind(update.update_id).first();
+          if (previous?.status === "processed") return json({ ok: true, duplicate: true });
+          return json({ ok: false, error: "update_in_progress_retry" }, 503);
+        }
       }
       if (update.callback_query) await handleCallback(env, update.callback_query);
       else if (update.message) await handleMessage(env, update.message);
+      if (env.DB && Number.isInteger(update.update_id)) {
+        await env.DB.prepare("UPDATE processed_updates SET status='processed',processed_at=CURRENT_TIMESTAMP WHERE update_id=?").bind(update.update_id).run();
+      }
       return json({ ok: true });
     } catch (error) {
       if (env.DB && Number.isInteger(update?.update_id)) {
