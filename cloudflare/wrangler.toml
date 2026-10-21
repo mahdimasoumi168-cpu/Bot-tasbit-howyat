@@ -1,0 +1,13 @@
+name = "bot-tasbit-howyat-migration"
+main = "src/worker.js"
+compatibility_date = "2026-10-21"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bot-tasbit-howyat-migration"
+database_id = "f7a2d3ed-81f6-4e06-9e12-54507efd367b"
+
+# Set secrets separately in Cloudflare. Never put BOT_TOKEN in this file:
+# npx wrangler secret put BOT_TOKEN
+# npx wrangler secret put WEBHOOK_SECRET
