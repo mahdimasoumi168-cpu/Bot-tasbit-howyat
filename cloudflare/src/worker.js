@@ -49,7 +49,7 @@ async function authorizeMiniApp(request, env) {
   const user = await verifyTelegramInitData(body?.initData, env.BOT_TOKEN);
   if (!user) return { error: "invalid_telegram_session" };
   const adminIds = String(env.ADMIN_IDS || "").split(",").map(v => v.trim()).filter(Boolean);
-  return { user, isAdmin: adminIds.includes(String(user.id)) };
+  return { user, isAdmin: adminIds.includes(String(user.id)), body };
 }
 
 async function miniAppApi(request, env, path) {
@@ -70,6 +70,17 @@ async function miniAppApi(request, env, path) {
       } catch (error) { console.error("miniapp_services_query_failed", error?.message || "unknown_error"); }
     }
     return json({ ok: true, services: MINIAPP_SERVICE_FALLBACK, mode: "preview" });
+  }
+  if (path === "/api/miniapp/select-service") {
+    const code = auth.body?.code;
+    if (typeof code !== "string" || !Object.hasOwn(SERVICE_LABELS, code)) return json({ ok: false, error: "invalid_service" }, 400);
+    if (!env.DB) return json({ ok: false, error: "database_not_ready" }, 503);
+    const service = await env.DB.prepare("SELECT code,enabled,price_toman FROM services WHERE code=?").bind(code).first();
+    if (!service || !service.enabled || !Number.isSafeInteger(service.price_toman) || service.price_toman <= 0) {
+      return json({ ok: false, error: "service_not_ready" }, 409);
+    }
+    await showRules(env, auth.user.id, code, auth.user.id);
+    return json({ ok: true });
   }
   if (path === "/api/miniapp/orders") {
     if (!env.DB) return json({ ok: false, error: "database_not_ready" }, 503);
