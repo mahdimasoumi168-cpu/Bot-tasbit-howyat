@@ -1,3 +1,88 @@
+import { MINIAPP_HTML } from "./miniapp.js";
+
+
+const MINIAPP_SERVICE_FALLBACK = [
+  { code: "identity", name: "تثبیت هویت", description: "بررسی مدارک و درخواست تثبیت هویت" },
+  { code: "khodnevis", name: "کد رهگیری خودنویس", description: "ثبت درخواست دریافت کد رهگیری" },
+  { code: "fida", name: "ثبت‌نام کد فیدا غیرحضوری", description: "ثبت اطلاعات برای دریافت کد فیدا" },
+  { code: "dolatman_login", name: "رفع مشکل ورود به درگاه دولت من", description: "بررسی مشکل ورود و دسترسی" },
+  { code: "student_screening", name: "آزمون غربالگری دانش‌آموزان", description: "ثبت اطلاعات دانش‌آموز" },
+  { code: "other_service", name: "درخواست خدمات دیگر", description: "شرح خدمت موردنیاز" }
+];
+
+function bytesToHex(bytes) {
+  return Array.from(new Uint8Array(bytes), b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function hmacSha256(keyBytes, messageBytes) {
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", key, messageBytes));
+}
+
+async function verifyTelegramInitData(initData, botToken) {
+  if (!initData || !botToken || initData.length > 8192) return null;
+  const params = new URLSearchParams(initData);
+  const receivedHash = params.get("hash");
+  if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash)) return null;
+  params.delete("hash");
+  params.delete("signature");
+  const pairs = Array.from(params.entries()).sort(([a], [b]) => a.localeCompare(b));
+  const checkString = pairs.map(([k, v]) => k + "=" + v).join("\n");
+  const secret = await hmacSha256(new TextEncoder().encode("WebAppData"), new TextEncoder().encode(botToken));
+  const expectedHash = bytesToHex(await hmacSha256(secret, new TextEncoder().encode(checkString)));
+  if (expectedHash.length !== receivedHash.length) return null;
+  let diff = 0;
+  for (let i = 0; i < expectedHash.length; i++) diff |= expectedHash.charCodeAt(i) ^ receivedHash.toLowerCase().charCodeAt(i);
+  if (diff !== 0) return null;
+  const authDate = Number(params.get("auth_date"));
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(authDate) || authDate > now + 60 || now - authDate > 86400) return null;
+  let user;
+  try { user = JSON.parse(params.get("user") || "null"); } catch { return null; }
+  if (!user || !Number.isSafeInteger(user.id)) return null;
+  return user;
+}
+
+async function authorizeMiniApp(request, env) {
+  let body;
+  try { body = await request.json(); } catch { return { error: "invalid_json" }; }
+  const user = await verifyTelegramInitData(body?.initData, env.BOT_TOKEN);
+  if (!user) return { error: "invalid_telegram_session" };
+  const adminIds = String(env.ADMIN_IDS || "").split(",").map(v => v.trim()).filter(Boolean);
+  return { user, isAdmin: adminIds.includes(String(user.id)) };
+}
+
+async function miniAppApi(request, env, path) {
+  const auth = await authorizeMiniApp(request, env);
+  if (auth.error) return json({ ok: false, error: auth.error }, 401);
+  if (path === "/api/miniapp/me") {
+    if (env.DB) {
+      try { await ensureUser(env, auth.user); }
+      catch (error) { console.error("miniapp_user_sync_failed", error?.message || "unknown_error"); return json({ ok: false, error: "database_not_ready" }, 503); }
+    }
+    return json({ ok: true, user: { id: auth.user.id, first_name: auth.user.first_name || "", last_name: auth.user.last_name || "", username: auth.user.username || "" }, isAdmin: auth.isAdmin, database_bound: Boolean(env.DB) });
+  }
+  if (path === "/api/miniapp/services") {
+    if (env.DB) {
+      try {
+        const rows = await env.DB.prepare("SELECT code,name,description,enabled FROM services ORDER BY id").all();
+        if (rows.results?.length) return json({ ok: true, services: rows.results.filter(s => s.enabled).map(s => ({ code: s.code, name: s.name, description: s.description || "" })) });
+      } catch (error) { console.error("miniapp_services_query_failed", error?.message || "unknown_error"); }
+    }
+    return json({ ok: true, services: MINIAPP_SERVICE_FALLBACK, mode: "preview" });
+  }
+  if (path === "/api/miniapp/orders") {
+    if (!env.DB) return json({ ok: false, error: "database_not_ready" }, 503);
+    try {
+      const u = await env.DB.prepare("SELECT id FROM users WHERE telegram_id=?").bind(String(auth.user.id)).first();
+      if (!u) return json({ ok: true, orders: [] });
+      const result = await env.DB.prepare("SELECT public_id,service_code,status,created_at FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 30").bind(u.id).all();
+      return json({ ok: true, orders: result.results || [] });
+    } catch (error) { console.error("miniapp_orders_query_failed", error?.message || "unknown_error"); return json({ ok: false, error: "database_not_ready" }, 503); }
+  }
+  return json({ ok: false, error: "not_found" }, 404);
+}
+
 const SERVICE_LABELS = {
   identity: "🪪 تثبیت هویت",
   khodnevis: "📝 کد رهگیری خودنویس",
@@ -269,6 +354,13 @@ async function handleMessage(env, message) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (request.method === "GET" && (url.pathname === "/app" || url.pathname === "/app/")) {
+      return new Response(MINIAPP_HTML, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } });
+    }
+    if (url.pathname.startsWith("/api/miniapp/")) {
+      if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+      return miniAppApi(request, env, url.pathname);
+    }
     if (request.method === "GET" && url.pathname === "/health") {
       return json({ ok: true, service: "کمک‌یار مهاجر", mode: "cloudflare-migration-scaffold", database_bound: Boolean(env.DB), token_configured: Boolean(env.BOT_TOKEN), webhook_secret_configured: Boolean(env.WEBHOOK_SECRET), note: "این نسخه‌ی مهاجرت اولیه است؛ پرداخت و پنل مدیریت هنوز منتقل نشده‌اند." });
     }
