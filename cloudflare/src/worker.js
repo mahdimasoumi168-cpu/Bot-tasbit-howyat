@@ -312,6 +312,15 @@ async function handleMessage(env, message) {
   if (!chatId || !userId) return;
   await ensureUser(env, message.from);
   const text = (message.text || message.caption || "").trim();
+  if (message.web_app_data?.data) {
+    try {
+      const appData = JSON.parse(message.web_app_data.data);
+      if (appData?.action === "start_service" && typeof appData.code === "string" && Object.hasOwn(SERVICE_LABELS, appData.code)) {
+        return showRules(env, chatId, appData.code, userId);
+      }
+    } catch {}
+    return sendMessage(env, chatId, "اطلاعات دریافتی از مینی‌اپ معتبر نبود. لطفاً دوباره تلاش کنید.", HOME_KEYBOARD);
+  }
   if (text === "/start" || text === "🔄 شروع مجدد") {
     await saveState(env, userId, "idle", {});
     return sendMessage(env, chatId, "سلام، به کمک‌یار مهاجر خوش آمدید.\n\nاز منوی زیر گزینه موردنظر را انتخاب کنید:", HOME_KEYBOARD);
@@ -379,6 +388,9 @@ export default {
       else if (update.message) await handleMessage(env, update.message);
       return json({ ok: true });
     } catch (error) {
+      if (env.DB && Number.isInteger(update?.update_id)) {
+        try { await env.DB.prepare("DELETE FROM processed_updates WHERE update_id=?").bind(update.update_id).run(); } catch {}
+      }
       console.error("webhook_processing_failed", error?.message || "unknown_error");
       // A non-200 response allows Telegram to retry transient processing failures.
       return json({ ok: false, error: "processing_failed" }, 500);
