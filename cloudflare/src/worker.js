@@ -65,7 +65,7 @@ async function miniAppApi(request, env, path) {
   if (path === "/api/miniapp/services") {
     if (env.DB) {
       try {
-        const rows = await env.DB.prepare("SELECT code,name,description,enabled FROM services ORDER BY id").all();
+        const rows = await env.DB.prepare("SELECT code,name,description,enabled FROM services ORDER BY rowid").all();
         if (rows.results?.length) return json({ ok: true, services: rows.results.filter(s => s.enabled).map(s => ({ code: s.code, name: s.name, description: s.description || "" })) });
       } catch (error) { console.error("miniapp_services_query_failed", error?.message || "unknown_error"); }
     }
@@ -94,6 +94,7 @@ const SERVICE_LABELS = {
 
 const HOME_KEYBOARD = {
   inline_keyboard: [
+    [{ text: "🚀 باز کردن مینی‌اپ", web_app: { url: "https://bot-tasbit-howyat.mahdi-masoumi168.workers.dev/app" } }],
     [{ text: "🧾 خدمات دفتر نت‌یار مهاجر", callback_data: "menu:services" }],
     [{ text: "💰 اعتبار من", callback_data: "menu:wallet" }, { text: "👤 حساب من", callback_data: "menu:account" }],
     [{ text: "📋 پیگیری درخواست‌ها", callback_data: "menu:tracking" }],
