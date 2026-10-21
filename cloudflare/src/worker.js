@@ -378,7 +378,7 @@ async function handleMessage(env, message) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (request.method === "GET" && (url.pathname === "/app" || url.pathname === "/app/")) {
+    if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/app" || url.pathname === "/app/")) {
       return new Response(MINIAPP_HTML, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } });
     }
     if (url.pathname.startsWith("/api/miniapp/")) {
