@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS processed_updates (
   update_id INTEGER PRIMARY KEY,
-  processed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  status TEXT NOT NULL DEFAULT 'processing' CHECK(status IN ('processing','processed')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  processed_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS services (
@@ -42,6 +44,20 @@ CREATE TABLE IF NOT EXISTS orders (
 
 CREATE INDEX IF NOT EXISTS idx_orders_user_created ON orders(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS order_drafts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  public_id TEXT NOT NULL UNIQUE,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  service_code TEXT NOT NULL REFERENCES services(code),
+  amount_toman INTEGER NOT NULL DEFAULT 0 CHECK(amount_toman >= 0),
+  data_json TEXT NOT NULL DEFAULT '{}',
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'awaiting_payment',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_order_drafts_user_created ON order_drafts(user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS payments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,10 +145,12 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Prices are deliberately unset and services disabled until current tariffs/rules are verified.
+-- This prevents the migration database from accepting requests at stale/default prices.
 INSERT OR IGNORE INTO services(code,name,description,price_toman,enabled,rules_text) VALUES
-('identity','تثبیت هویت','خدمت تثبیت هویت',280000,1,''),
-('khodnevis','کد رهگیری خودنویس','خدمت کد رهگیری خودنویس',1700000,1,''),
-('fida','ثبت‌نام کد فیدا غیرحضوری','ثبت‌نام کد فیدا غیرحضوری',100,1,''),
-('dolatman_login','رفع مشکل ورود به درگاه دولت من','رفع مشکل ورود به درگاه دولت من',100,1,''),
-('student_screening','آزمون غربالگری دانش‌آموزان','آزمون غربالگری دانش‌آموزان',400,1,''),
-('other_service','درخواست خدمات دیگر','ثبت درخواست خدمت دیگر',100,1,'');
+('identity','تثبیت هویت','خدمت تثبیت هویت',0,0,''),
+('khodnevis','کد رهگیری خودنویس','خدمت کد رهگیری خودنویس',0,0,''),
+('fida','ثبت‌نام کد فیدا غیرحضوری','ثبت‌نام کد فیدا غیرحضوری',0,0,''),
+('dolatman_login','رفع مشکل ورود به درگاه دولت من','رفع مشکل ورود و دسترسی',0,0,''),
+('student_screening','آزمون غربالگری دانش‌آموزان','ثبت اطلاعات دانش‌آموز',0,0,''),
+('other_service','درخواست خدمات دیگر','ثبت درخواست خدمت دیگر',0,0,'');
