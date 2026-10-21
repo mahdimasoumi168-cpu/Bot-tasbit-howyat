@@ -25,10 +25,9 @@ async function verifyTelegramInitData(initData, botToken) {
   const receivedHash = params.get("hash");
   if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash)) return null;
   params.delete("hash");
-  params.delete("signature");
   const pairs = Array.from(params.entries()).sort(([a], [b]) => a.localeCompare(b));
   const checkString = pairs.map(([k, v]) => k + "=" + v).join("\n");
-  const secret = await hmacSha256(new TextEncoder().encode("WebAppData"), new TextEncoder().encode(botToken));
+  const secret = await hmacSha256(new TextEncoder().encode(botToken), new TextEncoder().encode("WebAppData"));
   const expectedHash = bytesToHex(await hmacSha256(secret, new TextEncoder().encode(checkString)));
   if (expectedHash.length !== receivedHash.length) return null;
   let diff = 0;
