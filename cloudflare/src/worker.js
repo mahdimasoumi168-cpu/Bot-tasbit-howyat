@@ -421,11 +421,100 @@ async function handleMessage(env, message) {
   return sendMessage(env, chatId, "برای شروع، /start را بزنید.", HOME_KEYBOARD);
 }
 
+
+async function handleRialitWebhook(request, env) {
+  if (request.method === "GET") {
+    return json({ ok: true, service: "rialit-webhook", endpoint: "/webhooks/rialit", method: "POST" });
+  }
+  if (request.method !== "POST") {
+    return json({ ok: false, error: "method_not_allowed" }, 405);
+  }
+  if (!env.DB) return json({ ok: false, error: "database_not_bound" }, 503);
+  if (!env.RIALIT_API_KEY) return json({ ok: false, error: "gateway_not_configured" }, 503);
+  let payload;
+  try { payload = await request.json(); } catch { return json({ ok: false, error: "invalid_json" }, 400); }
+  const token = String(payload?.token || payload?.payment_token || payload?.data?.token || "").trim();
+  // Providers sometimes send a connection-test event without a payment token.
+  if (!token && (payload?.event === "test" || payload?.type === "test" || payload?.test === true)) {
+    return json({ ok: true, action: "test_event_acknowledged" });
+  }
+  if (!token) return json({ ok: false, error: "missing_token" }, 400);
+  const payment = await env.DB.prepare("SELECT * FROM rialit_payments WHERE token=?").bind(token).first();
+  if (!payment) return json({ ok: false, error: "unknown_payment" }, 404);
+  if (payment.status === "paid") return json({ ok: true, action: "duplicate" });
+  let verifiedResponse;
+  try {
+    verifiedResponse = await fetch("https://api.rialit.org/api/v1/verify/" + encodeURIComponent(token), {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + env.RIALIT_API_KEY, "Accept": "application/json" }
+    });
+  } catch {
+    return json({ ok: false, error: "verification_unavailable" }, 502);
+  }
+  if (verifiedResponse.status === 409) return json({ ok: true, action: "pending" }, 202);
+  if (verifiedResponse.status !== 200) {
+    console.error("rialit_verify_failed", verifiedResponse.status);
+    return json({ ok: false, error: "verification_unavailable" }, 502);
+  }
+  let verified;
+  try { verified = await verifiedResponse.json(); } catch { return json({ ok: false, error: "invalid_verification_response" }, 502); }
+  const data = verified?.data && typeof verified.data === "object" ? verified.data : verified;
+  const verifiedStatus = Number(data?.status);
+  if (verifiedStatus === 4) {
+    await env.DB.prepare("UPDATE rialit_payments SET status='failed' WHERE id=? AND status='pending'").bind(payment.id).run();
+    return json({ ok: true, action: "failed" });
+  }
+  if (verifiedStatus !== 3) return json({ ok: true, action: "pending" }, 202);
+  const verifiedAmount = Number(data?.amount ?? data?.paid_amount);
+  if (!Number.isFinite(verifiedAmount) || verifiedAmount !== Number(payment.amount_toman)) {
+    console.error("rialit_amount_mismatch", payment.id);
+    return json({ ok: false, error: "amount_mismatch" }, 400);
+  }
+  const now = new Date().toISOString();
+  if (payment.kind === "order") {
+    const claim = await env.DB.prepare("UPDATE orders SET status='payment_approved',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('waiting_payment','waiting_receipt_review')").bind(payment.order_id).run();
+    if ((claim.meta?.changes || 0) !== 1) {
+      await env.DB.prepare("UPDATE rialit_payments SET status='ignored' WHERE id=? AND status='pending'").bind(payment.id).run();
+      return json({ ok: true, action: "already_handled" });
+    }
+    await env.DB.prepare("INSERT INTO payments(order_id,user_id,provider,provider_payment_id,amount_toman,status,verified_at,receipt_type) VALUES(?,?,?,?,?,'approved',?,'rialit')").bind(payment.order_id,payment.user_id,"rialit",token,payment.amount_toman,now).run();
+  } else if (payment.kind === "topup") {
+    const topup = await env.DB.prepare("SELECT * FROM wallet_topups WHERE id=?").bind(payment.topup_id).first();
+    if (!topup || !["awaiting_receipt","waiting_receipt_review"].includes(topup.status)) {
+      await env.DB.prepare("UPDATE rialit_payments SET status='ignored' WHERE id=? AND status='pending'").bind(payment.id).run();
+      return json({ ok: true, action: "already_handled" });
+    }
+    const claim = await env.DB.prepare("UPDATE wallet_topups SET status='approved',reviewed_at=? WHERE id=? AND status IN ('awaiting_receipt','waiting_receipt_review')").bind(now,payment.topup_id).run();
+    if ((claim.meta?.changes || 0) !== 1) return json({ ok: true, action: "already_handled" });
+    await env.DB.prepare("INSERT INTO wallets(user_id,balance_toman) VALUES(?,0) ON CONFLICT(user_id) DO NOTHING").bind(topup.user_id).run();
+    await env.DB.prepare("UPDATE wallets SET balance_toman=balance_toman+?,updated_at=CURRENT_TIMESTAMP WHERE user_id=?").bind(payment.amount_toman,topup.user_id).run();
+    const wallet = await env.DB.prepare("SELECT balance_toman FROM wallets WHERE user_id=?").bind(topup.user_id).first();
+    await env.DB.prepare("INSERT INTO wallet_transactions(user_id,amount_toman,balance_after_toman,kind,description,topup_id) VALUES(?,?,?,'topup',?,?)").bind(topup.user_id,payment.amount_toman,wallet?.balance_toman||0,"افزایش اعتبار ریالت‌پی #"+topup.id,topup.id).run();
+  } else if (payment.kind !== "vpn") {
+    return json({ ok: false, error: "unsupported_payment_kind" }, 400);
+  }
+  const update = await env.DB.prepare("UPDATE rialit_payments SET status='paid',paid_at=? WHERE id=? AND status='pending'").bind(now,payment.id).run();
+  if ((update.meta?.changes || 0) !== 1) return json({ ok: true, action: "duplicate" });
+  // VPN provisioning must be completed by the migrated VPN fulfillment workflow.
+  if (payment.kind === "vpn") {
+    return json({ ok: true, action: "paid_vpn_pending_fulfillment", user_id: payment.user_id, months: payment.vpn_months, gigabytes: payment.vpn_gigabytes });
+  }
+  return json({ ok: true, action: payment.kind === "order" ? "paid_order" : "paid_topup" });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/app" || url.pathname === "/app/")) {
       return new Response(MINIAPP_HTML, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" } });
+    }
+    if (url.pathname === "/webhooks/rialit") return handleRialitWebhook(request, env);
+    if (url.pathname === "/webhooks/variza") {
+      if (request.method === "GET") return json({ ok: true, service: "variza-webhook", method: "POST", note: "Signed webhook integration must be validated before live payments." });
+      return json({ ok: false, error: "variza_webhook_not_migrated" }, 501);
+    }
+    if (url.pathname === "/payments/variza/return" && request.method === "GET") {
+      return new Response("پرداخت واریزا دریافت شد. وضعیت پرداخت فقط پس از تأیید سمت سرور مشخص می‌شود؛ به ربات برگردید.", {headers:{"content-type":"text/plain; charset=utf-8"}});
     }
     if (url.pathname.startsWith("/api/miniapp/")) {
       if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
