@@ -319,7 +319,7 @@ async function startRialitTopup(env, chatId, telegramId, amount) {
       headers: { "Authorization": "Bearer " + env.RIALIT_API_KEY, "Accept": "application/json", "Content-Type": "application/json" },
       body: JSON.stringify({
         amount,
-        callback_url: String(env.PUBLIC_BASE_URL || "https://bot-tasbit-howyat-migration.mahdi-masoumi168.workers.dev").replace(/\/$/, "") + "/webhooks/rialit",
+        callback_url: "https://bot-tasbit-howyat-migration.mahdi-masoumi168.workers.dev/webhooks/rialit",
         order_id: "topup-" + topupId + "-" + Date.now(),
         user_id: Number(user.id)
       })
