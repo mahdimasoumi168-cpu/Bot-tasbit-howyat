@@ -20,6 +20,7 @@ async function hmacSha256(keyBytes, messageBytes) {
 }
 
 async function verifyTelegramInitData(initData, botToken) {
+  botToken = String(botToken || "").trim();
   if (!initData) return { user: null, reason: "init_data_missing" };
   if (!botToken) return { user: null, reason: "bot_token_missing" };
   if (initData.length > 8192) return { user: null, reason: "init_data_too_long" };
@@ -127,8 +128,9 @@ function json(data, status = 200) {
 }
 
 async function telegram(env, method, payload) {
-  if (!env.BOT_TOKEN) throw new Error("BOT_TOKEN_missing");
-  const response = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
+  const botToken = String(env.BOT_TOKEN || "").trim();
+  if (!botToken) throw new Error("BOT_TOKEN_missing");
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -640,7 +642,8 @@ export default {
       let telegramNetworkError = false;
       if (env.BOT_TOKEN) {
         try {
-          const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getMe`);
+          const botToken = String(env.BOT_TOKEN || "").trim();
+          const r = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
           telegramApiHttpStatus = r.status;
           const d = await r.json();
           telegramApiOk = Boolean(r.ok && d.ok && d.result?.is_bot);
