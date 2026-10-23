@@ -11,7 +11,7 @@ export const MINIAPP_HTML = String.raw`<!doctype html>
 :root[data-theme="dark"] body{background:var(--bg);color:var(--ink)}
 :root[data-theme="dark"] .panel,:root[data-theme="dark"] .service{background:var(--card);border-color:var(--border);box-shadow:var(--shadow)}
 :root[data-theme="dark"] .tile{border-color:var(--border);box-shadow:var(--shadow);color:var(--ink)}
-:root[data-theme="dark"] .t-blue{background:#172b48}.root[data-theme="dark"] .t-blue .ico{background:#24436d}
+:root[data-theme="dark"] .t-blue{background:#172b48}:root[data-theme="dark"] .t-blue .ico{background:#24436d}
 :root[data-theme="dark"] .t-teal{background:#12332f}:root[data-theme="dark"] .t-teal .ico{background:#1d5149}
 :root[data-theme="dark"] .t-orange{background:#39291c}:root[data-theme="dark"] .t-orange .ico{background:#604027}
 :root[data-theme="dark"] .t-purple{background:#2b2342}:root[data-theme="dark"] .t-purple .ico{background:#46376c}
