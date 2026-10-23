@@ -393,15 +393,27 @@ export default {
     if (request.method === "GET" && url.pathname === "/health") {
       let telegramBot = null;
       let telegramApiOk = false;
+      let telegramApiHttpStatus = null;
+      let telegramApiErrorCode = null;
+      let telegramApiError = null;
+      let telegramNetworkError = false;
       if (env.BOT_TOKEN) {
         try {
           const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getMe`);
+          telegramApiHttpStatus = r.status;
           const d = await r.json();
           telegramApiOk = Boolean(r.ok && d.ok && d.result?.is_bot);
           if (telegramApiOk) telegramBot = d.result.username || null;
-        } catch {}
+          else {
+            telegramApiErrorCode = Number.isInteger(d.error_code) ? d.error_code : null;
+            telegramApiError = typeof d.description === "string" ? d.description.slice(0, 180) : "telegram_api_rejected_request";
+          }
+        } catch (e) {
+          telegramNetworkError = true;
+          telegramApiError = "network_error";
+        }
       }
-      return json({ ok: true, service: "کمک‌یار مهاجر", mode: "cloudflare-migration-scaffold", database_bound: Boolean(env.DB), token_configured: Boolean(env.BOT_TOKEN), telegram_api_ok: telegramApiOk, telegram_bot_username: telegramBot, webhook_secret_configured: Boolean(env.WEBHOOK_SECRET), note: "این نسخه‌ی مهاجرت اولیه است؛ پرداخت و پنل مدیریت هنوز منتقل نشده‌اند." });
+      return json({ ok: true, service: "کمک‌یار مهاجر", mode: "cloudflare-migration-scaffold", database_bound: Boolean(env.DB), token_configured: Boolean(env.BOT_TOKEN), telegram_api_ok: telegramApiOk, telegram_bot_username: telegramBot, telegram_api_http_status: telegramApiHttpStatus, telegram_api_error_code: telegramApiErrorCode, telegram_api_error: telegramApiError, telegram_network_error: telegramNetworkError, webhook_secret_configured: Boolean(env.WEBHOOK_SECRET), note: "این نسخه‌ی مهاجرت اولیه است؛ پرداخت و پنل مدیریت هنوز منتقل نشده‌اند." });
     }
     if (url.pathname !== "/telegram-webhook" || request.method !== "POST") return json({ ok: false, error: "not_found" }, 404);
     if (!env.BOT_TOKEN) return json({ ok: false, error: "BOT_TOKEN_missing" }, 503);
