@@ -429,16 +429,14 @@ async function handleRialitWebhook(request, env) {
   if (request.method !== "POST") {
     return json({ ok: false, error: "method_not_allowed" }, 405);
   }
-  if (!env.DB) return json({ ok: false, error: "database_not_bound" }, 503);
-  if (!env.RIALIT_API_KEY) return json({ ok: false, error: "gateway_not_configured" }, 503);
   let payload;
   try { payload = await request.json(); } catch { return json({ ok: false, error: "invalid_json" }, 400); }
-  const token = String(payload?.token || payload?.payment_token || payload?.data?.token || "").trim();
-  // Providers sometimes send a connection-test event without a payment token.
-  if (!token && (payload?.event === "test" || payload?.type === "test" || payload?.test === true)) {
-    return json({ ok: true, action: "test_event_acknowledged" });
-  }
-  if (!token) return json({ ok: false, error: "missing_token" }, 400);
+  const token = String(payload?.token || payload?.payment_token || payload?.data?.token || payload?.payment?.token || "").trim();
+  // Webhook-provider test deliveries may contain no payment token. Acknowledge them
+  // without touching payment state; this must never mark a payment as paid.
+  if (!token) return json({ ok: true, action: "event_received_without_payment_token" });
+  if (!env.DB) return json({ ok: false, error: "database_not_bound" }, 503);
+  if (!env.RIALIT_API_KEY) return json({ ok: false, error: "gateway_not_configured" }, 503);
   const payment = await env.DB.prepare("SELECT * FROM rialit_payments WHERE token=?").bind(token).first();
   if (!payment) return json({ ok: false, error: "unknown_payment" }, 404);
   if (payment.status === "paid") return json({ ok: true, action: "duplicate" });
