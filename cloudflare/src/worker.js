@@ -109,7 +109,7 @@ const SERVICE_LABELS = {
 
 const HOME_KEYBOARD = {
   inline_keyboard: [
-    [{ text: "🚀 باز کردن مینی‌اپ", web_app: { url: "https://bot-tasbit-howyat-migration.mahdi-masoumi168.workers.dev/app" } }],
+    [{ text: "🚀 باز کردن مینی‌اپ", web_app: { url: "https://bot-tasbit-howyat.mahdi-masoumi168.workers.dev/app" } }],
     [{ text: "🧾 خدمات دفتر نت‌یار مهاجر", callback_data: "menu:services" }],
     [{ text: "💰 اعتبار من", callback_data: "menu:wallet" }, { text: "👤 حساب من", callback_data: "menu:account" }],
     [{ text: "📋 پیگیری درخواست‌ها", callback_data: "menu:tracking" }],
@@ -286,7 +286,7 @@ async function handleCallback(env, callback) {
   await answerCallback(env, callback.id, "انجام شد");
   if (data === "menu:home" || data === "menu:restart") {
     await saveState(env, userId, "idle", {});
-    return sendMessage(env, chatId, "سلام، به کمک‌یار مهاجر خوش آمدید.\n\nاز منوی زیر گزینه موردنظر را انتخاب کنید:", HOME_KEYBOARD);
+    return sendMessage(env, chatId, "🌟 سلام و خوش آمدید به کمک‌یار مهاجر\n\nهمراه شما برای استفاده از خدمات دفتر نت‌یار مهاجر.\n\nاز منوی زیر می‌توانید خدمت موردنیاز را انتخاب کنید، درخواست‌هایتان را پیگیری کنید، اعتبار حساب را ببینید یا با پشتیبانی در ارتباط باشید.", HOME_KEYBOARD);
   }
   if (data === "menu:services") return showServices(env, chatId);
   if (data === "menu:account") return sendMessage(env, chatId, `👤 حساب شما\nشناسه تلگرام: ${userId}`, HOME_KEYBOARD);
@@ -338,7 +338,7 @@ async function handleMessage(env, message) {
   }
   if (text === "/start" || text === "🔄 شروع مجدد") {
     await saveState(env, userId, "idle", {});
-    return sendMessage(env, chatId, "سلام، به کمک‌یار مهاجر خوش آمدید.\n\nاز منوی زیر گزینه موردنظر را انتخاب کنید:", HOME_KEYBOARD);
+    return sendMessage(env, chatId, "🌟 سلام و خوش آمدید به کمک‌یار مهاجر\n\nهمراه شما برای استفاده از خدمات دفتر نت‌یار مهاجر.\n\nاز منوی زیر می‌توانید خدمت موردنیاز را انتخاب کنید، درخواست‌هایتان را پیگیری کنید، اعتبار حساب را ببینید یا با پشتیبانی در ارتباط باشید.", HOME_KEYBOARD);
   }
   if (text === "/health") return sendMessage(env, chatId, "اتصال ربات فعال است.");
   const current = await getState(env, userId);
