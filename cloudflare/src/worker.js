@@ -319,7 +319,7 @@ async function startRialitTopup(env, chatId, telegramId, amount) {
       headers: { "Authorization": "Bearer " + env.RIALIT_API_KEY, "Accept": "application/json", "Content-Type": "application/json" },
       body: JSON.stringify({
         amount,
-        callback_url: "https://bot-tasbit-howyat.mahdi-masoumi168.workers.dev/webhooks/rialit",
+        callback_url: String(env.PUBLIC_BASE_URL || "https://bot-tasbit-howyat-migration.mahdi-masoumi168.workers.dev").replace(/\/$/, "") + "/webhooks/rialit",
         order_id: "topup-" + topupId + "-" + Date.now(),
         user_id: Number(user.id)
       })
@@ -580,17 +580,32 @@ async function handleRialitWebhook(request, env) {
       await env.DB.prepare("UPDATE rialit_payments SET status='ignored' WHERE id=? AND status='pending'").bind(payment.id).run();
       return json({ ok: true, action: "already_handled" });
     }
-    const claim = await env.DB.prepare("UPDATE wallet_topups SET status='approved',reviewed_at=? WHERE id=? AND status IN ('awaiting_payment','awaiting_receipt','waiting_receipt_review')").bind(now,payment.topup_id).run();
-    if ((claim.meta?.changes || 0) !== 1) return json({ ok: true, action: "already_handled" });
-    await env.DB.prepare("INSERT INTO wallets(user_id,balance_toman) VALUES(?,0) ON CONFLICT(user_id) DO NOTHING").bind(topup.user_id).run();
-    await env.DB.prepare("UPDATE wallets SET balance_toman=balance_toman+?,updated_at=CURRENT_TIMESTAMP WHERE user_id=?").bind(payment.amount_toman,topup.user_id).run();
+    // Atomic D1 batch: duplicate webhook deliveries cannot credit the same top-up twice.
+    const results = await env.DB.batch([
+      env.DB.prepare("UPDATE rialit_payments SET status='processing' WHERE id=? AND status='pending'").bind(payment.id),
+      env.DB.prepare("UPDATE wallet_topups SET status='processing_payment' WHERE id=? AND user_id=? AND amount_toman=? AND status IN ('awaiting_payment','awaiting_receipt','waiting_receipt_review') AND EXISTS (SELECT 1 FROM rialit_payments WHERE id=? AND status='processing')").bind(payment.topup_id, payment.user_id, payment.amount_toman, payment.id),
+      env.DB.prepare("INSERT INTO wallets(user_id,balance_toman) SELECT ?,0 WHERE changes()=1 ON CONFLICT(user_id) DO NOTHING").bind(topup.user_id),
+      env.DB.prepare("UPDATE wallets SET balance_toman=balance_toman+?,updated_at=CURRENT_TIMESTAMP WHERE user_id=? AND EXISTS (SELECT 1 FROM wallet_topups WHERE id=? AND status='processing_payment')").bind(payment.amount_toman, topup.user_id, payment.topup_id),
+      env.DB.prepare("INSERT INTO wallet_transactions(user_id,amount_toman,balance_after_toman,kind,description,topup_id) SELECT ?,?,balance_toman,'topup',?,? FROM wallets WHERE user_id=? AND changes()=1").bind(topup.user_id,payment.amount_toman,"افزایش اعتبار ریالت‌پی #"+topup.id,topup.id,topup.user_id),
+      env.DB.prepare("UPDATE wallet_topups SET status='approved',reviewed_at=? WHERE id=? AND status='processing_payment'").bind(now,payment.topup_id),
+      env.DB.prepare("UPDATE rialit_payments SET status='paid',paid_at=? WHERE id=? AND status='processing' AND EXISTS (SELECT 1 FROM wallet_topups WHERE id=? AND status='approved' AND reviewed_at=?)").bind(now,payment.id,payment.topup_id,now),
+      env.DB.prepare("UPDATE rialit_payments SET status='ignored' WHERE id=? AND status='processing'").bind(payment.id)
+    ]);
+    if ((results[0]?.meta?.changes || 0) !== 1 || (results[1]?.meta?.changes || 0) !== 1 || (results[3]?.meta?.changes || 0) !== 1 || (results[6]?.meta?.changes || 0) !== 1) {
+      return json({ ok: true, action: "already_handled" });
+    }
     const wallet = await env.DB.prepare("SELECT balance_toman FROM wallets WHERE user_id=?").bind(topup.user_id).first();
-    await env.DB.prepare("INSERT INTO wallet_transactions(user_id,amount_toman,balance_after_toman,kind,description,topup_id) VALUES(?,?,?,'topup',?,?)").bind(topup.user_id,payment.amount_toman,wallet?.balance_toman||0,"افزایش اعتبار ریالت‌پی #"+topup.id,topup.id).run();
+    const userRow = await env.DB.prepare("SELECT telegram_id FROM users WHERE id=?").bind(topup.user_id).first();
+    if (userRow?.telegram_id) {
+      try { await telegram(env, "sendMessage", { chat_id: Number(userRow.telegram_id), text: "✅ افزایش اعتبار تأیید شد. مبلغ " + Number(payment.amount_toman).toLocaleString("fa-IR") + " تومان به اعتبار شما افزوده شد. موجودی جدید: " + Number(wallet?.balance_toman || 0).toLocaleString("fa-IR") + " تومان." }); } catch {}
+    }
   } else if (payment.kind !== "vpn") {
     return json({ ok: false, error: "unsupported_payment_kind" }, 400);
   }
-  const update = await env.DB.prepare("UPDATE rialit_payments SET status='paid',paid_at=? WHERE id=? AND status='pending'").bind(now,payment.id).run();
-  if ((update.meta?.changes || 0) !== 1) return json({ ok: true, action: "duplicate" });
+  if (payment.kind !== "topup") {
+    const update = await env.DB.prepare("UPDATE rialit_payments SET status='paid',paid_at=? WHERE id=? AND status='pending'").bind(now,payment.id).run();
+    if ((update.meta?.changes || 0) !== 1) return json({ ok: true, action: "duplicate" });
+  }
   // VPN provisioning must be completed by the migrated VPN fulfillment workflow.
   if (payment.kind === "vpn") {
     return json({ ok: true, action: "paid_vpn_pending_fulfillment", user_id: payment.user_id, months: payment.vpn_months, gigabytes: payment.vpn_gigabytes });
