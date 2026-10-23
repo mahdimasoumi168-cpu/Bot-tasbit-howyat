@@ -292,6 +292,64 @@ async function acceptService(env, chatId, userId, code) {
   });
 }
 
+function normalizeDigits(value) {
+  return String(value || "").replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
+    .replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+}
+
+async function startRialitTopup(env, chatId, telegramId, amount) {
+  if (!Number.isSafeInteger(amount) || amount < 10000 || amount > 5000000 || amount % 1000 !== 0) {
+    return sendMessage(env, chatId, "مبلغ معتبر نیست. حداقل ۱۰٬۰۰۰ و حداکثر ۵٬۰۰۰٬۰۰۰ تومان وارد کنید؛ مبلغ باید مضرب ۱٬۰۰۰ باشد.", {
+      inline_keyboard: [[{text:"🔙 انتخاب مبلغ",callback_data:"wallet:add"}]]
+    });
+  }
+  if (!env.DB) return sendMessage(env, chatId, "پایگاه داده اعتبار متصل نیست؛ پرداخت ساخته نشد.", HOME_KEYBOARD);
+  if (!env.RIALIT_API_KEY) return sendMessage(env, chatId, "درگاه ریالت‌پی هنوز روی نسخه Cloudflare تنظیم نشده است. مدیر باید Secret با نام RIALIT_API_KEY را روی همین Worker اضافه کند. هیچ مبلغی از حساب شما کسر نشده است.", {
+    inline_keyboard: [[{text:"🔄 تلاش دوباره",callback_data:"wallet:add"}],[{text:"🔙 منوی اصلی",callback_data:"menu:home"}]]
+  });
+  const user = await env.DB.prepare("SELECT id FROM users WHERE telegram_id=?").bind(String(telegramId)).first();
+  if (!user) return sendMessage(env, chatId, "حساب مشترک پیدا نشد؛ لطفاً /start را بزنید.", HOME_KEYBOARD);
+  await env.DB.prepare("INSERT INTO wallets(user_id,balance_toman) VALUES(?,0) ON CONFLICT(user_id) DO NOTHING").bind(user.id).run();
+  const topupResult = await env.DB.prepare("INSERT INTO wallet_topups(user_id,amount_toman,status) VALUES(?,?,'awaiting_payment')").bind(user.id, amount).run();
+  const topupId = topupResult.meta?.last_row_id;
+  if (!topupId) throw new Error("wallet_topup_insert_failed");
+  try {
+    const response = await fetch("https://api.rialit.org/api/v1/send", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + env.RIALIT_API_KEY, "Accept": "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amount,
+        callback_url: "https://bot-tasbit-howyat.mahdi-masoumi168.workers.dev/webhooks/rialit",
+        order_id: "topup-" + topupId + "-" + Date.now(),
+        user_id: Number(user.id)
+      })
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body || typeof body !== "object") {
+      console.error("rialit_link_create_failed", response.status);
+      throw new Error("rialit_link_create_http_" + response.status);
+    }
+    const token = String(body.token || body.data?.token || "").trim();
+    if (!token || token.length > 512 || /[/?#]/.test(token)) throw new Error("rialit_token_missing");
+    const payUrl = "https://api.rialit.org/api/v1/redirect/" + token;
+    await env.DB.prepare("INSERT INTO rialit_payments(token,kind,topup_id,user_id,amount_toman,pay_url,status) VALUES(?,'topup',?,?,?,?,'pending')")
+      .bind(token, topupId, user.id, amount, payUrl).run();
+    return sendMessage(env, chatId, `🧾 درخواست افزایش اعتبار شماره ${topupId}\n\nمبلغ: ${amount.toLocaleString("fa-IR")} تومان\nدرگاه: ریالت‌پی\n\nپس از پرداخت، ریالت‌پی تراکنش را به‌صورت خودکار بررسی می‌کند. اعتبار تنها پس از تأیید سمت سرور افزوده می‌شود؛ از ارسال رسید یا پرداخت دوباره خودداری کنید.`, {
+      inline_keyboard: [
+        [{text:"💳 پرداخت امن ریالت‌پی",url:payUrl}],
+        [{text:"🔄 بررسی موجودی",callback_data:"menu:wallet"}],
+        [{text:"🏠 منوی اصلی",callback_data:"menu:home"}]
+      ]
+    });
+  } catch (error) {
+    await env.DB.prepare("UPDATE wallet_topups SET status='payment_link_failed' WHERE id=? AND status='awaiting_payment'").bind(topupId).run();
+    console.error("rialit_topup_start_failed", error?.message || "unknown_error");
+    return sendMessage(env, chatId, "ساخت لینک پرداخت ناموفق بود. هیچ اعتباری اضافه نشده و از پرداخت با لینک نامعتبر خودداری کنید. کمی بعد دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.", {
+      inline_keyboard: [[{text:"🔄 تلاش دوباره",callback_data:"wallet:add"}],[{text:"📞 پشتیبانی",url:"https://t.me/NetYar_esf"}]]
+    });
+  }
+}
+
 async function handleCallback(env, callback) {
   const data = callback.data || "";
   const chatId = callback.message?.chat?.id;
@@ -332,13 +390,47 @@ async function handleCallback(env, callback) {
   }
   if (data === "menu:account") return sendMessage(env, chatId, `👤 حساب شما\nشناسه تلگرام: ${userId}`, HOME_KEYBOARD);
   if (data === "menu:wallet") {
-    let balance = 0;
-    if (env.DB) {
-      const u = await env.DB.prepare("SELECT id FROM users WHERE telegram_id=?").bind(String(userId)).first();
-      const w = u ? await env.DB.prepare("SELECT balance_toman FROM wallets WHERE user_id=?").bind(u.id).first() : null;
-      balance = w?.balance_toman || 0;
-    }
-    return sendMessage(env, chatId, `💰 اعتبار شما: ${Number(balance).toLocaleString("fa-IR")} تومان\n\nافزایش اعتبار و پرداخت هنوز در مرحله انتقال است.`, HOME_KEYBOARD);
+    if (!env.DB) return sendMessage(env, chatId, "پایگاه داده اعتبار در دسترس نیست؛ لطفاً بعداً تلاش کنید.", HOME_KEYBOARD);
+    const u = await env.DB.prepare("SELECT id FROM users WHERE telegram_id=?").bind(String(userId)).first();
+    if (!u) return sendMessage(env, chatId, "حساب مشترک پیدا نشد. لطفاً /start را بزنید.", HOME_KEYBOARD);
+    await env.DB.prepare("INSERT INTO wallets(user_id,balance_toman) VALUES(?,0) ON CONFLICT(user_id) DO NOTHING").bind(u.id).run();
+    const w = await env.DB.prepare("SELECT balance_toman FROM wallets WHERE user_id=?").bind(u.id).first();
+    return sendMessage(env, chatId, `💰 اعتبار من\n\nموجودی فعلی: ${Number(w?.balance_toman || 0).toLocaleString("fa-IR")} تومان\n\nبرای افزایش اعتبار، مبلغ را انتخاب کنید. اعتبار فقط پس از تأیید پرداخت توسط ریالت‌پی اضافه می‌شود.`, {
+      inline_keyboard: [
+        [{text:"➕ افزایش اعتبار",callback_data:"wallet:add"}],
+        [{text:"📜 سوابق اعتبار",callback_data:"wallet:history"}],
+        [{text:"🔙 بازگشت به منوی اصلی",callback_data:"menu:home"}]
+      ]
+    });
+  }
+  if (data === "wallet:add") {
+    return sendMessage(env, chatId, "💳 مبلغ افزایش اعتبار را انتخاب کنید:", {
+      inline_keyboard: [
+        [{text:"۵۰٬۰۰۰ تومان",callback_data:"wallet:topup:amount:50000"},{text:"۱۰۰٬۰۰۰ تومان",callback_data:"wallet:topup:amount:100000"}],
+        [{text:"۲۰۰٬۰۰۰ تومان",callback_data:"wallet:topup:amount:200000"},{text:"۵۰۰٬۰۰۰ تومان",callback_data:"wallet:topup:amount:500000"}],
+        [{text:"✍️ مبلغ دلخواه",callback_data:"wallet:topup:custom"}],
+        [{text:"🔙 بازگشت به اعتبار من",callback_data:"menu:wallet"}]
+      ]
+    });
+  }
+  if (data === "wallet:topup:custom") {
+    await saveState(env, userId, "wallet_amount", {});
+    return sendMessage(env, chatId, "مبلغ موردنظر را به تومان و فقط با عدد بفرستید. حداقل ۱۰٬۰۰۰ و حداکثر ۵٬۰۰۰٬۰۰۰ تومان است. مثال: ۱۵۰۰۰۰", {
+      inline_keyboard: [[{text:"❌ انصراف",callback_data:"flow:cancel"}]]
+    });
+  }
+  if (data.startsWith("wallet:topup:amount:")) {
+    const amount = Number(data.split(":")[3]);
+    return startRialitTopup(env, chatId, userId, amount);
+  }
+  if (data === "wallet:history") {
+    if (!env.DB) return sendMessage(env, chatId, "پایگاه داده در دسترس نیست.", HOME_KEYBOARD);
+    const u = await env.DB.prepare("SELECT id FROM users WHERE telegram_id=?").bind(String(userId)).first();
+    const rows = u ? await env.DB.prepare("SELECT amount_toman,balance_after_toman,kind,description,created_at FROM wallet_transactions WHERE user_id=? ORDER BY id DESC LIMIT 10").bind(u.id).all() : {results:[]};
+    const lines = (rows.results || []).map(t => `• ${String(t.created_at || "").slice(0,16)} — ${Number(t.amount_toman).toLocaleString("fa-IR")} تومان — موجودی: ${Number(t.balance_after_toman).toLocaleString("fa-IR")} تومان\n  ${t.description || t.kind}`);
+    return sendMessage(env, chatId, lines.length ? "📜 ده گردش اخیر اعتبار شما:\n\n" + lines.join("\n\n") : "هنوز گردش اعتباری ثبت نشده است.", {
+      inline_keyboard: [[{text:"🔙 بازگشت به اعتبار من",callback_data:"menu:wallet"}],[{text:"🏠 منوی اصلی",callback_data:"menu:home"}]]
+    });
   }
   if (data === "menu:tracking") {
     if (!env.DB) return sendMessage(env, chatId, "پایگاه داده هنوز متصل نشده است.", HOME_KEYBOARD);
@@ -383,6 +475,12 @@ async function handleMessage(env, message) {
   }
   if (text === "/health") return sendMessage(env, chatId, "اتصال ربات فعال است.");
   const current = await getState(env, userId);
+  if (current.state === "wallet_amount") {
+    const raw = normalizeDigits(text).replace(/[,٬،\s]/g, "").replace(/تومان/g, "");
+    const amount = Number(raw);
+    await saveState(env, userId, "idle", {});
+    return startRialitTopup(env, chatId, userId, amount);
+  }
   if (current.state === "form") {
     const steps = formSteps(current.data.service_code);
     const step = steps[current.data.step || 0];
@@ -477,12 +575,12 @@ async function handleRialitWebhook(request, env) {
     }
     await env.DB.prepare("INSERT INTO payments(order_id,user_id,provider,provider_payment_id,amount_toman,status,verified_at,receipt_type) VALUES(?,?,?,?,?,'approved',?,'rialit')").bind(payment.order_id,payment.user_id,"rialit",token,payment.amount_toman,now).run();
   } else if (payment.kind === "topup") {
-    const topup = await env.DB.prepare("SELECT * FROM wallet_topups WHERE id=?").bind(payment.topup_id).first();
-    if (!topup || !["awaiting_receipt","waiting_receipt_review"].includes(topup.status)) {
+    const topup = await env.DB.prepare("SELECT * FROM wallet_topups WHERE id=? AND user_id=?").bind(payment.topup_id, payment.user_id).first();
+    if (!topup || !["awaiting_payment","awaiting_receipt","waiting_receipt_review"].includes(topup.status) || Number(topup.amount_toman) !== Number(payment.amount_toman)) {
       await env.DB.prepare("UPDATE rialit_payments SET status='ignored' WHERE id=? AND status='pending'").bind(payment.id).run();
       return json({ ok: true, action: "already_handled" });
     }
-    const claim = await env.DB.prepare("UPDATE wallet_topups SET status='approved',reviewed_at=? WHERE id=? AND status IN ('awaiting_receipt','waiting_receipt_review')").bind(now,payment.topup_id).run();
+    const claim = await env.DB.prepare("UPDATE wallet_topups SET status='approved',reviewed_at=? WHERE id=? AND status IN ('awaiting_payment','awaiting_receipt','waiting_receipt_review')").bind(now,payment.topup_id).run();
     if ((claim.meta?.changes || 0) !== 1) return json({ ok: true, action: "already_handled" });
     await env.DB.prepare("INSERT INTO wallets(user_id,balance_toman) VALUES(?,0) ON CONFLICT(user_id) DO NOTHING").bind(topup.user_id).run();
     await env.DB.prepare("UPDATE wallets SET balance_toman=balance_toman+?,updated_at=CURRENT_TIMESTAMP WHERE user_id=?").bind(payment.amount_toman,topup.user_id).run();
