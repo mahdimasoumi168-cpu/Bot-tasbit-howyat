@@ -20,33 +20,38 @@ async function hmacSha256(keyBytes, messageBytes) {
 }
 
 async function verifyTelegramInitData(initData, botToken) {
-  if (!initData || !botToken || initData.length > 8192) return null;
+  if (!initData) return { user: null, reason: "init_data_missing" };
+  if (!botToken) return { user: null, reason: "bot_token_missing" };
+  if (initData.length > 8192) return { user: null, reason: "init_data_too_long" };
   const params = new URLSearchParams(initData);
   const receivedHash = params.get("hash");
-  if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash)) return null;
+  if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash)) return { user: null, reason: "hash_missing_or_invalid" };
   params.delete("hash");
   const pairs = Array.from(params.entries()).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  const checkString = pairs.map(([k, v]) => k + "=" + v).join("\n");
+  const checkString = pairs.map(([k, v]) => k + "=" + v).join("\\n");
+  // Telegram Mini Apps: secret_key = HMAC_SHA256(key="WebAppData", message=bot_token)
   const secret = await hmacSha256(new TextEncoder().encode("WebAppData"), new TextEncoder().encode(botToken));
   const expectedHash = bytesToHex(await hmacSha256(secret, new TextEncoder().encode(checkString)));
-  if (expectedHash.length !== receivedHash.length) return null;
+  if (expectedHash.length !== receivedHash.length) return { user: null, reason: "hash_mismatch" };
   let diff = 0;
   for (let i = 0; i < expectedHash.length; i++) diff |= expectedHash.charCodeAt(i) ^ receivedHash.toLowerCase().charCodeAt(i);
-  if (diff !== 0) return null;
+  if (diff !== 0) return { user: null, reason: "hash_mismatch" };
   const authDate = Number(params.get("auth_date"));
   const now = Math.floor(Date.now() / 1000);
-  if (!Number.isFinite(authDate) || authDate > now + 60 || now - authDate > 86400) return null;
+  if (!Number.isFinite(authDate) || authDate > now + 60) return { user: null, reason: "auth_date_invalid" };
+  if (now - authDate > 86400) return { user: null, reason: "init_data_expired" };
   let user;
-  try { user = JSON.parse(params.get("user") || "null"); } catch { return null; }
-  if (!user || !Number.isSafeInteger(user.id)) return null;
-  return user;
+  try { user = JSON.parse(params.get("user") || "null"); } catch { return { user: null, reason: "user_invalid" }; }
+  if (!user || !Number.isSafeInteger(user.id)) return { user: null, reason: "user_invalid" };
+  return { user, reason: null };
 }
 
 async function authorizeMiniApp(request, env) {
   let body;
   try { body = await request.json(); } catch { return { error: "invalid_json" }; }
-  const user = await verifyTelegramInitData(body?.initData, env.BOT_TOKEN);
-  if (!user) return { error: "invalid_telegram_session" };
+  const verified = await verifyTelegramInitData(body?.initData, env.BOT_TOKEN);
+  if (!verified.user) return { error: verified.reason || "invalid_telegram_session" };
+  const user = verified.user;
   const adminIds = String(env.ADMIN_IDS || "").split(",").map(v => v.trim()).filter(Boolean);
   return { user, isAdmin: adminIds.includes(String(user.id)), body };
 }
@@ -386,7 +391,17 @@ export default {
       return miniAppApi(request, env, url.pathname);
     }
     if (request.method === "GET" && url.pathname === "/health") {
-      return json({ ok: true, service: "کمک‌یار مهاجر", mode: "cloudflare-migration-scaffold", database_bound: Boolean(env.DB), token_configured: Boolean(env.BOT_TOKEN), webhook_secret_configured: Boolean(env.WEBHOOK_SECRET), note: "این نسخه‌ی مهاجرت اولیه است؛ پرداخت و پنل مدیریت هنوز منتقل نشده‌اند." });
+      let telegramBot = null;
+      let telegramApiOk = false;
+      if (env.BOT_TOKEN) {
+        try {
+          const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getMe`);
+          const d = await r.json();
+          telegramApiOk = Boolean(r.ok && d.ok && d.result?.is_bot);
+          if (telegramApiOk) telegramBot = d.result.username || null;
+        } catch {}
+      }
+      return json({ ok: true, service: "کمک‌یار مهاجر", mode: "cloudflare-migration-scaffold", database_bound: Boolean(env.DB), token_configured: Boolean(env.BOT_TOKEN), telegram_api_ok: telegramApiOk, telegram_bot_username: telegramBot, webhook_secret_configured: Boolean(env.WEBHOOK_SECRET), note: "این نسخه‌ی مهاجرت اولیه است؛ پرداخت و پنل مدیریت هنوز منتقل نشده‌اند." });
     }
     if (url.pathname !== "/telegram-webhook" || request.method !== "POST") return json({ ok: false, error: "not_found" }, 404);
     if (!env.BOT_TOKEN) return json({ ok: false, error: "BOT_TOKEN_missing" }, 503);
