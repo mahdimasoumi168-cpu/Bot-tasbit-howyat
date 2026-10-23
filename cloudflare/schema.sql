@@ -69,6 +69,9 @@ CREATE TABLE IF NOT EXISTS payments (
   status TEXT NOT NULL DEFAULT 'pending',
   verified_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  receipt_file_id TEXT,
+  receipt_type TEXT NOT NULL DEFAULT 'photo',
+  provider_metadata_json TEXT NOT NULL DEFAULT '{}',
   UNIQUE(provider, provider_payment_id)
 );
 
@@ -86,6 +89,8 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
   kind TEXT NOT NULL,
   description TEXT NOT NULL,
   related_id TEXT,
+  order_id INTEGER REFERENCES orders(id),
+  topup_id INTEGER REFERENCES wallet_topups(id),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -97,7 +102,41 @@ CREATE TABLE IF NOT EXISTS wallet_topups (
   status TEXT NOT NULL DEFAULT 'awaiting_receipt',
   reviewed_by TEXT,
   reviewed_at TEXT,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  receipt_type TEXT NOT NULL DEFAULT 'photo'
+);
+
+CREATE TABLE IF NOT EXISTS rialit_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL,
+  order_id INTEGER REFERENCES orders(id),
+  topup_id INTEGER REFERENCES wallet_topups(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  amount_toman INTEGER NOT NULL CHECK(amount_toman > 0),
+  vpn_months INTEGER,
+  vpn_gigabytes INTEGER,
+  pay_url TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  paid_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_rialit_payments_status ON rialit_payments(status);
+
+CREATE TABLE IF NOT EXISTS variza_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slug TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL,
+  order_id INTEGER REFERENCES orders(id),
+  topup_id INTEGER REFERENCES wallet_topups(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  amount_toman INTEGER NOT NULL CHECK(amount_toman > 0),
+  pay_url TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempt_code TEXT,
+  expires_at TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  paid_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS documents (
