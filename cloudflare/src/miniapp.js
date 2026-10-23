@@ -141,7 +141,7 @@ export const MINIAPP_HTML = String.raw`<!doctype html>
 <div class="panel"><h2>📌 راهنمای استفاده</h2><div class="muted">خدمت موردنظر را انتخاب کنید، قوانین را بخوانید و فرم را با دقت تکمیل کنید. وضعیت درخواست پس از ثبت و بررسی در همین بخش قابل پیگیری خواهد بود.</div></div>
 </section>
 <section id="services" class="view"><button class="back" onclick="openView('home')">→ بازگشت به صفحه اصلی</button><div class="section-title">🧾 خدمات دفتر <small>انتخاب خدمت</small></div><div id="serviceList"></div><div class="status">ثبت نهایی درخواست، بارگذاری امن مدارک و پرداخت پس از تکمیل اتصال پایگاه داده فعال می‌شود.</div></section>
-<section id="wallet" class="view"><button class="back" onclick="openView('home')">→ بازگشت</button><div class="panel"><h2>💳 اعتبار من</h2><div id="balance" style="font-size:26px;font-weight:800;color:var(--blue)">— تومان</div><p class="muted">موجودی فقط پس از اتصال پایگاه داده نمایش داده می‌شود. تا فعال‌شدن تأیید پرداخت سمت سرور، هیچ پرداختی از این صفحه انجام ندهید.</p></div></section>
+<section id="wallet" class="view"><button class="back" onclick="openView('home')">→ بازگشت</button><div class="panel"><h2>💳 اعتبار من</h2><div id="balance" style="font-size:26px;font-weight:800;color:var(--blue)">در حال دریافت…</div><p id="walletStatus" class="muted">موجودی و گردش اعتبار از پایگاه داده خوانده می‌شود.</p><button class="primary" onclick="loadWallet()">🔄 به‌روزرسانی موجودی</button></div><div class="panel"><h2>➕ افزایش اعتبار</h2><p class="muted">مبلغ را به تومان انتخاب کنید. افزایش اعتبار فقط پس از تأیید سمت سرور انجام می‌شود.</p><div class="grid"><button class="primary" onclick="topupWallet(50000)">۵۰٬۰۰۰ تومان</button><button class="primary" onclick="topupWallet(100000)">۱۰۰٬۰۰۰ تومان</button><button class="primary" onclick="topupWallet(200000)">۲۰۰٬۰۰۰ تومان</button><button class="primary" onclick="topupWallet(500000)">۵۰۰٬۰۰۰ تومان</button></div></div><div class="panel"><h2>📜 گردش اعتبار</h2><div id="walletHistory" class="muted">برای مشاهده، اعتبار را بارگیری کنید.</div></div></section>
 <section id="account" class="view"><button class="back" onclick="openView('home')">→ بازگشت</button><div class="panel"><h2>👤 حساب من</h2><div class="line"><span class="txt">نام نمایشی</span><b id="accountName">—</b></div><div class="line"><span class="txt">شناسه تلگرام</span><b id="telegramId">در انتظار تأیید</b></div><p class="muted">اطلاعات از نشست امن تلگرام خوانده می‌شود؛ شناسه ارسالی از سمت مرورگر به‌تنهایی معتبر محسوب نمی‌شود.</p></div></section>
 <section id="orders" class="view"><button class="back" onclick="openView('home')">→ بازگشت</button><div class="panel"><h2>📋 پیگیری درخواست‌ها</h2><div id="ordersList" class="muted">برای مشاهده پرونده‌ها باید اتصال پایگاه داده فعال و هویت تلگرام تأیید شده باشد.</div></div></section>
 <section id="support" class="view"><button class="back" onclick="openView('home')">→ بازگشت</button><div class="panel"><h2>💬 ارتباط با پشتیبانی</h2><p class="muted">برای پیگیری، کد درخواست خود را آماده داشته باشید.</p><button class="primary" onclick="window.open('https://t.me/NetYar_esf','_blank')">ارتباط با پشتیبانی @NetYar_esf</button></div></section>
@@ -178,9 +178,38 @@ const staticServices=[
 {code:'student_screening',name:'آزمون غربالگری دانش‌آموزان',desc:'ثبت اطلاعات دانش‌آموز',icon:'🎒'},
 {code:'other_service',name:'درخواست خدمات دیگر',desc:'شرح خدمت موردنیاز',icon:'🧾'}
 ];
-function openView(id){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===id));if(tg)tg.BackButton.isVisible=id!=='home';window.scrollTo(0,0)}
+function openView(id){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===id));if(tg)tg.BackButton.isVisible=id!=='home';window.scrollTo(0,0);if(id==='wallet')loadWallet()}
 if(tg){tg.BackButton.onClick(()=>{const active=document.querySelector('.view.active');openView(active?.id==='home'?'home':'home')})}
 function toast(text){$('toast').textContent=text;$('toast').classList.remove('hidden');setTimeout(()=>$('toast').classList.add('hidden'),3600)}
+async function loadWallet(){
+ const initData=tg?.initData||'';
+ if(!initData){$('balance').textContent='— تومان';$('walletStatus').textContent='برای مشاهده اعتبار، مینی‌اپ را از داخل ربات تلگرام باز کنید.';return}
+ $('walletStatus').textContent='در حال دریافت اطلاعات اعتبار…';
+ try{
+  const res=await fetch('/api/miniapp/wallet',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({initData})});
+  const d=await res.json();
+  if(!res.ok||!d.ok){$('walletStatus').textContent='دریافت اعتبار انجام نشد؛ دوباره تلاش کنید.';return}
+  $('balance').textContent=Number(d.balance_toman||0).toLocaleString('fa-IR')+' تومان';
+  $('walletStatus').textContent=d.gateway_configured?'موجودی به‌روز شد. پرداخت فقط پس از تأیید سمت سرور به اعتبار اضافه می‌شود.':'موجودی قابل مشاهده است؛ برای فعال شدن افزایش اعتبار، کلید درگاه باید روی نسخه مهاجرتی تنظیم شود.';
+  const history=$('walletHistory');history.innerHTML='';
+  const rows=Array.isArray(d.transactions)?d.transactions:[];
+  if(!rows.length){history.textContent='هنوز گردش اعتباری ثبت نشده است.'}
+  else rows.forEach(t=>{const row=document.createElement('div');row.className='line';const txt=document.createElement('div');txt.className='txt';txt.textContent=(t.description||t.kind||'تراکنش')+' · '+String(t.created_at||'').slice(0,16);const amount=document.createElement('b');amount.textContent=Number(t.amount_toman||0).toLocaleString('fa-IR')+' تومان';row.append(txt,amount);history.appendChild(row)});
+  if(!d.gateway_configured)document.querySelectorAll('#wallet .primary[onclick^="topupWallet"]').forEach(b=>b.disabled=true);
+ }catch{$('walletStatus').textContent='اتصال به سرور اعتبار برقرار نشد؛ دوباره تلاش کنید.'}
+}
+async function topupWallet(amount){
+ const initData=tg?.initData||'';
+ if(!initData){toast('مینی‌اپ را از داخل ربات تلگرام باز کنید.');return}
+ if(!confirm('افزایش اعتبار به مبلغ '+Number(amount).toLocaleString('fa-IR')+' تومان آغاز شود؟'))return;
+ try{
+  const res=await fetch('/api/miniapp/wallet/topup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({initData,amount_toman:amount})});
+  const d=await res.json();
+  if(!res.ok||!d.ok){toast(d.error==='gateway_not_configured'?'درگاه پرداخت هنوز روی نسخه مهاجرتی تنظیم نشده است.':'ساخت لینک پرداخت ناموفق بود؛ مبلغی از اعتبار شما کسر نشده است.');return}
+  if(tg?.openLink)tg.openLink(d.pay_url);else window.open(d.pay_url,'_blank');
+  toast('لینک پرداخت ساخته شد. اعتبار پس از تأیید درگاه به‌روزرسانی می‌شود.');
+ }catch{toast('ارتباط با درگاه برقرار نشد؛ مبلغی از اعتبار شما کسر نشده است.')}
+}
 function setSessionStatus(state,label,hint){const el=$('connection');el.classList.remove('verified','failed');if(state==='verified')el.classList.add('verified');if(state==='failed')el.classList.add('failed');el.innerHTML='<i class="connection-dot"></i><span></span>';el.querySelector('span').textContent=label;$('sessionHint').textContent=hint;}
 function renderServices(services){$('serviceList').innerHTML='';services.forEach((s,i)=>{const icons={identity:'🪪',khodnevis:'📝',fida:'🪪',dolatman_login:'🔐',student_screening:'🎒',other_service:'🧾'};const el=document.createElement('div');el.className='service';const ico=document.createElement('span');ico.className='ico';ico.textContent=icons[s.code]||'📄';const txt=document.createElement('div');txt.className='txt';const name=document.createElement('b');name.textContent=s.name;const desc=document.createElement('small');desc.textContent=s.description||s.desc||'برای ثبت درخواست انتخاب کنید';txt.append(name,desc);const button=document.createElement('button');button.className='primary';button.textContent='انتخاب';button.onclick=async()=>{if(!tg?.initData){toast('برای انتخاب خدمت، مینی‌اپ را از داخل تلگرام باز کنید.');return}button.disabled=true;try{const r=await fetch('/api/miniapp/select-service',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({initData:tg.initData,code:s.code})});const d=await r.json();if(r.ok&&d.ok){toast('پیام قوانین به گفت‌وگوی ربات ارسال شد. برای ادامه به ربات برگردید.')}else if(d.error==='service_not_ready'){toast('این خدمت هنوز فعال نشده؛ تعرفه و قوانین باید تأیید شوند.')}else{toast('انتخاب خدمت انجام نشد؛ لطفاً دوباره تلاش کنید.')}}catch{toast('ارتباط با سرور برقرار نشد.')}finally{button.disabled=false}};el.append(ico,txt,button);$('serviceList').append(el)})}
 renderServices(staticServices);
