@@ -68,6 +68,65 @@ async function miniAppApi(request, env, path) {
     }
     return json({ ok: true, user: { id: auth.user.id, first_name: auth.user.first_name || "", last_name: auth.user.last_name || "", username: auth.user.username || "" }, isAdmin: auth.isAdmin, database_bound: Boolean(env.DB) });
   }
+  if (path === "/api/miniapp/wallet") {
+    if (!env.DB) return json({ ok: false, error: "database_not_ready" }, 503);
+    try {
+      const user = await ensureUser(env, auth.user);
+      if (!user) return json({ ok: false, error: "user_not_ready" }, 503);
+      await env.DB.prepare("INSERT INTO wallets(user_id,balance_toman) VALUES(?,0) ON CONFLICT(user_id) DO NOTHING").bind(user.id).run();
+      const wallet = await env.DB.prepare("SELECT balance_toman,updated_at FROM wallets WHERE user_id=?").bind(user.id).first();
+      const transactions = await env.DB.prepare("SELECT amount_toman,balance_after_toman,kind,description,created_at FROM wallet_transactions WHERE user_id=? ORDER BY id DESC LIMIT 15").bind(user.id).all();
+      const topups = await env.DB.prepare("SELECT id,amount_toman,status,created_at FROM wallet_topups WHERE user_id=? ORDER BY id DESC LIMIT 5").bind(user.id).all();
+      return json({ ok: true, balance_toman: Number(wallet?.balance_toman || 0), updated_at: wallet?.updated_at || null, transactions: transactions.results || [], topups: topups.results || [], gateway_configured: Boolean(env.RIALIT_API_KEY) });
+    } catch (error) {
+      console.error("miniapp_wallet_query_failed", error?.message || "unknown_error");
+      return json({ ok: false, error: "wallet_unavailable" }, 503);
+    }
+  }
+  if (path === "/api/miniapp/wallet/topup") {
+    if (!env.DB) return json({ ok: false, error: "database_not_ready" }, 503);
+    const amount = Number(auth.body?.amount_toman);
+    if (!Number.isSafeInteger(amount) || amount < 10000 || amount > 5000000 || amount % 1000 !== 0) {
+      return json({ ok: false, error: "invalid_amount" }, 400);
+    }
+    if (!env.RIALIT_API_KEY) return json({ ok: false, error: "gateway_not_configured" }, 503);
+    let topupId = null;
+    try {
+      const user = await ensureUser(env, auth.user);
+      if (!user) return json({ ok: false, error: "user_not_ready" }, 503);
+      await env.DB.prepare("INSERT INTO wallets(user_id,balance_toman) VALUES(?,0) ON CONFLICT(user_id) DO NOTHING").bind(user.id).run();
+      const inserted = await env.DB.prepare("INSERT INTO wallet_topups(user_id,amount_toman,status) VALUES(?,?,'awaiting_payment')").bind(user.id, amount).run();
+      topupId = inserted.meta?.last_row_id;
+      if (!topupId) throw new Error("wallet_topup_insert_failed");
+      const response = await fetch("https://api.rialit.org/api/v1/send", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + String(env.RIALIT_API_KEY).trim(), "Accept": "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount,
+          callback_url: "https://bot-tasbit-howyat-migration.mahdi-masoumi168.workers.dev/webhooks/rialit",
+          order_id: "topup-" + topupId + "-" + Date.now(),
+          user_id: Number(user.id)
+        })
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || !body || typeof body !== "object") {
+        console.error("miniapp_rialit_link_failed", response.status);
+        throw new Error("rialit_link_http_" + response.status);
+      }
+      const token = String(body.token || body.data?.token || "").trim();
+      if (!token || token.length > 512 || /[/?#]/.test(token)) throw new Error("rialit_token_invalid");
+      const payUrl = "https://api.rialit.org/api/v1/redirect/" + token;
+      await env.DB.prepare("INSERT INTO rialit_payments(token,kind,topup_id,user_id,amount_toman,pay_url,status) VALUES(?,'topup',?,?,?,?,'pending')")
+        .bind(token, topupId, user.id, amount, payUrl).run();
+      return json({ ok: true, topup_id: topupId, amount_toman: amount, pay_url: payUrl });
+    } catch (error) {
+      if (topupId) {
+        try { await env.DB.prepare("UPDATE wallet_topups SET status='payment_link_failed' WHERE id=? AND status='awaiting_payment'").bind(topupId).run(); } catch {}
+      }
+      console.error("miniapp_wallet_topup_failed", error?.message || "unknown_error");
+      return json({ ok: false, error: "payment_link_failed" }, 502);
+    }
+  }
   if (path === "/api/miniapp/services") {
     if (env.DB) {
       try {
