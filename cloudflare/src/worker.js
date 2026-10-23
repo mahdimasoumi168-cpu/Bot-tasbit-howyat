@@ -29,8 +29,9 @@ async function verifyTelegramInitData(initData, botToken) {
   params.delete("hash");
   const pairs = Array.from(params.entries()).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   const checkString = pairs.map(([k, v]) => k + "=" + v).join("\n");
-  // Telegram Mini Apps: secret_key = HMAC_SHA256(key="WebAppData", message=bot_token)
-  const secret = await hmacSha256(new TextEncoder().encode("WebAppData"), new TextEncoder().encode(botToken));
+  // Telegram Mini Apps: secret_key = HMAC_SHA256(key=bot_token, message="WebAppData").
+  // The bot token is the HMAC key; reversing these inputs rejects valid initData.
+  const secret = await hmacSha256(new TextEncoder().encode(botToken), new TextEncoder().encode("WebAppData"));
   const expectedHash = bytesToHex(await hmacSha256(secret, new TextEncoder().encode(checkString)));
   if (expectedHash.length !== receivedHash.length) return { user: null, reason: "hash_mismatch" };
   let diff = 0;
