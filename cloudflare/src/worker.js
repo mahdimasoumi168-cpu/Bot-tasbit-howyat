@@ -28,7 +28,7 @@ async function verifyTelegramInitData(initData, botToken) {
   if (!receivedHash || !/^[a-f0-9]{64}$/i.test(receivedHash)) return { user: null, reason: "hash_missing_or_invalid" };
   params.delete("hash");
   const pairs = Array.from(params.entries()).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  const checkString = pairs.map(([k, v]) => k + "=" + v).join("\\n");
+  const checkString = pairs.map(([k, v]) => k + "=" + v).join("\n");
   // Telegram Mini Apps: secret_key = HMAC_SHA256(key="WebAppData", message=bot_token)
   const secret = await hmacSha256(new TextEncoder().encode("WebAppData"), new TextEncoder().encode(botToken));
   const expectedHash = bytesToHex(await hmacSha256(secret, new TextEncoder().encode(checkString)));
