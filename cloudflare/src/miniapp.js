@@ -103,7 +103,23 @@ async function boot(){
  try{
   const res=await fetch('/api/miniapp/me',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({initData})});
   const data=await res.json();
-  if(!res.ok||!data.ok){setSessionStatus('failed','تأیید ناموفق','سرور نشست تلگرام را نپذیرفت؛ دوباره از داخل ربات باز کنید.');toast(data.error==='database_not_ready'?'نشست دریافت شد، اما پایگاه داده آماده نیست.':'تأیید نشست تلگرام ناموفق بود.');return}
+  if(!res.ok||!data.ok){
+   const reasons={
+    init_data_missing:'اطلاعات نشست به سرور نرسیده است؛ مینی‌اپ را از دکمهٔ داخل ربات باز کنید.',
+    bot_token_missing:'توکن ربات در تنظیمات سرور موجود نیست.',
+    init_data_too_long:'اطلاعات نشست بیش از حد طولانی است؛ مینی‌اپ را دوباره باز کنید.',
+    hash_missing_or_invalid:'امضای نشست تلگرام دریافت نشده یا قالب آن نامعتبر است.',
+    hash_mismatch:'امضای نشست با توکن این ربات تطبیق ندارد؛ باید اتصال توکن ربات بررسی شود.',
+    auth_date_invalid:'زمان ایجاد نشست نامعتبر است؛ مینی‌اپ را دوباره باز کنید.',
+    init_data_expired:'نشست قدیمی شده است؛ مینی‌اپ را ببندید و دوباره از داخل ربات باز کنید.',
+    user_invalid:'اطلاعات کاربر در نشست تلگرام معتبر نیست.',
+    database_not_ready:'نشست تأیید شد، اما پایگاه داده آماده نیست.'
+   };
+   const reason=reasons[data.error]||'سرور نشست تلگرام را نپذیرفت؛ دوباره از داخل ربات باز کنید.';
+   setSessionStatus('failed','تأیید ناموفق',reason);
+   toast(reason);
+   return;
+  }
   setSessionStatus('verified','نشست تأیید شد','هویت شما توسط سرور تأیید شد؛ اطلاعات حساب از نشست معتبر تلگرام دریافت شده است.');
   $('userName').textContent=data.user.first_name||'مشترک گرامی 🌱';
   $('accountName').textContent=[data.user.first_name,data.user.last_name].filter(Boolean).join(' ')||'—';
