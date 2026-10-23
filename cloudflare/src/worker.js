@@ -112,6 +112,7 @@ const HOME_KEYBOARD = {
   inline_keyboard: [
     [{ text: "🚀 باز کردن مینی‌اپ", web_app: { url: "https://bot-tasbit-howyat.mahdi-masoumi168.workers.dev/app" } }],
     [{ text: "🧾 خدمات دفتر نت‌یار مهاجر", callback_data: "menu:services" }],
+    [{ text: "🔐 خرید VPN / فیلترشکن", callback_data: "vpn:start" }],
     [{ text: "💰 اعتبار من", callback_data: "menu:wallet" }, { text: "👤 حساب من", callback_data: "menu:account" }],
     [{ text: "📋 پیگیری درخواست‌ها", callback_data: "menu:tracking" }],
     [{ text: "🔄 شروع مجدد", callback_data: "menu:restart" }, { text: "📞 پشتیبانی", callback_data: "menu:support" }],
@@ -179,14 +180,27 @@ async function getState(env, telegramId) {
 }
 
 async function showServices(env, chatId) {
-  let services = Object.entries(SERVICE_LABELS);
+  // Keep every known service visible even while prices/activation are being migrated.
+  // A disabled service is shown but its rules handler prevents order/payment creation.
+  let services = Object.entries(SERVICE_LABELS).map(([code, name]) => ({ code, name, enabled: false }));
   if (env.DB) {
-    const rows = await env.DB.prepare("SELECT code,name,enabled FROM services ORDER BY rowid").all();
-    if (rows.results?.length) services = rows.results.filter(s => s.enabled).map(s => [s.code, s.name]);
+    try {
+      const rows = await env.DB.prepare("SELECT code,name,enabled FROM services ORDER BY rowid").all();
+      const byCode = new Map((rows.results || []).map(row => [row.code, row]));
+      services = services.map(item => {
+        const row = byCode.get(item.code);
+        return row ? { code: row.code, name: row.name || item.name, enabled: Boolean(row.enabled) } : item;
+      });
+    } catch (error) {
+      console.error("services_menu_load_failed", error?.message || "unknown_error");
+    }
   }
-  const rows = services.map(([code, name]) => [{ text: name, callback_data: `service:rules:${code}` }]);
+  const rows = services.map(({code,name,enabled}) => [{
+    text: (enabled ? "" : "⏳ ") + name,
+    callback_data: `service:rules:${code}`
+  }]);
   rows.push([{ text: "🔙 بازگشت به منوی اصلی", callback_data: "menu:home" }]);
-  return sendMessage(env, chatId, "🧾 خدمات دفتر نت‌یار مهاجر\n\nلطفاً خدمت موردنظر را انتخاب کنید:", { inline_keyboard: rows });
+  return sendMessage(env, chatId, "🧾 خدمات دفتر نت‌یار مهاجر\n\n⏳ خدماتی که کنارشان این علامت است هنوز تعرفه و فعال‌سازی نهایی‌شان تأیید نشده است.\n\nلطفاً خدمت موردنظر را انتخاب کنید:", { inline_keyboard: rows });
 }
 
 async function showRules(env, chatId, code, userId) {
@@ -290,6 +304,32 @@ async function handleCallback(env, callback) {
     return sendMessage(env, chatId, "🌟 سلام و خوش آمدید به کمک‌یار مهاجر\n\nهمراه شما برای استفاده از خدمات دفتر نت‌یار مهاجر.\n\nاز منوی زیر می‌توانید خدمت موردنیاز را انتخاب کنید، درخواست‌هایتان را پیگیری کنید، اعتبار حساب را ببینید یا با پشتیبانی در ارتباط باشید.", HOME_KEYBOARD);
   }
   if (data === "menu:services") return showServices(env, chatId);
+  if (data === "vpn:start") {
+    return sendMessage(env, chatId, "🔐 خرید VPN / فیلترشکن\n\nمدت اشتراک را انتخاب کنید:", {
+      inline_keyboard: [
+        [{text:"۱ ماه",callback_data:"vpn:months:1"},{text:"۲ ماه",callback_data:"vpn:months:2"}],
+        [{text:"۳ ماه",callback_data:"vpn:months:3"},{text:"۴ ماه",callback_data:"vpn:months:4"}],
+        [{text:"🔙 بازگشت به منوی اصلی",callback_data:"menu:home"}]
+      ]
+    });
+  }
+  if (data.startsWith("vpn:months:")) {
+    const months = Number(data.split(":")[2]);
+    if (![1,2,3,4].includes(months)) return sendMessage(env, chatId, "مدت انتخابی معتبر نیست.", HOME_KEYBOARD);
+    const rows = [];
+    for (let gb=10; gb<=100; gb+=10) {
+      if (gb%20===10) rows.push([]);
+      rows[rows.length-1].push({text:`${gb} گیگابایت — ${(gb*10000).toLocaleString("fa-IR")} تومان`,callback_data:`vpn:gb:${months}:${gb}`});
+    }
+    rows.push([{text:"🔙 انتخاب مدت",callback_data:"vpn:start"}],[{text:"🔙 منوی اصلی",callback_data:"menu:home"}]);
+    return sendMessage(env, chatId, `🔐 مدت انتخابی: ${months} ماه\n\nحجم موردنیاز را انتخاب کنید. قیمت فعلی منطبق با کد اصلی: هر گیگابایت ۱۰٬۰۰۰ تومان است.\n\n`,{inline_keyboard:rows});
+  }
+  if (data.startsWith("vpn:gb:")) {
+    const parts=data.split(":"); const months=Number(parts[2]); const gb=Number(parts[3]);
+    if (![1,2,3,4].includes(months) || !Number.isInteger(gb) || gb<10 || gb>100 || gb%10!==0) return sendMessage(env,chatId,"مدت یا حجم انتخابی معتبر نیست.",HOME_KEYBOARD);
+    const amount=gb*10000;
+    return sendMessage(env,chatId,`🧾 خلاصه سفارش VPN\n\n⏳ مدت اشتراک: ${months} ماه\n📦 حجم: ${gb} گیگابایت\n💰 قیمت هر گیگابایت: ۱۰٬۰۰۰ تومان\n💵 مبلغ کل: ${amount.toLocaleString("fa-IR")} تومان\n\n⚠️ پرداخت ریالت‌پی هنوز به Worker مهاجرتی متصل نشده است؛ فعلاً پرداختی انجام ندهید. این صفحه فقط انتخاب سفارش را نشان می‌دهد.\n\nپس از انتقال کامل درگاه، امکان پرداخت امن فعال می‌شود.`,{inline_keyboard:[[ {text:"🔄 انتخاب دوباره",callback_data:"vpn:start"} ],[ {text:"🔙 بازگشت به منوی اصلی",callback_data:"menu:home"} ]]});
+  }
   if (data === "menu:account") return sendMessage(env, chatId, `👤 حساب شما\nشناسه تلگرام: ${userId}`, HOME_KEYBOARD);
   if (data === "menu:wallet") {
     let balance = 0;
