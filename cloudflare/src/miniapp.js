@@ -2,17 +2,44 @@ export const MINIAPP_HTML = String.raw`<!doctype html>
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#145bd7"><meta name="color-scheme" content="light"><title>کمک‌یار مهاجر</title>
+<meta name="theme-color" content="#145bd7"><meta name="color-scheme" content="light dark"><title>کمک‌یار مهاجر</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-:root{color-scheme:light;--blue:#145bd7;--navy:#123b78;--bg:#f4f7fc;--ink:#162844;--muted:#73819a;--card:#fff}
+:root{color-scheme:light;--blue:#145bd7;--navy:#123b78;--bg:#f4f7fc;--ink:#162844;--muted:#73819a;--card:#fff;--surface:#fff;--border:#e8eef7;--line:#edf1f7;--soft:#f5f8ff;--shadow:0 7px 24px #233e6808}
+:root[data-theme="dark"]{color-scheme:dark;--blue:#79aaff;--navy:#d5e4ff;--bg:#0b1220;--ink:#edf3ff;--muted:#a4b1c7;--card:#131e30;--surface:#17243a;--border:#293951;--line:#293951;--soft:#16243a;--shadow:0 7px 24px #00000025}
+:root[data-theme="dark"] body{background:var(--bg);color:var(--ink)}
+:root[data-theme="dark"] .panel,:root[data-theme="dark"] .service{background:var(--card);border-color:var(--border);box-shadow:var(--shadow)}
+:root[data-theme="dark"] .tile{border-color:var(--border);box-shadow:var(--shadow);color:var(--ink)}
+:root[data-theme="dark"] .t-blue{background:#172b48}.root[data-theme="dark"] .t-blue .ico{background:#24436d}
+:root[data-theme="dark"] .t-teal{background:#12332f}:root[data-theme="dark"] .t-teal .ico{background:#1d5149}
+:root[data-theme="dark"] .t-orange{background:#39291c}:root[data-theme="dark"] .t-orange .ico{background:#604027}
+:root[data-theme="dark"] .t-purple{background:#2b2342}:root[data-theme="dark"] .t-purple .ico{background:#46376c}
+:root[data-theme="dark"] .t-pink{background:#3c2230}:root[data-theme="dark"] .t-pink .ico{background:#61334b}
+:root[data-theme="dark"] .t-green{background:#233522}:root[data-theme="dark"] .t-green .ico{background:#385533}
+:root[data-theme="dark"] .home-intro{background:linear-gradient(135deg,#17243a,#121c2e);border-color:var(--border)}
+:root[data-theme="dark"] .home-intro .mark{background:#263d5d}
+:root[data-theme="dark"] .service .ico{background:#213550}
+:root[data-theme="dark"] .back{background:#1b3558;color:#9dc0ff}
+:root[data-theme="dark"] .pill{background:#20395c;color:#b9d4ff}
+:root[data-theme="dark"] .line{border-bottom-color:var(--line)}
+:root[data-theme="dark"] .admin{background:#302919;border-color:#66512a}
+:root[data-theme="dark"] .status{background:#332a18;color:#f6d68b}
+:root[data-theme="dark"] .connection-pill{color:#f5f9ff}
+:root[data-theme="dark"] .primary{color:#fff}
+:root[data-theme="dark"] .foot{color:#8797b0}
+:root[data-theme="dark"] .tile small,:root[data-theme="dark"] .service small{color:var(--muted)}
+:root[data-theme="dark"] .home-intro .tiny{color:#78ddb0}
+.theme-toggle{margin-right:auto;display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px;padding:8px 12px;border:1px solid #ffffff55;border-radius:14px;background:#ffffff18;color:#fff;font-size:12px;font-weight:800;white-space:nowrap;backdrop-filter:blur(8px)}
+.theme-toggle:active{transform:scale(.97)}
+.theme-toggle .theme-icon{font-size:17px;line-height:1}
+@media(max-width:370px){.theme-toggle{padding:8px;gap:5px}.theme-toggle .theme-label{font-size:11px}.logo{width:44px;height:44px;flex:0 0 44px}.top{gap:9px}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:"Vazirmatn","IRANSans","Iranian Sans",Tahoma,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:var(--ink);font-feature-settings:"kern";text-rendering:optimizeLegibility;padding:0 0 calc(22px + env(safe-area-inset-bottom));}button{font:inherit;cursor:pointer;border:0}
 .hero{position:relative;overflow:hidden;background:linear-gradient(135deg,#103f91 0%,#145bd7 52%,#4a9bff 100%);color:white;padding:25px 18px 30px;border-radius:0 0 30px 30px;box-shadow:0 14px 34px #174e9b25}.hero:after{content:"";position:absolute;width:190px;height:190px;border-radius:50%;border:1px solid #ffffff20;left:-62px;top:-72px;box-shadow:0 0 0 22px #ffffff08,0 0 0 46px #ffffff06;pointer-events:none}.hero>*{position:relative;z-index:1}.top{display:flex;align-items:center;gap:12px}.logo{width:50px;height:50px;border-radius:17px;background:linear-gradient(145deg,#ffffff38,#ffffff12);display:grid;place-items:center;font-size:26px;border:1px solid #ffffff55;box-shadow:inset 0 1px #ffffff45}.hero h1{font-size:20px;margin:0 0 5px}.hero p{font-size:12px;margin:0;color:#e4efff}.hello{margin-top:24px;font-size:14px}.hello strong{display:block;font-size:21px;margin-top:5px}.wrap{padding:18px 15px;max-width:720px;margin:auto}.section-title{display:flex;align-items:center;justify-content:space-between;margin:5px 2px 12px;font-size:16px;font-weight:800}.section-title small{font-size:11px;color:var(--muted);font-weight:500}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.tile{min-height:130px;border:1px solid #e8eef7;border-radius:21px;padding:15px;text-align:right;box-shadow:0 6px 20px #233e6809;display:flex;flex-direction:column;align-items:flex-start;gap:9px;transition:transform .12s}.tile:active{transform:scale(.98)}.tile .ico{width:43px;height:43px;border-radius:14px;display:grid;place-items:center;font-size:23px}.tile b{font-size:14px;line-height:1.5}.tile small{font-size:11px;color:var(--muted);line-height:1.5}.t-blue{background:#e7f0ff}.t-blue .ico{background:#c9ddff}.t-teal{background:#e0f8f3}.t-teal .ico{background:#b8eee3}.t-orange{background:#fff0df}.t-orange .ico{background:#ffdbb4}.t-purple{background:#f0eaff}.t-purple .ico{background:#dcd0ff}.t-pink{background:#ffe9f1}.t-pink .ico{background:#ffd0e1}.t-green{background:#e8f7df}.t-green .ico{background:#ccecb9}.wide{grid-column:1/-1;min-height:86px;flex-direction:row;align-items:center}.wide .txt{flex:1}.panel{background:var(--card);border:1px solid #e9eef6;border-radius:21px;padding:18px;margin-top:18px;box-shadow:0 7px 24px #233e6808}.panel h2{font-size:15px;margin:0 0 13px}.line{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #edf1f7}.line:last-child{border:0}.line .ico{font-size:21px}.line .txt{flex:1;font-size:13px}.line small{display:block;color:var(--muted);font-size:11px;margin-top:4px}.pill{font-size:11px;border-radius:20px;background:#e7f0ff;color:#1456ad;padding:6px 9px}.muted{color:var(--muted);font-size:12px;line-height:1.8}.hidden{display:none!important}.view{display:none}.view.active{display:block}.back{color:var(--blue);background:#e7f0ff;padding:9px 13px;border-radius:12px;font-size:12px;font-weight:700;margin-bottom:14px}.service{display:flex;gap:12px;align-items:center;background:white;padding:14px;border:1px solid #e9eef6;border-radius:18px;margin:10px 0;box-shadow:0 5px 17px #233e6807}.service .ico{font-size:24px;width:44px;height:44px;display:grid;place-items:center;background:#edf4ff;border-radius:14px}.service .txt{flex:1}.service b{font-size:13px}.service small{display:block;color:var(--muted);margin-top:4px;font-size:11px}.primary{background:linear-gradient(135deg,#145bd7,#2e7cf0);color:white;padding:10px 14px;border-radius:13px;font-size:12px;font-weight:800;box-shadow:0 4px 12px #145bd720}.primary:disabled{opacity:.55;box-shadow:none}.admin{border:1px solid #ffdf9b;background:#fff9e9}.status{padding:12px;border-radius:13px;background:#fff3d8;color:#825500;font-size:12px;line-height:1.8;margin-top:12px}.foot{text-align:center;color:#8c9ab0;font-size:10px;padding:22px 10px 12px}.section-title{letter-spacing:-.2px}.tile b,.service b,.panel h2{letter-spacing:-.15px}.connection-pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#ffffff1c;border:1px solid #ffffff35;color:#f5f9ff;font-size:11px;font-weight:700;white-space:nowrap}.connection-dot{width:7px;height:7px;border-radius:50%;background:#ffd166;box-shadow:0 0 0 3px #ffd16620}.connection-pill.verified{background:#d8fae91f;border-color:#a8f2c54f}.connection-pill.verified .connection-dot{background:#62e6a0;box-shadow:0 0 0 3px #62e6a022}.connection-pill.failed .connection-dot{background:#ff8d8d;box-shadow:0 0 0 3px #ff8d8d22}.welcome-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:13px}.welcome-chip{font-size:10px;padding:6px 9px;border-radius:10px;background:#ffffff16;border:1px solid #ffffff24;color:#f0f6ff}.home-intro{display:flex;align-items:flex-start;gap:12px;padding:15px;border-radius:19px;background:linear-gradient(135deg,#fff,#f5f8ff);border:1px solid #e6edf8;margin-bottom:18px}.home-intro .mark{width:42px;height:42px;flex:0 0 42px;display:grid;place-items:center;border-radius:14px;background:#e6efff;font-size:22px}.home-intro b{display:block;font-size:13px;margin:1px 0 5px}.home-intro p{font-size:11px;color:var(--muted);line-height:1.8;margin:0}.home-intro .tiny{font-size:10px;color:#1d6b48;margin-top:5px}button:focus-visible{outline:3px solid #70a9ff;outline-offset:3px}.toast{position:fixed;bottom:20px;right:16px;left:16px;background:#17365f;color:white;padding:13px 16px;border-radius:13px;font-size:13px;box-shadow:0 8px 24px #10274a33;z-index:9}
 @media(min-width:520px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}.tile.wide{grid-column:span 2}.hero,.wrap{padding-left:24px;padding-right:24px}}
 </style></head>
 <body>
-<header class="hero"><div class="top"><div class="logo">🤝</div><div><h1>کمک‌یار مهاجر</h1><p>خدمات دفتر نت‌یار مهاجر</p></div></div><div class="hello">به خانوادهٔ کمک‌یار مهاجر خوش آمدید<strong id="userName">مشترک گرامی 🌱</strong><div class="welcome-meta"><span class="welcome-chip">خدمات دفتر نت‌یار مهاجر</span><span class="welcome-chip">سریع · ساده · امن</span></div></div></header>
+<header class="hero"><div class="top"><div class="logo">🤝</div><div><h1>کمک‌یار مهاجر</h1><p>خدمات دفتر نت‌یار مهاجر</p></div><button id="themeToggle" class="theme-toggle" type="button" aria-label="تغییر به تم شب" aria-pressed="false"><span id="themeIcon" class="theme-icon" aria-hidden="true">🌙</span><span id="themeLabel" class="theme-label">تم شب</span></button></div><div class="hello">به خانوادهٔ کمک‌یار مهاجر خوش آمدید<strong id="userName">مشترک گرامی 🌱</strong><div class="welcome-meta"><span class="welcome-chip">خدمات دفتر نت‌یار مهاجر</span><span class="welcome-chip">سریع · ساده · امن</span></div></div></header>
 <main class="wrap">
 <section id="home" class="view active">
 <div class="section-title">صفحهٔ اصلی <span id="connection" class="connection-pill"><i class="connection-dot"></i><span>در حال تأیید نشست…</span></span></div><div class="home-intro"><span class="mark">✨</span><div><b>از کجا شروع کنیم؟</b><p>خدمت موردنیازتان را انتخاب کنید یا وضعیت درخواست‌های قبلی را ببینید. برای نمایش اطلاعات حساب، ابتدا نشست امن تلگرام تأیید می‌شود.</p><div id="sessionHint" class="tiny">در حال بررسی هویت تلگرام…</div></div></div>
@@ -38,6 +65,24 @@ export const MINIAPP_HTML = String.raw`<!doctype html>
 const tg=window.Telegram?.WebApp;
 if(tg){tg.ready();tg.expand();try{tg.setHeaderColor('#1769e0');tg.setBackgroundColor('#f3f7ff')}catch{}}
 const $=id=>document.getElementById(id);
+const themeButton=$('themeToggle'),themeIcon=$('themeIcon'),themeLabel=$('themeLabel');
+function applyTheme(theme,save=true){
+ const dark=theme==='dark';
+ document.documentElement.dataset.theme=dark?'dark':'light';
+ document.documentElement.style.colorScheme=dark?'dark':'light';
+ const meta=document.querySelector('meta[name="theme-color"]');
+ if(meta)meta.content=dark?'#0b1220':'#145bd7';
+ if(themeIcon)themeIcon.textContent=dark?'☀️':'🌙';
+ if(themeLabel)themeLabel.textContent=dark?'تم روز':'تم شب';
+ if(themeButton){themeButton.setAttribute('aria-pressed',String(dark));themeButton.setAttribute('aria-label',dark?'تغییر به تم روز':'تغییر به تم شب');}
+ try{if(save)localStorage.setItem('netyar-miniapp-theme',dark?'dark':'light')}catch{}
+ try{if(tg){tg.setHeaderColor(dark?'#0b1220':'#145bd7');tg.setBackgroundColor(dark?'#0b1220':'#f4f7fc')}}catch{}
+}
+let initialTheme='light';
+try{initialTheme=localStorage.getItem('netyar-miniapp-theme')||'light'}catch{}
+applyTheme(initialTheme,false);
+themeButton?.addEventListener('click',()=>applyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark'));
+
 const staticServices=[
 {code:'identity',name:'تثبیت هویت',desc:'بررسی مدارک و درخواست تثبیت هویت',icon:'🪪'},
 {code:'khodnevis',name:'کد رهگیری خودنویس',desc:'ثبت درخواست دریافت کد رهگیری',icon:'📝'},
