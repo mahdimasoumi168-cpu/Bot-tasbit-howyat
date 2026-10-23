@@ -105,6 +105,25 @@ export const MINIAPP_HTML = String.raw`<!doctype html>
  .tile,.service,.panel,.theme-toggle,.primary{transition:background .22s ease,border-color .22s ease,box-shadow .22s ease,transform .15s ease}
 }
 
+
+/* Refined night palette: gentle aurora, luminous edges, and tactile controls */
+:root[data-theme="dark"] .section-title{color:#f0f5ff;text-shadow:0 1px 12px #8ab9ff10}
+:root[data-theme="dark"] .section-title small{color:#a6b7d2}
+:root[data-theme="dark"] .tile{position:relative;overflow:hidden;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}
+:root[data-theme="dark"] .tile:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(135deg,#ffffff08,transparent 48%);border-radius:inherit}
+:root[data-theme="dark"] .tile:hover{transform:translateY(-2px);border-color:#6d9bd0;box-shadow:0 14px 30px #02081555,0 0 0 1px #8bbaff12}
+:root[data-theme="dark"] .panel{background:linear-gradient(145deg,#17253a,#111b2d);border-color:#344a65;box-shadow:0 12px 30px #02081540,inset 0 1px #ffffff08}
+:root[data-theme="dark"] .service{background:linear-gradient(145deg,#17263b,#111d30);border-color:#334963;transition:border-color .18s ease,transform .18s ease}
+:root[data-theme="dark"] .service:active{transform:scale(.99);border-color:#7aaaff}
+:root[data-theme="dark"] .primary{background:linear-gradient(135deg,#367ce7,#2462c4);box-shadow:0 5px 16px #145bd733,inset 0 1px #ffffff24}
+:root[data-theme="dark"] .primary:hover{filter:brightness(1.08)}
+:root[data-theme="dark"] .back{background:linear-gradient(135deg,#1e3c64,#172d4a);border:1px solid #3c5d84}
+:root[data-theme="dark"] .pill{border:1px solid #395982;background:#1b3455;color:#c7dcff}
+:root[data-theme="dark"] .line{border-bottom-color:#2c405a}
+:root[data-theme="dark"] .admin{background:linear-gradient(145deg,#342c1d,#252116);border-color:#6c572d}
+:root[data-theme="dark"] .status{background:#3b301a;color:#ffe1a0;border:1px solid #695326}
+:root[data-theme="dark"] .toast{background:linear-gradient(135deg,#1d3a61,#142944);border:1px solid #5d82b0;box-shadow:0 12px 32px #0008}
+@media(prefers-reduced-motion:reduce){.theme-toggle,.tile,.service,.primary{transition:none!important}}
 </style></head>
 <body>
 <header class="hero"><div class="top"><div class="logo">🤝</div><div><h1>کمک‌یار مهاجر</h1><p>خدمات دفتر نت‌یار مهاجر</p></div><button id="themeToggle" class="theme-toggle" type="button" aria-label="تغییر به تم شب" aria-pressed="false"><span id="themeIcon" class="theme-icon" aria-hidden="true">🌙</span><span id="themeLabel" class="theme-label">تم شب</span></button></div><div class="hello">به خانوادهٔ کمک‌یار مهاجر خوش آمدید<strong id="userName">مشترک گرامی 🌱</strong><div class="welcome-meta"><span class="welcome-chip">خدمات دفتر نت‌یار مهاجر</span><span class="welcome-chip">سریع · ساده · امن</span></div></div></header>
