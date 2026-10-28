@@ -14,6 +14,7 @@ from app.db.models import (
     Order, Payment, RialitPayment, Service, User, Wallet, WalletTopup, WalletTransaction
 )
 from app.db.session import SessionLocal
+from app.payments.gozarban import GozarbanError, ensure_vpn_subscription
 
 logger = logging.getLogger(__name__)
 API_ROOT = "https://api.rialit.org/api/v1"
@@ -100,6 +101,42 @@ async def create_rialit_link(*, kind: str, user_id: int, amount_toman: int,
     return pay_url
 
 
+async def _provision_paid_vpn(
+    *, payment_id: int, user_telegram_id: int | None, amount_toman: int,
+    months: int | None, gigabytes: int | None,
+) -> tuple[int, dict[str, Any]]:
+    base = {
+        "user_telegram_id": user_telegram_id,
+        "amount_toman": amount_toman,
+        "months": months,
+        "gigabytes": gigabytes,
+    }
+    if not user_telegram_id or not months or not gigabytes:
+        return 200, {"ok": True, "action": "paid_vpn_pending",
+                     **base, "reason": "اطلاعات مشترک یا سفارش ناقص است."}
+    try:
+        provisioned = await ensure_vpn_subscription(
+            payment_id=payment_id,
+            telegram_user_id=user_telegram_id,
+            gigabytes=gigabytes,
+            months=months,
+        )
+    except GozarbanError as exc:
+        logger.warning("Gozarban provisioning pending for Rialit payment id=%s: %s",
+                       payment_id, str(exc))
+        return 200, {"ok": True, "action": "paid_vpn_pending",
+                     **base, "reason": str(exc)}
+    except Exception:
+        logger.exception("Gozarban provisioning failed for Rialit payment id=%s", payment_id)
+        return 200, {"ok": True, "action": "paid_vpn_pending",
+                     **base, "reason": "اتصال به گذربان موقتاً ناموفق بود؛ دوباره تلاش می‌شود."}
+    return 200, {"ok": True, "action": "paid_vpn",
+                 **base, "subscription_url": provisioned.get("subscription_url"),
+                 "subscription_id": provisioned.get("subscription_id"),
+                 "username": provisioned.get("username"),
+                 "already_existed": provisioned.get("already_existed", False)}
+
+
 async def process_rialit_webhook(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     """Never trust callback parameters as proof; query Rialit verify API."""
     token = str(payload.get("token") or payload.get("payment_token") or "").strip()
@@ -109,6 +146,7 @@ async def process_rialit_webhook(payload: dict[str, Any]) -> tuple[int, dict[str
     api_key = settings.rialit_api_key.strip()
     if not api_key:
         return 503, {"ok": False, "error": "gateway_not_configured"}
+    already_paid_vpn: dict[str, Any] | None = None
     async with SessionLocal() as session:
         payment = (await session.execute(
             select(RialitPayment).where(RialitPayment.token == token)
@@ -116,9 +154,20 @@ async def process_rialit_webhook(payload: dict[str, Any]) -> tuple[int, dict[str
         if payment is None:
             return 404, {"ok": False, "error": "unknown_payment"}
         if payment.status == "paid":
-            return 200, {"ok": True, "action": "duplicate"}
+            if payment.kind != "vpn":
+                return 200, {"ok": True, "action": "duplicate"}
+            user = await session.get(User, payment.user_id)
+            already_paid_vpn = {
+                "payment_id": payment.id,
+                "user_telegram_id": user.telegram_id if user else None,
+                "amount_toman": payment.amount_toman,
+                "months": payment.vpn_months,
+                "gigabytes": payment.vpn_gigabytes,
+            }
         expected_amount = payment.amount_toman
         payment_id = payment.id
+    if already_paid_vpn is not None:
+        return await _provision_paid_vpn(**already_paid_vpn)
     timeout = aiohttp.ClientTimeout(total=25)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as client:
@@ -175,11 +224,13 @@ async def process_rialit_webhook(payload: dict[str, Any]) -> tuple[int, dict[str
             user = await session.get(User, record.user_id)
             record.status, record.paid_at = "paid", now
             await session.commit()
-            return 200, {"ok": True, "action": "paid_vpn",
-                         "user_telegram_id": user.telegram_id if user else None,
-                         "amount_toman": record.amount_toman,
-                         "months": record.vpn_months,
-                         "gigabytes": record.vpn_gigabytes}
+            return await _provision_paid_vpn(
+                payment_id=record.id,
+                user_telegram_id=user.telegram_id if user else None,
+                amount_toman=record.amount_toman,
+                months=record.vpn_months,
+                gigabytes=record.vpn_gigabytes,
+            )
         if record.kind == "order":
             claim = await session.execute(update(Order).where(
                 Order.id == record.order_id,
