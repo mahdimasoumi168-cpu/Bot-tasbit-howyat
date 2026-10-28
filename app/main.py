@@ -211,31 +211,6 @@ async def main() -> None:
                             f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\n"
                             f"💳 موجودی جدید: {int(result.get('new_balance_toman', 0)):,} تومان",
                         )
-                elif action == "paid_vpn":
-                    user_id = result.get("user_telegram_id")
-                    months = result.get("months") or "—"
-                    gigabytes = result.get("gigabytes") or "—"
-                    amount = int(result.get("amount_toman") or 0)
-                    if user_id:
-                        await bot.send_message(
-                            user_id,
-                            "✅ پرداخت VPN با ریالیت تأیید شد.\n"
-                            f"⏳ مدت انتخابی: {months} ماه\n"
-                            f"📦 حجم: {gigabytes} گیگابایت\n"
-                            f"💰 مبلغ: {amount:,} تومان\n\n"
-                            "⚠️ پرداخت ثبت شد؛ فعال‌سازی خودکار VPN در این نسخه انجام نمی‌شود."
-                        )
-                    for admin_id in get_settings().admin_id_set:
-                        try:
-                            await bot.send_message(
-                                admin_id,
-                                "🔔 پرداخت VPN تأیید شد و برای فعال‌سازی دستی نیاز به بررسی دارد.\n"
-                                f"شناسه تلگرام: {user_id or '—'}\n"
-                                f"مدت: {months} ماه | حجم: {gigabytes} گیگابایت\n"
-                                f"مبلغ: {amount:,} تومان"
-                            )
-                        except Exception:
-                            logging.getLogger(__name__).exception("Rialit VPN admin notification failed")
                 elif action == "already_paid":
                     for admin_id in get_settings().admin_id_set:
                         try:
