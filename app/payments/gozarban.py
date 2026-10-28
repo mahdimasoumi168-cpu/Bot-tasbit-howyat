@@ -7,10 +7,9 @@ existing subscription before creating one.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
-from urllib.parse import quote
-
 import aiohttp
 
 from app.core.config import get_settings
@@ -88,7 +87,7 @@ async def ensure_vpn_subscription(
         ) as response:
             raw = await response.text()
             try:
-                result = __import__("json").loads(raw)
+                result = json.loads(raw)
             except ValueError:
                 result = {}
             if response.status == 200 and isinstance(result, dict):
