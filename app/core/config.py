@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     variza_api_key: str = Field(default="", validation_alias="VARIZA_API_KEY")
     variza_webhook_secret: str = Field(default="", validation_alias="VARIZA_WEBHOOK_SECRET")
     rialit_api_key: str = Field(default="", validation_alias="RIALIT_API_KEY")
+    gozarban_api_token: str = Field(default="", validation_alias="GOZARBAN_API_TOKEN")
+    gozarban_api_root: str = Field(default="https://gozarban.com", validation_alias="GOZARBAN_API_ROOT")
+    gozarban_plan_id: int | None = Field(default=None, validation_alias="GOZARBAN_PLAN_ID")
     public_base_url: str = Field(
         default="https://bot-tasbit-howyat-production.up.railway.app",
         validation_alias="PUBLIC_BASE_URL",
