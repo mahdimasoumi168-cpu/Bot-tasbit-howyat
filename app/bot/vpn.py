@@ -113,7 +113,7 @@ async def vpn_choose_data(callback: CallbackQuery) -> None:
         f"💰 قیمت نهایی هر گیگابایت: {VPN_PRICE_PER_GB_TOMAN:,} تومان\n"
         f"💵 مبلغ کل: {amount:,} تومان\n\n"
         "برای پرداخت، گزینه «ادامه به پرداخت» را بزنید تا لینک امن ریالیت ساخته شود. "
-        "پرداخت فقط پس از تأیید سمت سرور ثبت خواهد شد. فعال‌سازی خودکار VPN در این مرحله انجام نمی‌شود.",
+        "پرداخت فقط پس از تأیید سمت سرور ثبت می‌شود و سپس ربات برای ساخت اشتراک به گذربان متصل می‌شود.",
         reply_markup=vpn_summary_menu(months, gigabytes),
     )
 
@@ -157,8 +157,7 @@ async def vpn_payment_unavailable(callback: CallbackQuery) -> None:
         f"⏳ مدت انتخابی: {months} ماه\n"
         f"📦 حجم: {gigabytes} گیگابایت\n"
         f"💰 مبلغ دقیق: {amount:,} تومان\n\n"
-        "پس از پرداخت، نتیجه از سمت درگاه بررسی می‌شود. این نسخه پرداخت را ثبت می‌کند؛ "
-        "فعال‌سازی خودکار VPN یا ساخت حساب/اشتراک انجام نمی‌شود.",
+        "پس از پرداخت، نتیجه از سمت درگاه بررسی می‌شود و در صورت تأیید، ساخت اشتراک در گذربان آغاز می‌شود.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💳 پرداخت با ریالیت", url=pay_url, style="primary")],
             [InlineKeyboardButton(text="🔙 بازگشت به منوی VPN", callback_data="vpn:start", style="primary")],
