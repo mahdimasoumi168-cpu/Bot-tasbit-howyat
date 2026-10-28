@@ -87,60 +87,6 @@ async def main() -> None:
                         logging.getLogger(__name__).exception(
                             "Variza payment succeeded but operator notification failed"
                         )
-                elif action == "paid_vpn":
-                    user_id = result.get("user_telegram_id")
-                    months = result.get("months") or "—"
-                    gigabytes = result.get("gigabytes") or "—"
-                    subscription_url = result.get("subscription_url")
-                    if user_id:
-                        message = (
-                            "✅ پرداخت VPN با ریالیت تأیید شد و اشتراک در گذربان آماده است.\\n"
-                            f"⏳ مدت انتخابی: {months} ماه\\n"
-                            f"📦 حجم: {gigabytes} گیگابایت\\n"
-                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان"
-                        )
-                        if subscription_url:
-                            message += f"\\n\\n🔗 لینک اشتراک:\\n{subscription_url}"
-                        else:
-                            message += "\\n\\nاشتراک ساخته شد؛ برای دریافت لینک با پشتیبانی تماس بگیرید."
-                        await bot.send_message(user_id, message)
-                    for admin_id in get_settings().admin_id_set:
-                        try:
-                            await bot.send_message(
-                                admin_id,
-                                "✅ اشتراک VPN در گذربان ساخته/بازیابی شد.\\n"
-                                f"شناسه تلگرام: {user_id or '—'}\\n"
-                                f"نام کاربری گذربان: {result.get('username') or '—'}\\n"
-                                f"مدت: {months} ماه | حجم: {gigabytes} گیگابایت\\n"
-                                f"مبلغ پرداختی: {int(result.get('amount_toman', 0)):,} تومان",
-                            )
-                        except Exception:
-                            logging.getLogger(__name__).exception("Gozarban VPN success notification failed")
-                elif action == "paid_vpn_pending":
-                    user_id = result.get("user_telegram_id")
-                    months = result.get("months") or "—"
-                    gigabytes = result.get("gigabytes") or "—"
-                    reason = result.get("reason") or "خطای نامشخص"
-                    if user_id:
-                        await bot.send_message(
-                            user_id,
-                            "✅ پرداخت VPN با ریالیت تأیید و ثبت شد.\\n"
-                            f"⏳ مدت: {months} ماه | حجم: {gigabytes} گیگابایت\\n"
-                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\\n\\n"
-                            "⚠️ آماده‌سازی اشتراک در گذربان هنوز کامل نشده است؛ پرداخت شما ثبت است و نیاز به بررسی دارد.",
-                        )
-                    for admin_id in get_settings().admin_id_set:
-                        try:
-                            await bot.send_message(
-                                admin_id,
-                                "⚠️ پرداخت VPN تأیید شده، اما ساخت اشتراک گذربان در انتظار رفع مشکل است.\\n"
-                                f"شناسه تلگرام: {user_id or '—'}\\n"
-                                f"مدت: {months} ماه | حجم: {gigabytes} گیگابایت\\n"
-                                f"علت: {reason}\\n"
-                                f"مبلغ: {int(result.get('amount_toman', 0)):,} تومان",
-                            )
-                        except Exception:
-                            logging.getLogger(__name__).exception("Gozarban VPN pending notification failed")
                 elif action == "paid_topup":
                     user_id = result.get("user_telegram_id")
                     if user_id:
@@ -232,6 +178,60 @@ async def main() -> None:
                         logging.getLogger(__name__).exception(
                             "Rialit payment succeeded but operator notification failed"
                         )
+                elif action == "paid_vpn":
+                    user_id = result.get("user_telegram_id")
+                    months = result.get("months") or "—"
+                    gigabytes = result.get("gigabytes") or "—"
+                    subscription_url = result.get("subscription_url")
+                    if user_id:
+                        message = (
+                            "✅ پرداخت VPN با ریالیت تأیید شد و اشتراک در گذربان آماده است.\n"
+                            f"⏳ مدت انتخابی: {months} ماه\n"
+                            f"📦 حجم: {gigabytes} گیگابایت\n"
+                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان"
+                        )
+                        if subscription_url:
+                            message += f"\n\n🔗 لینک اشتراک:\n{subscription_url}"
+                        else:
+                            message += "\n\nاشتراک ساخته شد؛ برای دریافت لینک با پشتیبانی تماس بگیرید."
+                        await bot.send_message(user_id, message)
+                    for admin_id in get_settings().admin_id_set:
+                        try:
+                            await bot.send_message(
+                                admin_id,
+                                "✅ اشتراک VPN در گذربان ساخته/بازیابی شد.\n"
+                                f"شناسه تلگرام: {user_id or '—'}\n"
+                                f"نام کاربری گذربان: {result.get('username') or '—'}\n"
+                                f"مدت: {months} ماه | حجم: {gigabytes} گیگابایت\n"
+                                f"مبلغ پرداختی: {int(result.get('amount_toman', 0)):,} تومان",
+                            )
+                        except Exception:
+                            logging.getLogger(__name__).exception("Gozarban VPN success notification failed")
+                elif action == "paid_vpn_pending":
+                    user_id = result.get("user_telegram_id")
+                    months = result.get("months") or "—"
+                    gigabytes = result.get("gigabytes") or "—"
+                    reason = result.get("reason") or "خطای نامشخص"
+                    if user_id:
+                        await bot.send_message(
+                            user_id,
+                            "✅ پرداخت VPN با ریالیت تأیید و ثبت شد.\n"
+                            f"⏳ مدت: {months} ماه | حجم: {gigabytes} گیگابایت\n"
+                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\n\n"
+                            "⚠️ آماده‌سازی اشتراک در گذربان هنوز کامل نشده است؛ پرداخت شما ثبت است و نیاز به بررسی دارد.",
+                        )
+                    for admin_id in get_settings().admin_id_set:
+                        try:
+                            await bot.send_message(
+                                admin_id,
+                                "⚠️ پرداخت VPN تأیید شده، اما ساخت اشتراک گذربان در انتظار رفع مشکل است.\n"
+                                f"شناسه تلگرام: {user_id or '—'}\n"
+                                f"مدت: {months} ماه | حجم: {gigabytes} گیگابایت\n"
+                                f"علت: {reason}\n"
+                                f"مبلغ: {int(result.get('amount_toman', 0)):,} تومان",
+                            )
+                        except Exception:
+                            logging.getLogger(__name__).exception("Gozarban VPN pending notification failed")
                 elif action == "paid_topup":
                     user_id = result.get("user_telegram_id")
                     if user_id:
