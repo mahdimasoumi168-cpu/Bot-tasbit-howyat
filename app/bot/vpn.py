@@ -157,8 +157,7 @@ async def vpn_payment_unavailable(callback: CallbackQuery) -> None:
         f"⏳ مدت انتخابی: {months} ماه\n"
         f"📦 حجم: {gigabytes} گیگابایت\n"
         f"💰 مبلغ دقیق: {amount:,} تومان\n\n"
-        "پس از پرداخت، نتیجه از سمت درگاه بررسی می‌شود. این نسخه پرداخت را ثبت می‌کند؛ "
-        "فعال‌سازی خودکار VPN یا ساخت حساب/اشتراک انجام نمی‌شود.",
+        "پس از پرداخت، نتیجه از سمت درگاه بررسی می‌شود و در صورت تأیید، ساخت اشتراک در گذربان آغاز می‌شود.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💳 پرداخت با ریالیت", url=pay_url, style="primary")],
             [InlineKeyboardButton(text="🔙 بازگشت به منوی VPN", callback_data="vpn:start", style="primary")],
