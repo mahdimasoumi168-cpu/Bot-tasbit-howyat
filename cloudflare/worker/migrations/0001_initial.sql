@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS rialit_payments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   token TEXT UNIQUE,
   provider_order_id TEXT NOT NULL UNIQUE,
+  attempt_no INTEGER NOT NULL DEFAULT 1,
   kind TEXT NOT NULL,
   order_id INTEGER REFERENCES orders(id),
   topup_id INTEGER,
@@ -189,7 +190,10 @@ CREATE TABLE IF NOT EXISTS operators (
 
 CREATE TABLE IF NOT EXISTS telegram_updates (
   update_id INTEGER PRIMARY KEY,
-  received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  status TEXT NOT NULL DEFAULT 'received',
+  processing_at TEXT,
+  received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  processed_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS rialit_webhook_events (
@@ -226,6 +230,7 @@ CREATE INDEX IF NOT EXISTS idx_documents_order ON documents(order_id);
 CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
 CREATE INDEX IF NOT EXISTS idx_ticket_messages_ticket ON ticket_messages(ticket_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_rialit_status_created ON rialit_payments(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_rialit_order_attempt ON rialit_payments(order_id, attempt_no DESC);
 CREATE INDEX IF NOT EXISTS idx_rialit_order ON rialit_payments(order_id);
 CREATE INDEX IF NOT EXISTS idx_wallet_tx_user_created ON wallet_transactions(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_topups_status ON wallet_topups(status, created_at);
