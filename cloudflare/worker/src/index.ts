@@ -8,6 +8,8 @@ interface Env {
   TELEGRAM_WEBHOOK_SECRET: string;
   RIALIT_API_KEY: string;
   API_VPN?: string;
+  GOZARBAN_API_ROOT?: string;
+  GOZARBAN_PLAN_ID?: string;
   MIGRATION_SECRET?: string;
   RIALIT_API_BASE_URL?: string;
   RIALIT_WEBHOOK_IPS?: string;
@@ -640,6 +642,116 @@ async function createCardPayment(request: Request, env: Env): Promise<Response> 
   return json({ok:true,amount_toman:amount,settings:Object.fromEntries((settings.results||[]).map((x:any)=>[x.key,x.value]))});
 }
 
+
+const VPN_BASE_PRICE_PER_GB_TOMAN = 5_600;
+function gozarbanRoot(env: Env): string {
+  const root = (env.GOZARBAN_API_ROOT || "https://gozarban.com").replace(/\/$/, "");
+  if (!root.startsWith("https://")) throw new Error("gozarban_invalid_api_root");
+  return root;
+}
+async function getGozarbanPlan(env: Env): Promise<{id:number;name:string}> {
+  if (!env.API_VPN) throw new Error("gozarban_api_not_configured");
+  const response = await fetch(gozarbanRoot(env) + "/api/user/plans/active", {headers:{authorization:"Bearer "+env.API_VPN,accept:"application/json"},signal:AbortSignal.timeout(12_000)});
+  if (!response.ok) throw new Error("gozarban_plans_http_" + response.status);
+  const payload = await response.json() as any;
+  const lists = [payload?.plans,payload?.data?.plans,payload?.result?.plans,payload?.data,payload?.result,payload?.items];
+  const plans = lists.find((x) => Array.isArray(x)) as any[] | undefined;
+  if (!plans?.length) throw new Error("gozarban_no_active_plans");
+  const configured = Number(env.GOZARBAN_PLAN_ID || 0);
+  const candidates = plans.filter((p) => p && p.is_active !== false && p.active !== false && p.enabled !== false);
+  const selected = configured ? candidates.find((p) => Number(p.id ?? p.plan_id) === configured) : candidates.find((p) => Number.isSafeInteger(Number(p.id ?? p.plan_id)));
+  const id = Number(selected?.id ?? selected?.plan_id);
+  if (!Number.isSafeInteger(id) || id < 1) throw new Error("gozarban_plan_id_not_found");
+  return {id,name:String(selected?.name || selected?.title || "پلن فعال")};
+}
+function getGozarbanSubscriptionUrl(payload: any): string | null {
+  const objects = [payload,payload?.data,payload?.subscription,payload?.data?.subscription,payload?.result];
+  for (const item of objects) {
+    if (!item || typeof item !== "object") continue;
+    for (const key of ["subscription_url","subscription_link","url","link"]) {
+      const value = item[key];
+      if (typeof value === "string" && /^(https:\/\/|vless:\/\/|vmess:\/\/|trojan:\/\/|ss:\/\/)/i.test(value)) return value;
+    }
+    const links = item?.external_data?.links;
+    if (Array.isArray(links)) {
+      const valid = links.filter((x:any) => typeof x === "string" && /^(https:\/\/|vless:\/\/|vmess:\/\/|trojan:\/\/|ss:\/\/)/i.test(x));
+      if (valid.length) return valid.join("\n");
+    }
+  }
+  return null;
+}
+async function provisionVpnPayment(env: Env, paymentId: number): Promise<void> {
+  const job = await env.DB.prepare("SELECT j.*,rp.id AS payment_id,rp.status AS payment_status FROM vpn_provisioning_jobs j JOIN rialit_payments rp ON rp.id=j.rialit_payment_id WHERE j.rialit_payment_id=?").bind(paymentId).first<any>();
+  if (!job || job.payment_status !== "paid" || !env.API_VPN) return;
+  await env.DB.prepare("UPDATE vpn_provisioning_jobs SET status='processing',attempts=attempts+1,updated_at=CURRENT_TIMESTAMP WHERE rialit_payment_id=? AND status IN ('pending','failed','blocked_waiting_api_schema')").bind(paymentId).run();
+  const username = "nyvpn" + job.telegram_user_id + "_" + paymentId;
+  try {
+    const plan = await getGozarbanPlan(env);
+    const root = gozarbanRoot(env);
+    const headers = {authorization:"Bearer "+env.API_VPN,accept:"application/json"};
+    let existing: any = null;
+    const lookup = await fetch(root+"/api/user/subscriptions?search="+encodeURIComponent(username)+"&skip=0&limit=10",{headers,signal:AbortSignal.timeout(15_000)});
+    if (lookup.ok) {
+      const data = await lookup.json() as any;
+      const rows = Array.isArray(data?.subscriptions) ? data.subscriptions : Array.isArray(data?.data?.subscriptions) ? data.data.subscriptions : [];
+      existing = rows.find((x:any)=>x?.marzban_username===username || x?.display_name===username || x?.username===username) || null;
+    } else if (lookup.status !== 404) throw new Error("gozarban_lookup_http_"+lookup.status);
+    let created = existing;
+    if (!created) {
+      const response = await fetch(root+"/api/user/subscription/create",{method:"POST",headers:{...headers,"content-type":"application/json"},body:JSON.stringify({data_size_gb:String(job.gigabytes),expire_days:String(Number(job.months)*30),plan_id:plan.id,username}),signal:AbortSignal.timeout(25_000)});
+      const payload = await response.json().catch(()=>({})) as any;
+      if (![200,201].includes(response.status)) throw new Error("gozarban_create_http_"+response.status);
+      created = payload?.subscription || payload?.data?.subscription || payload?.data || payload;
+    }
+    const subscriptionId = created?.id ?? created?.subscription_id ?? null;
+    const link = getGozarbanSubscriptionUrl(created);
+    if (!subscriptionId && !link) throw new Error("gozarban_response_missing_subscription");
+    await env.DB.prepare("UPDATE vpn_provisioning_jobs SET status='completed',provider_subscription_id=?,subscription_url=?,last_error=NULL,updated_at=CURRENT_TIMESTAMP WHERE rialit_payment_id=?").bind(subscriptionId==null?null:String(subscriptionId),link,paymentId).run();
+    const message = "✅ پرداخت VPN تأیید و اشتراک شما ساخته شد.\n\nحجم: "+job.gigabytes+" گیگابایت\nمدت: "+job.months+" ماه\n"+(link?"لینک اشتراک شما:\n"+link:"شناسه اشتراک: "+String(subscriptionId)+"\nبرای دریافت لینک با پشتیبانی تماس بگیرید.");
+    await telegram(env,"sendMessage",{chat_id:job.telegram_user_id,text:message,disable_web_page_preview:true}).catch(()=>undefined);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "gozarban_unknown_error";
+    await env.DB.prepare("UPDATE vpn_provisioning_jobs SET status='failed',last_error=?,updated_at=CURRENT_TIMESTAMP WHERE rialit_payment_id=?").bind(reason.slice(0,200),paymentId).run();
+    await telegram(env,"sendMessage",{chat_id:job.telegram_user_id,text:"⚠️ پرداخت VPN تأیید شده، اما ساخت اشتراک در پنل گذربان ناموفق بود. سفارش شما محفوظ است و برای بررسی به پشتیبانی اطلاع داده شد."}).catch(()=>undefined);
+  }
+}
+async function createVpnPayment(request: Request, env: Env): Promise<Response> {
+  const user = await miniAppUser(request,env);
+  if (!user) return json({ok:false,error:"unauthorized"},401);
+  if (!env.RIALIT_API_KEY || !env.API_VPN) return json({ok:false,error:"vpn_payment_not_configured"},503);
+  const body = await request.json().catch(()=>null) as any;
+  const months = Number(body?.months), gigabytes = Number(body?.gigabytes), requestId = String(body?.request_id || "");
+  if (![1,2,3,4].includes(months) || !Number.isSafeInteger(gigabytes) || gigabytes<10 || gigabytes>100 || gigabytes%10!==0 || !/^[0-9a-f-]{36}$/i.test(requestId)) return json({ok:false,error:"invalid_vpn_selection"},400);
+  try { await getGozarbanPlan(env); } catch (error) {
+    const reason = error instanceof Error ? error.message : "gozarban_unavailable";
+    return json({ok:false,error:"gozarban_not_ready",detail:reason},503);
+  }
+  const userId = await ensureUser(env.DB,user);
+  const amount = VPN_BASE_PRICE_PER_GB_TOMAN * gigabytes;
+  if (amount<50_000 || amount>10_000_000) return json({ok:false,error:"rialit_amount_out_of_range"},400);
+  const providerOrderId = "mohajer-vpn-"+user.id+"-"+requestId;
+  const previous = await env.DB.prepare("SELECT id,token,pay_url,payer_amount_toman,payer_fee_toman,status,attempt_no FROM rialit_payments WHERE provider_order_id=?").bind(providerOrderId).first<any>();
+  if (previous?.status==="pending" && previous.pay_url) return json({ok:true,pay_url:previous.pay_url,amount_toman:amount,payer_amount_toman:previous.payer_amount_toman,payer_fee_toman:previous.payer_fee_toman,fee_percent:12});
+  if (previous && previous.status==="paid") return json({ok:false,error:"vpn_payment_already_paid"},409);
+  const attemptNo = Number(previous?.attempt_no || 0)+1;
+  const stableOrderId = attemptNo>1 ? providerOrderId+"-"+attemptNo : providerOrderId;
+  if (!previous) await env.DB.prepare("INSERT INTO rialit_payments(provider_order_id,attempt_no,kind,user_id,amount_toman,vpn_months,vpn_gigabytes,status) VALUES(?,1,'vpn',?,?,?,?,'pending')").bind(stableOrderId,userId,amount,months,gigabytes).run();
+  let response: Response;
+  try {
+    response = await fetch((env.RIALIT_API_BASE_URL || "https://api.rialit.io/api/v1").replace(/\/$/,"")+"/send",{method:"POST",headers:{authorization:"Bearer "+env.RIALIT_API_KEY,"content-type":"application/json",accept:"application/json"},body:JSON.stringify({amount,order_id:stableOrderId,payer_id:user.id}),signal:AbortSignal.timeout(25_000)});
+  } catch { return json({ok:false,error:"rialit_network_error",retry_same_order:true},502); }
+  const result = await response.json().catch(()=>({})) as any;
+  if (![200,201].includes(response.status)) return json({ok:false,error:response.status===403?"rialit_outbound_ip_not_allowed":response.status===401?"rialit_key_invalid":"rialit_request_failed"},502);
+  const token=String(result?.token||""),payerAmount=Number(result?.payer_amount),payerFee=Number(result?.payer_fee);
+  if (!/^[A-Za-z0-9]{1,64}$/.test(token) || !Number.isSafeInteger(payerAmount) || !Number.isSafeInteger(payerFee) || Number(result?.amount)!==amount) return json({ok:false,error:"rialit_invalid_response"},502);
+  const feePercent=Number(env.PAYMENT_FEE_PERCENT||"12"),payUrl="https://pay.rialit.io/v1/"+token;
+  if (!matchesRialitFee(amount,payerAmount,payerFee,feePercent)) {
+    await env.DB.prepare("UPDATE rialit_payments SET token=?,pay_url=?,payer_amount_toman=?,payer_fee_toman=?,status='fee_mismatch' WHERE provider_order_id=?").bind(token,payUrl,payerAmount,payerFee,stableOrderId).run();
+    return json({ok:false,error:"rialit_fee_mismatch",expected_payer_amount_toman:expectedPayerAmount(amount,feePercent)},409);
+  }
+  await env.DB.prepare("UPDATE rialit_payments SET token=?,pay_url=?,payer_amount_toman=?,payer_fee_toman=? WHERE provider_order_id=? AND status='pending'").bind(token,payUrl,payerAmount,payerFee,stableOrderId).run();
+  return json({ok:true,pay_url:payUrl,amount_toman:amount,payer_amount_toman:payerAmount,payer_fee_toman:payerFee,fee_percent:feePercent});
+}
 async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const allowed = new Set((env.RIALIT_WEBHOOK_IPS || "").split(",").map((x) => x.trim()).filter(Boolean));
   const sourceIp = request.headers.get("cf-connecting-ip") || "";
@@ -742,18 +854,11 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
 
   await env.DB.batch(statements);
   if (status === "paid" && payment.kind === "vpn") {
-    // Provider request payload must be validated against the authenticated Gozarban OpenAPI schema before activation is enabled.
-    await env.DB.prepare(`
-      INSERT OR IGNORE INTO vpn_provisioning_jobs
-        (rialit_payment_id, telegram_user_id, months, gigabytes, status)
-      VALUES (?, ?, ?, ?, 'blocked_waiting_api_schema')
-    `).bind(payment.id, Number(payment.user_telegram_id), Number(payment.vpn_months || 0), Number(payment.vpn_gigabytes || 0)).run();
+    await env.DB.prepare("INSERT OR IGNORE INTO vpn_provisioning_jobs(rialit_payment_id,telegram_user_id,months,gigabytes,status) VALUES(?,?,?,?,'pending')").bind(payment.id,Number(payment.user_telegram_id),Number(payment.vpn_months||0),Number(payment.vpn_gigabytes||0)).run();
+    ctx.waitUntil(provisionVpnPayment(env,payment.id));
   }
-  if (status === "paid") {
-    ctx.waitUntil(telegram(env, "sendMessage", {
-      chat_id: payment.user_telegram_id,
-      text: "✅ پرداخت شما توسط ریالت‌پی تأیید شد. برای مشاهده وضعیت پرونده، مینی‌اپ را باز کنید.",
-    }).catch(() => undefined));
+  if (status === "paid" && payment.kind !== "vpn") {
+    ctx.waitUntil(telegram(env,"sendMessage",{chat_id:payment.user_telegram_id,text:"✅ پرداخت شما توسط ریالت‌پی تأیید شد. برای مشاهده وضعیت پرونده، مینی‌اپ را باز کنید."}).catch(()=>undefined));
   }
   return json({ ok: true, action: status });
 }
@@ -854,6 +959,7 @@ export default {
     if (url.pathname === "/api/miniapp/bootstrap" && request.method === "GET") return bootstrap(request, env);
     if (url.pathname === "/api/miniapp/orders" && request.method === "POST") return createOrder(request, env);
     if (url.pathname === "/api/miniapp/payments/rialit" && request.method === "POST") return createRialitPayment(request, env);
+    if (url.pathname === "/api/miniapp/vpn/pay" && request.method === "POST") return createVpnPayment(request, env);
     if (url.pathname === "/api/miniapp/payments/card" && request.method === "POST") return createCardPayment(request, env);
     if (url.pathname === "/api/miniapp/topups" && request.method === "POST") return createWalletTopup(request, env);
     if (url.pathname === "/api/miniapp/topups/rialit" && request.method === "POST") return createRialitTopupPayment(request, env);
