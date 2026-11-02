@@ -142,12 +142,15 @@ def wallet_topup_cancel_menu() -> InlineKeyboardMarkup:
     ])
 
 
-def wallet_topup_choice_menu() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔐 درگاه پرداخت رمز پویا", callback_data="wallet:topup:rialit", style="primary")],
+def wallet_topup_choice_menu(rialit_available: bool = True) -> InlineKeyboardMarkup:
+    rows = []
+    if rialit_available:
+        rows.append([InlineKeyboardButton(text="🔐 درگاه پرداخت رمز پویا", callback_data="wallet:topup:rialit", style="primary")])
+    rows.extend([
         [InlineKeyboardButton(text="💳 کارت به کارت", callback_data="wallet:topup:card", style="primary")],
         [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
     ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def services_menu(enabled_codes: set[str] | None = None) -> InlineKeyboardMarkup:
