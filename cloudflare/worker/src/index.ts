@@ -7,6 +7,7 @@ interface Env {
   TELEGRAM_WEBHOOK_SECRET: string;
   RIALIT_API_KEY: string;
   API_VPN?: string;
+  MIGRATION_SECRET?: string;
   RIALIT_API_BASE_URL?: string;
   RIALIT_WEBHOOK_IPS?: string;
   PAYMENT_FEE_PERCENT?: string;
@@ -453,10 +454,97 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
   return json({ ok: true, action: status });
 }
 
+
+const IMPORTABLE_COLUMNS: Record<string, string[]> = {
+  users: ["id","telegram_id","first_name","last_name","username","created_at","updated_at"],
+  services: ["id","code","name","price_toman","enabled","description"],
+  orders: ["id","public_id","user_id","service_id","price_snapshot_toman","status","data_json","created_at","updated_at"],
+  payments: ["id","order_id","amount_toman","receipt_file_id","receipt_type","status","source_rialit_payment_id","created_at"],
+  variza_payments: ["id","slug","kind","order_id","topup_id","user_id","amount_toman","pay_url","status","attempt_code","expires_at","created_at","paid_at"],
+  rialit_payments: ["id","token","provider_order_id","attempt_no","kind","order_id","topup_id","user_id","amount_toman","payer_amount_toman","payer_fee_toman","vpn_months","vpn_gigabytes","pay_url","status","created_at","paid_at","delivered_at"],
+  wallets: ["id","user_id","balance_toman","created_at","updated_at"],
+  wallet_transactions: ["id","user_id","amount_toman","balance_after_toman","kind","description","order_id","topup_id","source_rialit_payment_id","created_at"],
+  wallet_topups: ["id","user_id","amount_toman","receipt_file_id","receipt_type","status","created_at","reviewed_at"],
+  discount_codes: ["id","code","kind","value","active","max_uses","used_count","expires_at","created_at"],
+  documents: ["id","order_id","document_type","telegram_file_id","review_status","reviewed_by_telegram_id","reviewed_at","created_at"],
+  tickets: ["id","order_id","status","created_at","updated_at"],
+  ticket_messages: ["id","ticket_id","sender_type","sender_telegram_id","content_type","text","file_id","created_at"],
+  settings: ["id","key","value"],
+  audit_logs: ["id","actor_telegram_id","action","order_id","details_json","created_at"],
+  companions: ["id","order_id","full_name","mobile","created_at"],
+  operators: ["id","telegram_id","display_name","role","permissions_json","active","created_at","updated_at"]
+};
+
+function authorizedMigration(request: Request, env: Env): boolean {
+  const secret = env.MIGRATION_SECRET || "";
+  return Boolean(secret) && request.headers.get("authorization") === "Bearer " + secret;
+}
+
+async function handleMigrationImport(request: Request, env: Env): Promise<Response> {
+  if (!authorizedMigration(request, env)) return text("forbidden", 403);
+  const body = await request.json().catch(() => null) as any;
+  const table = String(body?.table || "");
+  const columns = body?.columns;
+  const rows = body?.rows;
+  const batchId = String(body?.batch_id || "");
+  const checksum = String(body?.checksum || "");
+  if (!IMPORTABLE_COLUMNS[table] || !Array.isArray(columns) || !Array.isArray(rows) ||
+      rows.length > 100 || !batchId || batchId.length > 160 || !checksum ||
+      columns.length < 1 || columns.length > 32 ||
+      columns.some((c: unknown) => typeof c !== "string" || !IMPORTABLE_COLUMNS[table].includes(c)) ||
+      new Set(columns).size !== columns.length ||
+      rows.some((r: unknown) => !Array.isArray(r) || r.length !== columns.length)) {
+    return json({ ok: false, error: "invalid_import_batch" }, 400);
+  }
+
+  const prior = await env.DB.prepare("SELECT batch_id FROM migration_batches WHERE batch_id = ?")
+    .bind(batchId).first();
+  if (prior) return json({ ok: true, duplicate: true });
+
+  const placeholders = columns.map(() => "?").join(",");
+  const columnSql = columns.map((c: string) => '"' + c + '"').join(",");
+  const insertSql = 'INSERT OR IGNORE INTO "' + table + '" (' + columnSql + ') VALUES (' + placeholders + ')';
+  const statements: D1PreparedStatement[] = rows.map((row: unknown[]) =>
+    env.DB.prepare(insertSql).bind(...row as any[])
+  );
+  statements.push(env.DB.prepare(
+    "INSERT OR IGNORE INTO migration_batches(batch_id,table_name,row_count,checksum) VALUES(?,?,?,?)"
+  ).bind(batchId, table, rows.length, checksum));
+  await env.DB.batch(statements);
+  return json({ ok: true, table, imported_rows: rows.length, batch_id: batchId });
+}
+
+async function handleMigrationManifest(request: Request, env: Env): Promise<Response> {
+  if (!authorizedMigration(request, env)) return text("forbidden", 403);
+  const body = await request.json().catch(() => null) as any;
+  if (!body || typeof body !== "object" || !body.table_counts || typeof body.table_counts !== "object") {
+    return json({ ok: false, error: "invalid_manifest" }, 400);
+  }
+  await env.DB.prepare(
+    "INSERT OR REPLACE INTO migration_manifest(id,manifest_json,created_at) VALUES(1,?,CURRENT_TIMESTAMP)"
+  ).bind(JSON.stringify(body)).run();
+  return json({ ok: true });
+}
+
+async function handleMigrationStatus(request: Request, env: Env): Promise<Response> {
+  if (!authorizedMigration(request, env)) return text("forbidden", 403);
+  const counts: Record<string, number> = {};
+  for (const table of Object.keys(IMPORTABLE_COLUMNS)) {
+    const row = await env.DB.prepare('SELECT COUNT(*) AS n FROM "' + table + '"').first<{n:number}>();
+    counts[table] = Number(row?.n || 0);
+  }
+  const manifest = await env.DB.prepare("SELECT manifest_json FROM migration_manifest WHERE id = 1").first<{manifest_json:string}>();
+  const batches = await env.DB.prepare("SELECT COUNT(*) AS n FROM migration_batches").first<{n:number}>();
+  return json({ ok: true, table_counts: counts, batch_count: Number(batches?.n || 0), manifest: manifest?.manifest_json ? JSON.parse(manifest.manifest_json) : null });
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/health") return json({ ok: true, service: "help-yar-mohajer", platform: "cloudflare-workers" });
+    if (url.pathname === "/internal/import" && request.method === "POST") return handleMigrationImport(request, env);
+    if (url.pathname === "/internal/manifest" && request.method === "POST") return handleMigrationManifest(request, env);
+    if (url.pathname === "/internal/status" && request.method === "GET") return handleMigrationStatus(request, env);
     if (url.pathname === "/webhooks/telegram" && request.method === "POST") return handleTelegram(request, env);
     if (url.pathname === "/webhooks/rialit" && request.method === "POST") return handleRialitWebhook(request, env, ctx);
     if (url.pathname === "/api/miniapp/bootstrap" && request.method === "GET") return bootstrap(request, env);
