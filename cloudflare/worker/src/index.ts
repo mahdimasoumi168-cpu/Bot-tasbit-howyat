@@ -277,7 +277,7 @@ async function ensureTelegramWebhook(env: Env, origin: string): Promise<void> {
   if (!env.BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET) return;
   const existing = await env.DB.prepare("SELECT value FROM settings WHERE key='telegram_webhook_origin'").first<{value:string}>();
   if (existing?.value === origin) return;
-  const url = origin.replace(/\\/$/,"") + "/webhooks/telegram";
+  const url = origin.replace(/\/$/,"") + "/webhooks/telegram";
   try {
     const response = await fetch("https://api.telegram.org/bot" + env.BOT_TOKEN + "/setWebhook", {
       method:"POST",
