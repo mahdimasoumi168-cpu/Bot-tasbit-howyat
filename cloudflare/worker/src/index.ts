@@ -742,6 +742,19 @@ async function provisionVpnPayment(env: Env, paymentId: number): Promise<void> {
     await telegram(env,"sendMessage",{chat_id:job.telegram_user_id,text:"⚠️ پرداخت VPN تأیید شده، اما ساخت اشتراک در پنل گذربان ناموفق بود. سفارش شما محفوظ است و برای بررسی به پشتیبانی اطلاع داده شد."}).catch(()=>undefined);
   }
 }
+async function checkVpnApi(request: Request, env: Env): Promise<Response> {
+  const user = await miniAppUser(request,env);
+  if (!user) return json({ok:false,error:"unauthorized"},401);
+  if (!env.API_VPN) return json({ok:false,error:"vpn_payment_not_configured"},503);
+  try {
+    const plan = await getGozarbanPlan(env);
+    return json({ok:true,connected:true,plan_name:plan.name,plan_id:plan.id,base_price_per_gb_toman:VPN_BASE_PRICE_PER_GB_TOMAN,fee_percent:Number(env.PAYMENT_FEE_PERCENT||"12"),rialit_configured:Boolean(env.RIALIT_API_KEY)});
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "gozarban_unavailable";
+    return json({ok:false,error:"gozarban_not_ready",detail},503);
+  }
+}
+
 async function createVpnPayment(request: Request, env: Env): Promise<Response> {
   const user = await miniAppUser(request,env);
   if (!user) return json({ok:false,error:"unauthorized"},401);
@@ -987,6 +1000,7 @@ export default {
     if (url.pathname === "/api/miniapp/bootstrap" && request.method === "GET") return bootstrap(request, env);
     if (url.pathname === "/api/miniapp/orders" && request.method === "POST") return createOrder(request, env);
     if (url.pathname === "/api/miniapp/payments/rialit" && request.method === "POST") return createRialitPayment(request, env);
+    if (url.pathname === "/api/miniapp/vpn/status" && request.method === "GET") return checkVpnApi(request,env);
     if (url.pathname === "/api/miniapp/vpn/pay" && request.method === "POST") return createVpnPayment(request, env);
     if (url.pathname === "/api/miniapp/payments/card" && request.method === "POST") return createCardPayment(request, env);
     if (url.pathname === "/api/miniapp/topups" && request.method === "POST") return createWalletTopup(request, env);
