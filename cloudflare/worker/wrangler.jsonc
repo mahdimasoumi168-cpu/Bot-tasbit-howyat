@@ -12,9 +12,14 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "bot-tasbit-howyat-migration",
-      "database_id": "f7a2d3ed-81f6-4e06-9e12-54507efd367b",
+      "database_name": "bot-tasbit-howyat-v2",
+      "database_id": "4e3c0133-9004-4247-b19b-0b310387a0eb",
       "migrations_dir": "migrations"
+    },
+    {
+      "binding": "LEGACY_DB",
+      "database_name": "bot-tasbit-howyat-migration",
+      "database_id": "f7a2d3ed-81f6-4e06-9e12-54507efd367b"
     }
   ],
   "vars": {
