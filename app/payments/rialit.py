@@ -25,6 +25,20 @@ class RialitError(RuntimeError):
     """Safe payment error suitable for displaying to the user."""
 
 
+RIALIT_FEE_PERCENT = 12
+
+
+def expected_rialit_payer_amount(base_toman: int, fee_percent: int = RIALIT_FEE_PERCENT) -> int:
+    if base_toman <= 0 or not 0 <= fee_percent < 100:
+        raise ValueError("invalid_payment_amount_or_fee")
+    return (base_toman * (100 + fee_percent) + 99) // 100
+
+
+def rialit_amount_breakdown(base_toman: int) -> tuple[int, int, int]:
+    payer_amount = expected_rialit_payer_amount(base_toman)
+    return base_toman, payer_amount - base_toman, payer_amount
+
+
 def _base_url() -> str:
     base = get_settings().public_base_url.strip().rstrip("/")
     if not base.startswith("https://"):
@@ -118,7 +132,20 @@ async def create_rialit_link(*, kind: str, user_id: int, amount_toman: int,
     nested = body.get("data") if isinstance(body.get("data"), dict) else {}
     token = str(body.get("token") or nested.get("token") or "").strip()
     if not token or len(token) > 64 or any(ch in token for ch in "/?#"):
-        raise RialitError("پاسخ درگاه ریالیت برای ساخت لینک معتبر نبود.")
+        raise RialitError("پاسخ درگاه ریالت‌پی برای ساخت لینک معتبر نبود.")
+    try:
+        payer_amount = int(body.get("payer_amount", nested.get("payer_amount")))
+        payer_fee = int(body.get("payer_fee", nested.get("payer_fee")))
+    except (TypeError, ValueError):
+        payer_amount = payer_fee = -1
+    expected_payer_amount = expected_rialit_payer_amount(amount_toman)
+    if payer_amount != expected_payer_amount or payer_fee != expected_payer_amount - amount_toman:
+        async with SessionLocal() as session:
+            row = await session.get(RialitPayment, payment_id)
+            if row is not None and row.status == "pending":
+                row.status = "failed"
+                await session.commit()
+        raise RialitError("کارمزد ریالت‌پی با نرخ ۱۲٪ مطابقت ندارد؛ پرداخت متوقف شد. تنظیم کارمزد پذیرنده را بررسی کنید.")
     pay_url = f"https://pay.rialit.io/v1/{token}"
     async with SessionLocal() as session:
         row = await session.get(RialitPayment, payment_id)
