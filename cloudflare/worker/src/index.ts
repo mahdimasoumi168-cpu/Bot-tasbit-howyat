@@ -288,13 +288,13 @@ async function createRialitPayment(request: Request, env: Env): Promise<Response
   if (!Number.isSafeInteger(orderId) || orderId < 1) return json({ ok: false, error: "invalid_order" }, 400);
   const userId = await ensureUser(env.DB, user);
   const order = await env.DB.prepare(`
-    SELECT o.id, o.public_id, o.price_snapshot_toman, o.status
+    SELECT o.id, o.public_id, o.price_snapshot_toman, o.amount_toman, o.status
     FROM orders o WHERE o.id = ? AND o.user_id = ?
   `).bind(orderId, userId).first<any>();
   if (!order) return json({ ok: false, error: "order_not_found" }, 404);
   if (order.status !== "waiting_payment") return json({ ok: false, error: "order_not_payable" }, 409);
 
-  const amount = Number(order.price_snapshot_toman || 0);
+  const amount = Number(order.price_snapshot_toman ?? order.amount_toman ?? 0);
   if (amount < 50_000 || amount > 10_000_000) {
     return json({ ok: false, error: "rialit_amount_out_of_range", card_transfer_available: true }, 400);
   }
@@ -303,13 +303,13 @@ async function createRialitPayment(request: Request, env: Env): Promise<Response
   const previous = await env.DB.prepare(
     "SELECT id, token, pay_url, payer_amount_toman, payer_fee_toman, status, attempt_no FROM rialit_payments WHERE order_id = ? ORDER BY attempt_no DESC LIMIT 1"
   ).bind(order.id).first<any>();
-  if (previous?.status === "pending" && previous.pay_url) {
+  if (previous?.status === "pending" && previous.provider_order_id && previous.pay_url) {
     return json({ ok: true, pay_url: previous.pay_url, payer_amount_toman: previous.payer_amount_toman, payer_fee_toman: previous.payer_fee_toman });
   }
   if (previous && !["pending", "expired", "cancelled", "failed"].includes(String(previous.status))) {
     return json({ ok: false, error: "payment_not_reopenable" }, 409);
   }
-  const attemptNo = previous?.status === "pending" ? Number(previous.attempt_no) : Number(previous?.attempt_no || 0) + 1;
+  const attemptNo = previous?.status === "pending" && previous.provider_order_id ? Number(previous.attempt_no) : Number(previous?.attempt_no || 0) + 1;
   const providerOrderId = `mohajer-order-${order.id}-${attemptNo}`;
   if (!previous || previous.status !== "pending") {
     await env.DB.prepare(`
