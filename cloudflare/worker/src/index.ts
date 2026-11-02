@@ -370,6 +370,104 @@ async function createRialitPayment(request: Request, env: Env): Promise<Response
   });
 }
 
+
+async function createWalletTopup(request: Request, env: Env): Promise<Response> {
+  const user = await miniAppUser(request, env);
+  if (!user) return json({ ok: false, error: "unauthorized" }, 401);
+  const body = await request.json().catch(() => null) as any;
+  const amount = Number(body?.amount_toman);
+  const method = String(body?.method || "");
+  if (!Number.isSafeInteger(amount) || amount < 20_000 || amount > 10_000_000 || !["card", "rialit"].includes(method)) {
+    return json({ ok: false, error: "invalid_topup_amount_or_method" }, 400);
+  }
+  if (method === "rialit" && amount < 50_000) return json({ ok: false, error: "rialit_minimum_50000" }, 400);
+  const userId = await ensureUser(env.DB, user);
+  const status = method === "card" ? "awaiting_receipt" : "awaiting_payment";
+  const topup = await env.DB.prepare("INSERT INTO wallet_topups(user_id,amount_toman,status) VALUES(?,?,?) RETURNING id")
+    .bind(userId, amount, status).first<{id:number}>();
+  if (!topup) return json({ ok: false, error: "topup_create_failed" }, 500);
+  if (method === "card") {
+    await env.DB.prepare("INSERT OR IGNORE INTO payments(user_id,provider,provider_payment_id,amount_toman,status,receipt_type) VALUES(?,'card_transfer',?,?,'awaiting_receipt','photo')")
+      .bind(userId, "topup:" + topup.id, amount).run();
+  }
+  return json({ ok: true, topup_id: topup.id, amount_toman: amount, method });
+}
+
+async function createRialitTopupPayment(request: Request, env: Env): Promise<Response> {
+  const user = await miniAppUser(request, env);
+  if (!user) return json({ ok: false, error: "unauthorized" }, 401);
+  const body = await request.json().catch(() => null) as any;
+  const topupId = Number(body?.topup_id);
+  if (!Number.isSafeInteger(topupId) || topupId < 1) return json({ ok: false, error: "invalid_topup" }, 400);
+  const userId = await ensureUser(env.DB, user);
+  const topup = await env.DB.prepare("SELECT id,amount_toman,status FROM wallet_topups WHERE id = ? AND user_id = ?")
+    .bind(topupId, userId).first<any>();
+  if (!topup) return json({ ok: false, error: "topup_not_found" }, 404);
+  if (!["awaiting_payment", "payment_link_failed"].includes(String(topup.status))) return json({ ok: false, error: "topup_not_payable" }, 409);
+  const amount = Number(topup.amount_toman);
+  if (amount < 50_000 || amount > 10_000_000) return json({ ok: false, error: "rialit_amount_out_of_range" }, 400);
+  if (!env.RIALIT_API_KEY) return json({ ok: false, error: "rialit_not_configured" }, 503);
+
+  const previous = await env.DB.prepare("SELECT id,token,provider_order_id,attempt_no,pay_url,payer_amount_toman,payer_fee_toman,status FROM rialit_payments WHERE topup_id = ? AND kind = 'topup' ORDER BY attempt_no DESC LIMIT 1")
+    .bind(topupId).first<any>();
+  if (previous?.status === "pending" && previous.provider_order_id && previous.pay_url) {
+    return json({ ok: true, pay_url: previous.pay_url, payer_amount_toman: previous.payer_amount_toman, payer_fee_toman: previous.payer_fee_toman });
+  }
+  const attemptNo = previous?.status === "pending" && previous.provider_order_id ? Number(previous.attempt_no) : Number(previous?.attempt_no || 0) + 1;
+  const providerOrderId = "mohajer-topup-" + topupId + "-" + attemptNo;
+  const apiBase = (env.RIALIT_API_BASE_URL || "https://api.rialit.io/api/v1").replace(/\/$/, "");
+  let response: Response;
+  try {
+    response = await fetch(apiBase + "/send", {
+      method: "POST",
+      headers: { authorization: "Bearer " + env.RIALIT_API_KEY, "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ amount, order_id: providerOrderId, payer_id: user.id }),
+      signal: AbortSignal.timeout(25_000),
+    });
+  } catch {
+    return json({ ok: false, error: "rialit_network_error", retry_same_order: true }, 502);
+  }
+  const result = await response.json().catch(() => ({})) as any;
+  if (![200, 201].includes(response.status)) {
+    if (response.status === 401) return json({ ok: false, error: "rialit_key_invalid" }, 502);
+    if (response.status === 403) return json({ ok: false, error: "rialit_outbound_ip_not_allowed" }, 502);
+    if (response.status === 409) return json({ ok: false, error: "rialit_order_id_conflict" }, 409);
+    return json({ ok: false, error: "rialit_request_failed", status: response.status }, 502);
+  }
+  const token = String(result?.token || "");
+  const payerAmount = Number(result?.payer_amount);
+  const payerFee = Number(result?.payer_fee);
+  if (!/^[A-Za-z0-9]{1,64}$/.test(token) || !Number.isSafeInteger(payerAmount) || !Number.isSafeInteger(payerFee) || Number(result?.amount) !== amount) {
+    return json({ ok: false, error: "rialit_invalid_response" }, 502);
+  }
+  const payUrl = "https://pay.rialit.io/v1/" + token;
+  await env.DB.prepare("INSERT INTO rialit_payments(token,provider_order_id,attempt_no,kind,topup_id,user_id,amount_toman,payer_amount_toman,payer_fee_toman,pay_url,status) VALUES(?,?,?,'topup',?,?,?,?,?,?,'pending')")
+    .bind(token,providerOrderId,attemptNo,topupId,userId,amount,payerAmount,payerFee,payUrl).run();
+  await env.DB.prepare("UPDATE wallet_topups SET status='awaiting_payment' WHERE id=? AND user_id=?")
+    .bind(topupId,userId).run();
+  const feePercent = Math.min(50, Math.max(0, Number(env.PAYMENT_FEE_PERCENT || "12")));
+  return json({ok:true,pay_url:payUrl,amount_toman:amount,payer_amount_toman:payerAmount,payer_fee_toman:payerFee,fee_percent:12,fee_configuration_matches:payerAmount===expectedPayerAmount(amount,feePercent)});
+}
+
+async function createCardPayment(request: Request, env: Env): Promise<Response> {
+  const user = await miniAppUser(request, env);
+  if (!user) return json({ ok: false, error: "unauthorized" }, 401);
+  const body = await request.json().catch(() => null) as any;
+  const orderId = Number(body?.order_id);
+  if (!Number.isSafeInteger(orderId) || orderId < 1) return json({ ok: false, error: "invalid_order" }, 400);
+  const userId = await ensureUser(env.DB, user);
+  const order = await env.DB.prepare("SELECT id,public_id,amount_toman,price_snapshot_toman,status FROM orders WHERE id=? AND user_id=?")
+    .bind(orderId,userId).first<any>();
+  if (!order || order.status !== "waiting_payment") return json({ ok: false, error: "order_not_payable" }, 409);
+  const amount = Number(order.price_snapshot_toman ?? order.amount_toman ?? 0);
+  await env.DB.prepare("INSERT OR IGNORE INTO payments(order_id,user_id,provider,provider_payment_id,amount_toman,status,receipt_type) VALUES(?,?,'card_transfer',?,?,'awaiting_receipt','photo')")
+    .bind(orderId,userId,"order:"+order.public_id,amount).run();
+  await env.DB.prepare("UPDATE orders SET status='awaiting_receipt',updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?")
+    .bind(orderId,userId).run();
+  const settings = await env.DB.prepare("SELECT key,value FROM settings WHERE key IN ('card_number','card_holder','card_bank')").all();
+  return json({ok:true,amount_toman:amount,settings:Object.fromEntries((settings.results||[]).map((x:any)=>[x.key,x.value]))});
+}
+
 async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   const allowed = new Set((env.RIALIT_WEBHOOK_IPS || "").split(",").map((x) => x.trim()).filter(Boolean));
   const sourceIp = request.headers.get("cf-connecting-ip") || "";
@@ -455,11 +553,11 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
 
   if (status === "paid" && payment.kind === "topup" && payment.topup_id) {
     statements.push(
-      env.DB.prepare("UPDATE wallet_topups SET status = 'approved', reviewed_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('awaiting_receipt','waiting_receipt_review') AND changes() = 1")
+      env.DB.prepare("UPDATE wallet_topups SET status = 'approved', reviewed_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('awaiting_payment','awaiting_receipt','waiting_receipt_review') AND changes() = 1")
         .bind(payment.topup_id),
       env.DB.prepare("INSERT OR IGNORE INTO wallets(user_id,balance_toman) SELECT user_id,0 FROM wallet_topups WHERE id = ? AND status = 'approved'")
         .bind(payment.topup_id),
-      env.DB.prepare("INSERT OR IGNORE INTO wallet_credit_events(payment_id) SELECT ? WHERE EXISTS (SELECT 1 FROM wallet_topups WHERE id = ? AND status = 'approved') AND NOT EXISTS (SELECT 1 FROM wallet_credit_events WHERE payment_id = ?) AND NOT EXISTS (SELECT 1 FROM wallet_transactions WHERE topup_id = ?)")
+      env.DB.prepare("INSERT OR IGNORE INTO wallet_credit_events(source_key) SELECT 'rialit:' || ? WHERE EXISTS (SELECT 1 FROM wallet_topups WHERE id = ? AND status = 'approved') AND NOT EXISTS (SELECT 1 FROM wallet_credit_events WHERE source_key = 'rialit:' || ?) AND NOT EXISTS (SELECT 1 FROM wallet_transactions WHERE topup_id = ?)")
         .bind(payment.id, payment.topup_id, payment.id, payment.topup_id),
       env.DB.prepare("UPDATE wallets SET balance_toman = balance_toman + ? WHERE user_id = (SELECT user_id FROM wallet_topups WHERE id = ?) AND changes() = 1")
         .bind(payment.amount_toman, payment.topup_id),
@@ -582,6 +680,9 @@ export default {
     if (url.pathname === "/api/miniapp/bootstrap" && request.method === "GET") return bootstrap(request, env);
     if (url.pathname === "/api/miniapp/orders" && request.method === "POST") return createOrder(request, env);
     if (url.pathname === "/api/miniapp/payments/rialit" && request.method === "POST") return createRialitPayment(request, env);
+    if (url.pathname === "/api/miniapp/payments/card" && request.method === "POST") return createCardPayment(request, env);
+    if (url.pathname === "/api/miniapp/topups" && request.method === "POST") return createWalletTopup(request, env);
+    if (url.pathname === "/api/miniapp/topups/rialit" && request.method === "POST") return createRialitTopupPayment(request, env);
     if (url.pathname === "/app" || url.pathname === "/app/") {
       const assetUrl = new URL("/index.html", request.url);
       return env.ASSETS.fetch(new Request(assetUrl, request));
