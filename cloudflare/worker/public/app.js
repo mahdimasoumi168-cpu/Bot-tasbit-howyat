@@ -28,7 +28,11 @@
         rialit_amount_out_of_range:"مبلغ خارج از محدوده مجاز ریالت است؛ از کارت‌به‌کارت استفاده کنید.",
         card_not_configured:"شماره کارت دفتر هنوز در تنظیمات مدیریت ثبت نشده است.",
         order_not_payable:"این سفارش در وضعیت قابل پرداخت نیست.",
-        service_unavailable:"این خدمت فعلاً فعال نیست."
+        service_unavailable:"این خدمت فعلاً فعال نیست.",
+        vpn_payment_not_configured:"اتصال پرداخت یا API فیلترشکن در Worker تنظیم نشده است.",
+        gozarban_not_ready:"پنل فیلترشکن آماده نیست؛ تنظیم API یا پلن فعال را بررسی کنید.",
+        invalid_vpn_selection:"حجم یا مدت انتخابی معتبر نیست.",
+        vpn_payment_already_paid:"این سفارش VPN قبلاً پرداخت شده است."
       };
       throw new Error(messages[data.error] || data.error || "خطا در دریافت اطلاعات");
     }
@@ -74,17 +78,48 @@
   };
   function renderServices(items) {
     $("services").innerHTML = "";
-    if (!items.length) { $("services").innerHTML = '<div class="empty">فعلاً خدمتی برای ثبت فعال نیست.</div>'; return; }
+    if (!items.length) $("services").innerHTML = '<div class="empty">فعلاً خدمتی برای ثبت فعال نیست.</div>';
     items.forEach((service) => {
       const card = document.createElement("article");
       card.className = "service";
       const desc = service.description || "برای مشاهده شرایط و ثبت درخواست انتخاب کنید.";
-      card.innerHTML = `<div class="symbol">${icons[service.code] || "📄"}</div><h3></h3><p></p><button type="button">ثبت درخواست</button>`;
+      card.innerHTML = '<div class="symbol">' + (icons[service.code] || "📄") + '</div><h3></h3><p></p><button type="button">ثبت درخواست</button>';
       card.querySelector("h3").textContent = service.name;
       card.querySelector("p").textContent = desc;
       card.querySelector("button").addEventListener("click", () => openForm(service));
       $("services").appendChild(card);
     });
+    const vpn = document.createElement("article");
+    vpn.className = "service vpn-service";
+    vpn.innerHTML = '<div class="symbol">🔐</div><h3>خرید فیلترشکن</h3><p>قیمت پایه هر گیگ ۵٬۶۰۰ تومان؛ کارمزد درگاه ریالت ۱۲٪ جداگانه محاسبه می‌شود.</p><button type="button">انتخاب حجم و مدت</button>';
+    vpn.querySelector("button").addEventListener("click", openVpnForm);
+    $("services").appendChild(vpn);
+  }
+  function openVpnForm() {
+    const root = $("sheetRoot");
+    root.className = "backdrop";
+    root.innerHTML = '<section class="sheet"><h2>🔐 خرید فیلترشکن</h2><p class="muted">قیمت پایه هر گیگ: ۵٬۶۰۰ تومان. کارمزد ریالت: ۱۲٪ از مبلغ پایه.</p><label class="field"><span>مدت اشتراک</span><select id="vpnMonths"><option value="1">۱ ماه</option><option value="2">۲ ماه</option><option value="3">۳ ماه</option><option value="4">۴ ماه</option></select></label><label class="field"><span>حجم اشتراک</span><select id="vpnGb"></select></label><div id="vpnPrice" class="notice"></div><div class="actions"><button class="primary" id="vpnPay">ادامه و دریافت لینک پرداخت</button><button class="secondary" id="vpnClose">بازگشت</button></div><div id="vpnResult"></div></section>';
+    const gb = $("vpnGb");
+    for (let n=10;n<=100;n+=10) { const option=document.createElement("option"); option.value=String(n); option.textContent=new Intl.NumberFormat("fa-IR").format(n)+" گیگابایت"; gb.appendChild(option); }
+    const updatePrice = () => {
+      const base = Number(gb.value || 10) * 5600;
+      const fee = Math.round(base * 0.12);
+      $("vpnPrice").textContent = "مبلغ پایه: " + money(base) + " | کارمزد ۱۲٪: " + money(fee) + " | مبلغ تقریبی پرداخت: " + money(base+fee);
+    };
+    gb.addEventListener("change",updatePrice);
+    $("vpnMonths").addEventListener("change",updatePrice);
+    updatePrice();
+    $("vpnClose").onclick = closeSheet;
+    $("vpnPay").onclick = async () => {
+      const b=$("vpnPay"); b.disabled=true; b.textContent="در حال بررسی اتصال و ساخت لینک…";
+      try {
+        const result=await api("/api/miniapp/vpn/pay",{method:"POST",body:JSON.stringify({months:Number($("vpnMonths").value),gigabytes:Number(gb.value),request_id:crypto.randomUUID()})});
+        $("vpnResult").innerHTML='<div class="notice success">مبلغ پایه: '+money(result.amount_toman)+'<br>کارمزد ریالت: '+money(result.payer_fee_toman)+'<br>مبلغ نهایی درگاه: <strong>'+money(result.payer_amount_toman)+'</strong></div><button class="primary" id="vpnOpenPay">ورود به درگاه امن</button>';
+        $("vpnOpenPay").onclick=()=>tg?.openLink?tg.openLink(result.pay_url):window.open(result.pay_url,"_blank");
+      } catch(error) {
+        $("vpnResult").innerHTML='<div class="notice error">'+escapeHtml(error.message)+'</div>';
+      } finally { b.disabled=false; b.textContent="ادامه و دریافت لینک پرداخت"; }
+    };
   }
   function renderOrders(items) {
     if (!items.length) { $("orders").innerHTML = '<div class="empty">هنوز پرونده‌ای ثبت نکرده‌اید.</div>'; return; }
