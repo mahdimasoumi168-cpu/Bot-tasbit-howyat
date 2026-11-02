@@ -30,11 +30,13 @@
         order_not_payable:"این سفارش در وضعیت قابل پرداخت نیست.",
         service_unavailable:"این خدمت فعلاً فعال نیست.",
         vpn_payment_not_configured:"اتصال پرداخت یا API فیلترشکن در Worker تنظیم نشده است.",
-        gozarban_not_ready:"پنل فیلترشکن آماده نیست؛ تنظیم API یا پلن فعال را بررسی کنید.",
+        gozarban_not_ready:"اتصال پنل فیلترشکن یا پلن فعال در دسترس نیست.",
         invalid_vpn_selection:"حجم یا مدت انتخابی معتبر نیست.",
         vpn_payment_already_paid:"این سفارش VPN قبلاً پرداخت شده است."
       };
-      throw new Error(messages[data.error] || data.error || "خطا در دریافت اطلاعات");
+      let message = messages[data.error] || data.error || "خطا در دریافت اطلاعات";
+      if (data.detail) message += " (" + String(data.detail) + ")";
+      throw new Error(message);
     }
     return data;
   };
@@ -98,7 +100,7 @@
   function openVpnForm() {
     const root = $("sheetRoot");
     root.className = "backdrop";
-    root.innerHTML = '<section class="sheet"><h2>🔐 خرید فیلترشکن</h2><p class="muted">قیمت پایه هر گیگ: ۵٬۶۰۰ تومان. کارمزد ریالت: ۱۲٪ از مبلغ پایه.</p><label class="field"><span>مدت اشتراک</span><select id="vpnMonths"><option value="1">۱ ماه</option><option value="2">۲ ماه</option><option value="3">۳ ماه</option><option value="4">۴ ماه</option></select></label><label class="field"><span>حجم اشتراک</span><select id="vpnGb"></select></label><div id="vpnPrice" class="notice"></div><div class="actions"><button class="primary" id="vpnPay">ادامه و دریافت لینک پرداخت</button><button class="secondary" id="vpnClose">بازگشت</button></div><div id="vpnResult"></div></section>';
+    root.innerHTML = '<section class="sheet"><h2>🔐 خرید فیلترشکن</h2><p class="muted">قیمت پایه هر گیگ: ۵٬۶۰۰ تومان. کارمزد ریالت: ۱۲٪ از مبلغ پایه.</p><label class="field"><span>مدت اشتراک</span><select id="vpnMonths"><option value="1">۱ ماه</option><option value="2">۲ ماه</option><option value="3">۳ ماه</option><option value="4">۴ ماه</option></select></label><label class="field"><span>حجم اشتراک</span><select id="vpnGb"></select></label><div id="vpnPrice" class="notice"></div><div class="actions"><button class="secondary" id="vpnCheck">بررسی اتصال API فیلترشکن</button><button class="primary" id="vpnPay">ادامه و دریافت لینک پرداخت</button><button class="secondary" id="vpnClose">بازگشت</button></div><div id="vpnResult"></div></section>';
     const gb = $("vpnGb");
     for (let n=10;n<=100;n+=10) { const option=document.createElement("option"); option.value=String(n); option.textContent=new Intl.NumberFormat("fa-IR").format(n)+" گیگابایت"; gb.appendChild(option); }
     const updatePrice = () => {
@@ -110,6 +112,15 @@
     $("vpnMonths").addEventListener("change",updatePrice);
     updatePrice();
     $("vpnClose").onclick = closeSheet;
+    $("vpnCheck").onclick = async () => {
+      const b=$("vpnCheck"); b.disabled=true; b.textContent="در حال بررسی اتصال گذربان…";
+      try {
+        const result=await api("/api/miniapp/vpn/status");
+        $("vpnResult").innerHTML='<div class="notice success">✅ اتصال API گذربان برقرار است.<br>پلن فعال: <strong>'+escapeHtml(result.plan_name)+'</strong><br>قیمت پایه هر گیگ: '+money(result.base_price_per_gb_toman)+' تومان<br>کارمزد پرداخت ریالت: '+result.fee_percent+'٪</div>';
+      } catch(error) {
+        $("vpnResult").innerHTML='<div class="notice error">'+escapeHtml(error.message)+'</div>';
+      } finally { b.disabled=false; b.textContent="بررسی اتصال API فیلترشکن"; }
+    };
     $("vpnPay").onclick = async () => {
       const b=$("vpnPay"); b.disabled=true; b.textContent="در حال بررسی اتصال و ساخت لینک…";
       try {
