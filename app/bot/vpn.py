@@ -8,9 +8,9 @@ from app.payments.rialit import RialitError, create_rialit_link
 
 router = Router()
 
-VPN_BASE_PRICE_PER_GB_TOMAN = 6_000
-VPN_PAYMENT_FEE_PERCENT = 15
-VPN_PRICE_PER_GB_TOMAN = (VPN_BASE_PRICE_PER_GB_TOMAN * (100 + VPN_PAYMENT_FEE_PERCENT) + 99) // 100
+VPN_BASE_PRICE_PER_GB_TOMAN = 5_600
+VPN_PAYMENT_FEE_PERCENT = 12
+VPN_PRICE_PER_GB_TOMAN = VPN_BASE_PRICE_PER_GB_TOMAN
 VPN_MIN_GB = 10
 VPN_MAX_GB = 100
 VPN_STEP_GB = 10
@@ -109,11 +109,11 @@ async def vpn_choose_data(callback: CallbackQuery) -> None:
         f"⏳ مدت اشتراک: {months} ماه\n"
         f"📦 حجم: {gigabytes} گیگابایت\n"
         f"💰 قیمت پایه هر گیگابایت: {VPN_BASE_PRICE_PER_GB_TOMAN:,} تومان\n"
-        f"🧾 کارمزد پرداخت ({VPN_PAYMENT_FEE_PERCENT}٪): {VPN_BASE_PRICE_PER_GB_TOMAN * VPN_PAYMENT_FEE_PERCENT // 100:,} تومان به‌ازای هر گیگ\n"
-        f"💰 قیمت نهایی هر گیگابایت: {VPN_PRICE_PER_GB_TOMAN:,} تومان\n"
-        f"💵 مبلغ کل: {amount:,} تومان\n\n"
-        "برای پرداخت، گزینه «ادامه به پرداخت» را بزنید تا لینک امن ریالیت ساخته شود. "
-        "پرداخت فقط پس از تأیید سمت سرور ثبت خواهد شد. فعال‌سازی خودکار VPN در این مرحله انجام نمی‌شود.",
+        f"💵 مبلغ پایه کل: {amount:,} تومان\n"
+        f"🧾 کارمزد ریالت‌پی (۱۲٪): {amount * VPN_PAYMENT_FEE_PERCENT // 100:,} تومان\n"
+        f"💳 مبلغ نهایی پرداخت: {amount + amount * VPN_PAYMENT_FEE_PERCENT // 100:,} تومان\n\n"
+        "برای پرداخت، گزینه «ادامه به پرداخت» را بزنید تا لینک امن ریالت‌پی ساخته شود. "
+        "پرداخت فقط پس از تأیید سمت سرور ثبت می‌شود و سپس ربات برای ساخت اشتراک به گذربان متصل می‌شود.",
         reply_markup=vpn_summary_menu(months, gigabytes),
     )
 
@@ -153,14 +153,15 @@ async def vpn_payment_unavailable(callback: CallbackQuery) -> None:
         return
     await callback.answer()
     await callback.message.answer(
-        "💠 پرداخت VPN از طریق ریالیت\n\n"
+        "🔐 درگاه پرداخت رمز پویا برای VPN\n\n"
         f"⏳ مدت انتخابی: {months} ماه\n"
         f"📦 حجم: {gigabytes} گیگابایت\n"
-        f"💰 مبلغ دقیق: {amount:,} تومان\n\n"
-        "پس از پرداخت، نتیجه از سمت درگاه بررسی می‌شود. این نسخه پرداخت را ثبت می‌کند؛ "
-        "فعال‌سازی خودکار VPN یا ساخت حساب/اشتراک انجام نمی‌شود.",
+        f"💰 مبلغ پایه: {amount:,} تومان\n"
+        f"🧾 کارمزد ریالت‌پی (۱۲٪): {amount * VPN_PAYMENT_FEE_PERCENT // 100:,} تومان\n"
+        f"💳 مبلغ نهایی پرداخت: {amount + amount * VPN_PAYMENT_FEE_PERCENT // 100:,} تومان\n\n"
+        "پس از پرداخت، نتیجه از سمت درگاه بررسی می‌شود و در صورت تأیید، ساخت اشتراک در گذربان آغاز می‌شود.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 پرداخت با ریالیت", url=pay_url, style="primary")],
+            [InlineKeyboardButton(text="🔐 درگاه پرداخت رمز پویا", url=pay_url, style="primary")],
             [InlineKeyboardButton(text="🔙 بازگشت به منوی VPN", callback_data="vpn:start", style="primary")],
         ]),
     )

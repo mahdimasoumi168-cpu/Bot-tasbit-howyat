@@ -1,5 +1,6 @@
 import asyncio
 import json
+import ipaddress
 import logging
 import os
 from pathlib import Path
@@ -17,7 +18,6 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.seed import seed_services
 from app.db.session import init_db
-from app.payments.variza import process_webhook
 from app.payments.rialit import process_rialit_webhook
 
 
@@ -62,109 +62,22 @@ async def main() -> None:
     app = web.Application()
     app.router.add_get("/health", health)
 
-    async def variza_webhook(request: web.Request) -> web.Response:
-        raw_body = await request.read()
-        signature = request.headers.get("X-Webhook-Signature", "")
-        status_code, result = await process_webhook(raw_body, signature)
-        if status_code == 200:
-            action = result.get("action")
-            try:
-                if action == "paid_order":
-                    user_id = result.get("user_telegram_id")
-                    if user_id:
-                        await bot.send_message(
-                            user_id,
-                            f"✅ پرداخت واریزا تأیید شد.\n"
-                            f"🔢 شماره درخواست: {result.get('public_id', '—')}\n"
-                            f"📌 خدمت: {result.get('service_name', 'خدمت')}\n"
-                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\n\n"
-                            "پرونده برای بررسی و انجام خدمت در صف قرار گرفت.",
-                        )
-                    try:
-                        from app.bot.admin import send_case_to_operator
-                        await send_case_to_operator(bot, int(result["order_id"]))
-                    except Exception:
-                        logging.getLogger(__name__).exception(
-                            "Variza payment succeeded but operator notification failed"
-                        )
-                elif action == "paid_vpn":
-                    user_id = result.get("user_telegram_id")
-                    months = result.get("months") or "—"
-                    gigabytes = result.get("gigabytes") or "—"
-                    if user_id:
-                        await bot.send_message(
-                            user_id,
-                            "✅ پرداخت VPN با ریالیت تأیید شد.\n"
-                            f"⏳ مدت انتخابی: {months} ماه\n"
-                            f"📦 حجم: {gigabytes} گیگابایت\n"
-                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\n\n"
-                            "⚠️ پرداخت ثبت شده است؛ فعال‌سازی خودکار VPN در این نسخه انجام نمی‌شود."
-                        )
-                    for admin_id in get_settings().admin_id_set:
-                        try:
-                            await bot.send_message(
-                                admin_id,
-                                "🔔 پرداخت VPN تأیید شد و برای فعال‌سازی دستی نیاز به بررسی دارد.\n"
-                                f"شناسه تلگرام: {user_id or '—'}\n"
-                                f"مدت: {months} ماه | حجم: {gigabytes} گیگابایت\n"
-                                f"مبلغ: {int(result.get('amount_toman', 0)):,} تومان"
-                            )
-                        except Exception:
-                            pass
-                elif action == "paid_topup":
-                    user_id = result.get("user_telegram_id")
-                    if user_id:
-                        await bot.send_message(
-                            user_id,
-                            f"✅ افزایش اعتبار با واریزا تأیید شد.\n"
-                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\n"
-                            f"💳 موجودی جدید: {int(result.get('new_balance_toman', 0)):,} تومان",
-                        )
-                elif action == "paid_vpn":
-                    user_id = result.get("user_telegram_id")
-                    if user_id:
-                        await bot.send_message(
-                            user_id,
-                            "✅ پرداخت VPN با ریالیت از سمت درگاه تأیید شد.\n"
-                            f"⏳ مدت انتخابی: {int(result.get('months') or 0)} ماه\n"
-                            f"📦 حجم: {int(result.get('gigabytes') or 0)} گیگابایت\n"
-                            f"💰 مبلغ: {int(result.get('amount_toman') or 0):,} تومان\n\n"
-                            "توجه: تأیید پرداخت ثبت شد؛ فعال‌سازی خودکار اشتراک VPN هنوز به سامانه تأمین‌کننده متصل نیست.",
-                        )
-                elif action == "already_paid":
-                    for admin_id in get_settings().admin_id_set:
-                        try:
-                            await bot.send_message(
-                                admin_id,
-                                "⚠️ واریزا یک پرداخت موفق دیگر برای پرونده/شارژ ثبت‌شده ارسال کرد، "
-                                "اما مورد قبلاً پرداخت شده بود. لطفاً تراکنش را در پنل واریزا بررسی کنید.\n"
-                                f"جزئیات: {json.dumps(result, ensure_ascii=False)}",
-                            )
-                        except Exception:
-                            pass
-            except Exception:
-                logging.getLogger(__name__).exception(
-                    "Variza webhook processed but user notification failed"
-                )
-        return web.json_response(result, status=status_code)
-
-    async def variza_return(_request: web.Request) -> web.Response:
-        return web.Response(
-            text=(
-                "<!doctype html><html lang='fa' dir='rtl'><meta charset='utf-8'>"
-                "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-                "<title>بازگشت از واریزا</title>"
-                "<body style='font-family:sans-serif;max-width:640px;margin:48px auto;padding:16px'>"
-                "<h2>بازگشت از درگاه واریزا</h2>"
-                "<p>اگر پرداخت را انجام داده‌اید، نتیجه پس از تأیید واریزا به ربات ارسال می‌شود.</p>"
-                "<p>برای جلوگیری از پرداخت تکراری، تا دریافت پیام تأیید ربات صبر کنید.</p>"
-                "</body></html>"
-            ),
-            content_type="text/html",
-            charset="utf-8",
-        )
-
     async def rialit_webhook(request: web.Request) -> web.Response:
+        # Rialit webhooks are unsigned: enforce the provider's published source IPs.
+        configured_ips = {
+            item.strip()
+            for item in settings.rialit_webhook_ips.split(",")
+            if item.strip()
+        }
+        raw_ip = request.headers.get("CF-Connecting-IP") or request.remote or ""
+        try:
+            source_ip = str(ipaddress.ip_address(raw_ip.strip()))
+        except ValueError:
+            source_ip = ""
+        if not configured_ips or not source_ip or source_ip not in configured_ips:
+            logging.getLogger(__name__).warning("Rejected Rialit webhook from untrusted source IP %s", source_ip or "unknown")
+            return web.json_response({"ok": False, "error": "source_ip_not_allowed"}, status=403)
+
         # Rialit may return to callback_url with a token query parameter.
         # Accept query parameters and JSON bodies; server-side verification
         # in process_rialit_webhook remains the only payment confirmation.
@@ -200,10 +113,10 @@ async def main() -> None:
                     if user_id:
                         await bot.send_message(
                             user_id,
-                            f"✅ پرداخت ریالیت تأیید شد.\\n"
-                            f"🔢 شماره درخواست: {result.get('public_id', '—')}\\n"
-                            f"📌 خدمت: {result.get('service_name', 'خدمت')}\\n"
-                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\\n\\n"
+                            f"✅ پرداخت ریالیت تأیید شد.\n"
+                            f"🔢 شماره درخواست: {result.get('public_id', '—')}\n"
+                            f"📌 خدمت: {result.get('service_name', 'خدمت')}\n"
+                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\n\n"
                             "پرونده برای بررسی و انجام خدمت در صف قرار گرفت.",
                         )
                     try:
@@ -213,46 +126,75 @@ async def main() -> None:
                         logging.getLogger(__name__).exception(
                             "Rialit payment succeeded but operator notification failed"
                         )
+                elif action == "paid_vpn":
+                    user_id = result.get("user_telegram_id")
+                    months = result.get("months") or "—"
+                    gigabytes = result.get("gigabytes") or "—"
+                    subscription_url = result.get("subscription_url")
+                    if user_id:
+                        message = (
+                            "✅ پرداخت VPN با ریالیت تأیید شد و اشتراک در گذربان آماده است.\n"
+                            f"⏳ مدت انتخابی: {months} ماه\n"
+                            f"📦 حجم: {gigabytes} گیگابایت\n"
+                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان"
+                        )
+                        if subscription_url:
+                            message += f"\n\n🔗 لینک اشتراک:\n{subscription_url}"
+                        else:
+                            message += "\n\nاشتراک ساخته شد؛ برای دریافت لینک با پشتیبانی تماس بگیرید."
+                        await bot.send_message(user_id, message)
+                    for admin_id in get_settings().admin_id_set:
+                        try:
+                            await bot.send_message(
+                                admin_id,
+                                "✅ اشتراک VPN در گذربان ساخته/بازیابی شد.\n"
+                                f"شناسه تلگرام: {user_id or '—'}\n"
+                                f"نام کاربری گذربان: {result.get('username') or '—'}\n"
+                                f"مدت: {months} ماه | حجم: {gigabytes} گیگابایت\n"
+                                f"مبلغ پرداختی: {int(result.get('amount_toman', 0)):,} تومان",
+                            )
+                        except Exception:
+                            logging.getLogger(__name__).exception("Gozarban VPN success notification failed")
+                elif action == "paid_vpn_pending":
+                    user_id = result.get("user_telegram_id")
+                    months = result.get("months") or "—"
+                    gigabytes = result.get("gigabytes") or "—"
+                    reason = result.get("reason") or "خطای نامشخص"
+                    if user_id:
+                        await bot.send_message(
+                            user_id,
+                            "✅ پرداخت VPN با ریالیت تأیید و ثبت شد.\n"
+                            f"⏳ مدت: {months} ماه | حجم: {gigabytes} گیگابایت\n"
+                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\n\n"
+                            "⚠️ آماده‌سازی اشتراک در گذربان هنوز کامل نشده است؛ پرداخت شما ثبت است و نیاز به بررسی دارد.",
+                        )
+                    for admin_id in get_settings().admin_id_set:
+                        try:
+                            await bot.send_message(
+                                admin_id,
+                                "⚠️ پرداخت VPN تأیید شده، اما ساخت اشتراک گذربان در انتظار رفع مشکل است.\n"
+                                f"شناسه تلگرام: {user_id or '—'}\n"
+                                f"مدت: {months} ماه | حجم: {gigabytes} گیگابایت\n"
+                                f"علت: {reason}\n"
+                                f"مبلغ: {int(result.get('amount_toman', 0)):,} تومان",
+                            )
+                        except Exception:
+                            logging.getLogger(__name__).exception("Gozarban VPN pending notification failed")
                 elif action == "paid_topup":
                     user_id = result.get("user_telegram_id")
                     if user_id:
                         await bot.send_message(
                             user_id,
-                            f"✅ افزایش اعتبار با ریالیت تأیید شد.\\n"
-                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\\n"
+                            f"✅ افزایش اعتبار با ریالیت تأیید شد.\n"
+                            f"💰 مبلغ: {int(result.get('amount_toman', 0)):,} تومان\n"
                             f"💳 موجودی جدید: {int(result.get('new_balance_toman', 0)):,} تومان",
                         )
-                elif action == "paid_vpn":
-                    user_id = result.get("user_telegram_id")
-                    months = result.get("months") or "—"
-                    gigabytes = result.get("gigabytes") or "—"
-                    amount = int(result.get("amount_toman") or 0)
-                    if user_id:
-                        await bot.send_message(
-                            user_id,
-                            "✅ پرداخت VPN با ریالیت تأیید شد.\n"
-                            f"⏳ مدت انتخابی: {months} ماه\n"
-                            f"📦 حجم: {gigabytes} گیگابایت\n"
-                            f"💰 مبلغ: {amount:,} تومان\n\n"
-                            "⚠️ پرداخت ثبت شد؛ فعال‌سازی خودکار VPN در این نسخه انجام نمی‌شود."
-                        )
-                    for admin_id in get_settings().admin_id_set:
-                        try:
-                            await bot.send_message(
-                                admin_id,
-                                "🔔 پرداخت VPN تأیید شد و برای فعال‌سازی دستی نیاز به بررسی دارد.\n"
-                                f"شناسه تلگرام: {user_id or '—'}\n"
-                                f"مدت: {months} ماه | حجم: {gigabytes} گیگابایت\n"
-                                f"مبلغ: {amount:,} تومان"
-                            )
-                        except Exception:
-                            logging.getLogger(__name__).exception("Rialit VPN admin notification failed")
                 elif action == "already_paid":
                     for admin_id in get_settings().admin_id_set:
                         try:
                             await bot.send_message(
                                 admin_id,
-                                "⚠️ ریالیت پرداختی برای پرونده/شارژ ثبت کرد که قبلاً پرداخت شده بود؛ لطفاً تراکنش را بررسی کنید.\\n"
+                                "⚠️ ریالیت پرداختی برای پرونده/شارژ ثبت کرد که قبلاً پرداخت شده بود؛ لطفاً تراکنش را بررسی کنید.\n"
                                 f"جزئیات: {json.dumps(result, ensure_ascii=False)}",
                             )
                         except Exception:
@@ -263,10 +205,7 @@ async def main() -> None:
                 )
         return web.json_response(result, status=status_code)
 
-    app.router.add_post("/webhooks/variza", variza_webhook)
     app.router.add_post("/webhooks/rialit", rialit_webhook)
-    app.router.add_get("/webhooks/rialit", rialit_webhook)
-    app.router.add_get("/payments/variza/return", variza_return)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", int(os.environ.get("PORT", "8080")))

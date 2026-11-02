@@ -1,0 +1,21 @@
+{
+  "name": "help-yar-mohajer-cloudflare",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "node scripts/embed_miniapp.mjs && tsc --noEmit",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "d1:migrate:local": "wrangler d1 migrations apply bot-tasbit-howyat-migration --local",
+    "d1:migrate:remote": "wrangler d1 migrations apply bot-tasbit-howyat-migration --remote",
+    "test": "vitest run",
+    "build": "node scripts/embed_miniapp.mjs && esbuild src/index.ts --bundle --format=esm --target=es2022 --outfile=dist/index.js"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261101.1",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.45.0",
+    "vitest": "^3.2.4",
+    "esbuild": "^0.25.12"
+  }
+}

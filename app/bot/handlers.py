@@ -29,8 +29,7 @@ from app.bot.states import AdditionalServiceForm, IdentityForm, KhodnevisForm, R
 from app.core.config import get_settings
 from app.db.models import Companion, Document, Operator, Order, Payment, Service, ServiceCode, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode, AuditLog
 from app.db.session import SessionLocal
-from app.payments.variza import VarizaError, create_variza_link
-from app.payments.rialit import RialitError, create_rialit_link
+from app.payments.rialit import RialitError, create_rialit_link, rialit_amount_breakdown
 from app.db.queries import find_custom_service_order_without_payment
 from app.utils.dates import gregorian_display, jalali_to_gregorian
 from app.utils.ids import public_order_id
@@ -159,7 +158,7 @@ async def show_payment_options(message: Message, state: FSMContext, order_id: in
         f"💳 روش پرداخت را انتخاب کنید.\n\nمبلغ نهایی: {amount:,} تومان{extra}\n"
         f"💰 موجودی اعتبار شما: {credit:,} تومان\n\n"
         "اگر اعتبار کافی داشته باشید، می‌توانید مبلغ را از اعتبار کم کنید؛ در غیر این صورت کارت به کارت را انتخاب کنید.",
-        reply_markup=payment_choice_menu(credit, variza_available=amount >= 1000),
+        reply_markup=payment_choice_menu(credit, rialit_available=50000 <= amount <= 10000000),
     )
 
 
@@ -1690,66 +1689,6 @@ async def pay_card(callback: CallbackQuery, state: FSMContext) -> None:
     )
 
 
-@router.callback_query(F.data == "pay:variza")
-async def pay_variza(callback: CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    order_id = data.get("order_id")
-    if not order_id:
-        await callback.answer("درخواست پرداخت پیدا نشد؛ لطفاً دوباره وارد پرونده شوید.", show_alert=True)
-        return
-    async with SessionLocal() as session:
-        row = (
-            await session.execute(
-                select(Order, Service, User)
-                .join(Service, Order.service_id == Service.id)
-                .join(User, Order.user_id == User.id)
-                .where(Order.id == order_id, User.telegram_id == callback.from_user.id)
-            )
-        ).one_or_none()
-        if not row:
-            await callback.answer("این درخواست متعلق به حساب شما نیست یا پیدا نشد.", show_alert=True)
-            return
-        order, service, user = row
-        if order.status not in {"waiting_payment", "waiting_receipt_review"}:
-            await callback.answer("این پرونده دیگر برای پرداخت آماده نیست.", show_alert=True)
-            return
-        public_id = order.public_id
-        user_db_id = user.id
-    amount, discount, _ = await order_amount_and_coupon(order_id)
-    if amount < 1000:
-        await callback.answer("حداقل مبلغ لینک واریزا ۱٬۰۰۰ تومان است؛ کارت‌به‌کارت را انتخاب کنید.", show_alert=True)
-        return
-    try:
-        pay_url = await create_variza_link(
-            kind="order",
-            user_id=user_db_id,
-            order_id=order_id,
-            amount_toman=amount,
-            title=f"{service.name} | {public_id}",
-        )
-    except VarizaError as exc:
-        await callback.answer(str(exc)[:190], show_alert=True)
-        return
-    await callback.answer()
-    extra = f"\n🏷️ تخفیف: {discount:,} تومان" if discount else ""
-    await callback.message.edit_text(
-        f"💳 <b>درگاه کارت به کارت تایید سریع متصل به درگاه واریزا</b>\n\n"
-        "این درگاه، پرداخت کارت‌به‌کارت شما را سریع‌تر تأیید می‌کند و خدمات و درخواست شما با اولویت بیشتری به کارشناسان ارجاع می‌شود.\n\n"
-        f"📌 خدمت: {service.name}\n🔢 شماره درخواست: <code>{public_id}</code>\n"
-        f"💰 مبلغ دقیق قابل پرداخت: <code>{amount:,}</code> تومان{extra}\n\n"
-        "⚠️ لطفاً دقیقاً همان مبلغی را که در درگاه نمایش داده می‌شود پرداخت کنید؛ مبلغ اضافه‌ای وارد یا پرداخت نکنید.\n"
-        "🏧 امکان پرداخت از طریق عابربانک یا همراه‌بانک وجود دارد.\n\n"
-        "پس از پرداخت، تأیید به‌صورت خودکار دریافت می‌شود. لطفاً تا دریافت پیام تأیید ربات، از پرداخت دوباره همین درخواست خودداری کنید.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 پرداخت با واریزا", url=pay_url, style="primary")],
-            [InlineKeyboardButton(text="🔙 بازگشت به روش‌های پرداخت", callback_data="pay:back", style="primary")],
-            [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
-        ]),
-        parse_mode=ParseMode.HTML,
-    )
-
-
-
 @router.callback_query(F.data == "pay:rialit")
 async def pay_rialit(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
@@ -1780,21 +1719,24 @@ async def pay_rialit(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer(str(exc)[:190], show_alert=True)
         return
     await callback.answer()
+    base_amount, payer_fee, payer_amount = rialit_amount_breakdown(amount)
     extra = f"\n🏷️ تخفیف: {discount:,} تومان" if discount else ""
     await callback.message.edit_text(
-        f"💠 <b>پرداخت آنلاین با ریالیت</b>\n\n📌 خدمت: {service.name}\n🔢 شماره درخواست: <code>{public_id}</code>\n"
-        f"💰 مبلغ دقیق: <code>{amount:,}</code> تومان{extra}\n\n"
-        "لطفاً دقیقاً همین مبلغ را پرداخت کنید. پس از پرداخت، درگاه به‌صورت سمت سرور بررسی می‌شود؛ "
+        f"🔐 <b>درگاه پرداخت رمز پویا</b>\n\n📌 خدمت: {service.name}\n🔢 شماره درخواست: <code>{public_id}</code>\n"
+        f"💰 مبلغ پایه: <code>{base_amount:,}</code> تومان{extra}\n"
+        f"🧾 کارمزد ریالت‌پی (۱۲٪): <code>{payer_fee:,}</code> تومان\n"
+        f"💳 مبلغ نهایی پرداخت: <code>{payer_amount:,}</code> تومان\n\n"
+        "لطفاً دقیقاً مبلغ نهایی اعلام‌شده را پرداخت کنید. پس از پرداخت، درگاه به‌صورت سمت سرور بررسی می‌شود؛ "
         "بازگشت از صفحه به‌تنهایی تأیید پرداخت نیست. تا پیام تأیید ربات، پرداخت را تکرار نکنید.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 پرداخت با ریالیت", url=pay_url, style="primary")],
+            [InlineKeyboardButton(text="🔐 ورود به درگاه پرداخت رمز پویا", url=pay_url, style="primary")],
             [InlineKeyboardButton(text="🔙 بازگشت به روش‌های پرداخت", callback_data="pay:back", style="primary")],
             [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
         ]), parse_mode=ParseMode.HTML,
     )
 
 @router.callback_query(F.data == "pay:back")
-async def pay_variza_back(callback: CallbackQuery, state: FSMContext) -> None:
+async def pay_back(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     order_id = data.get("order_id")
     if not order_id:
@@ -1879,7 +1821,7 @@ async def wallet_topup_amount(message: Message, state: FSMContext) -> None:
     await state.set_state(WalletTopupForm.choice)
     await message.answer(
         f"➕ درخواست افزایش اعتبار ثبت شد.\n\n💰 مبلغ: {amount:,} تومان\n\nروش پرداخت را انتخاب کنید:",
-        reply_markup=wallet_topup_choice_menu(),
+        reply_markup=wallet_topup_choice_menu(rialit_available=50000 <= amount <= 10000000),
     )
 
 
@@ -1953,71 +1895,22 @@ async def wallet_topup_rialit(callback: CallbackQuery, state: FSMContext) -> Non
         await callback.answer(str(exc)[:190], show_alert=True)
         return
     await callback.answer()
+    base_amount, payer_fee, payer_amount = rialit_amount_breakdown(amount)
     await callback.message.edit_text(
-        f"💠 <b>پرداخت آنلاین با ریالیت</b>\n\n💰 مبلغ دقیق افزایش اعتبار: <code>{amount:,}</code> تومان\n\n"
-        "لطفاً دقیقاً همین مبلغ را پرداخت کنید. اعتبار فقط پس از تأیید سمت سرور افزایش می‌یابد. "
+        f"💠 <b>پرداخت آنلاین با ریالت‌پی</b>\n\n💰 مبلغ پایه افزایش اعتبار: <code>{base_amount:,}</code> تومان\n"
+        f"🧾 کارمزد ریالت‌پی (۱۲٪): <code>{payer_fee:,}</code> تومان\n"
+        f"💳 مبلغ نهایی پرداخت: <code>{payer_amount:,}</code> تومان\n\n"
+        "لطفاً دقیقاً مبلغ نهایی اعلام‌شده را پرداخت کنید. اعتبار فقط پس از تأیید سمت سرور افزایش می‌یابد. "
         "تا پیام تأیید ربات، پرداخت را تکرار نکنید.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 پرداخت با ریالیت", url=pay_url, style="primary")],
+            [InlineKeyboardButton(text="🔗 پرداخت با ریالت‌پی", url=pay_url, style="primary")],
             [InlineKeyboardButton(text="🔙 بازگشت به روش‌های پرداخت", callback_data="wallet:topup:back", style="primary")],
             [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
         ]), parse_mode=ParseMode.HTML,
     )
 
-@router.callback_query(F.data == "wallet:topup:variza")
-async def wallet_topup_variza(callback: CallbackQuery, state: FSMContext) -> None:
-    if await state.get_state() != WalletTopupForm.choice:
-        await callback.answer("این مرحله دیگر فعال نیست؛ دوباره افزایش اعتبار را شروع کنید.", show_alert=True)
-        return
-    data = await state.get_data()
-    topup_id = data.get("topup_id")
-    if not topup_id:
-        await callback.answer("درخواست افزایش اعتبار پیدا نشد؛ دوباره تلاش کنید.", show_alert=True)
-        return
-    async with SessionLocal() as session:
-        row = (
-            await session.execute(
-                select(WalletTopup, User)
-                .join(User, WalletTopup.user_id == User.id)
-                .where(WalletTopup.id == topup_id, User.telegram_id == callback.from_user.id)
-            )
-        ).one_or_none()
-        if not row or row[0].status != "awaiting_receipt":
-            await callback.answer("این درخواست افزایش اعتبار دیگر برای پرداخت آماده نیست.", show_alert=True)
-            return
-        topup, user = row
-        amount = topup.amount_toman
-        user_db_id = user.id
-    try:
-        pay_url = await create_variza_link(
-            kind="topup",
-            user_id=user_db_id,
-            topup_id=topup_id,
-            amount_toman=amount,
-            title=f"افزایش اعتبار کمک‌یار مهاجر #{topup_id}",
-        )
-    except VarizaError as exc:
-        await callback.answer(str(exc)[:190], show_alert=True)
-        return
-    await callback.answer()
-    await callback.message.edit_text(
-        f"💳 <b>درگاه کارت به کارت تایید سریع متصل به درگاه واریزا</b>\n\n"
-        "این درگاه، پرداخت کارت‌به‌کارت شما را سریع‌تر تأیید می‌کند و درخواست شما برای افزایش اعتبار با اولویت بیشتری پیگیری می‌شود.\n\n"
-        f"💰 مبلغ دقیق قابل پرداخت: <code>{amount:,}</code> تومان\n"
-        "⚠️ لطفاً دقیقاً همان مبلغی را که در درگاه نمایش داده می‌شود پرداخت کنید؛ مبلغ اضافه‌ای وارد یا پرداخت نکنید.\n"
-        "🏧 امکان پرداخت از طریق عابربانک یا همراه‌بانک وجود دارد.\n\n"
-        "پس از پرداخت موفق، اعتبار شما به‌صورت خودکار افزایش می‌یابد. لطفاً تا دریافت پیام تأیید ربات، پرداخت را تکرار نکنید.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 پرداخت با واریزا", url=pay_url, style="primary")],
-            [InlineKeyboardButton(text="🔙 بازگشت به روش‌های پرداخت", callback_data="wallet:topup:back", style="primary")],
-            [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
-        ]),
-        parse_mode=ParseMode.HTML,
-    )
-
-
 @router.callback_query(F.data == "wallet:topup:back")
-async def wallet_topup_variza_back(callback: CallbackQuery, state: FSMContext) -> None:
+async def wallet_topup_back(callback: CallbackQuery, state: FSMContext) -> None:
     if await state.get_state() != WalletTopupForm.choice:
         await callback.answer("این مرحله دیگر فعال نیست؛ دوباره افزایش اعتبار را شروع کنید.", show_alert=True)
         return

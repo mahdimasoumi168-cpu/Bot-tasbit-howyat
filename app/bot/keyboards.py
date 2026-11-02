@@ -114,13 +114,12 @@ def confirm_menu() -> InlineKeyboardMarkup:
     ])
 
 
-def payment_choice_menu(credit: int, variza_available: bool = True) -> InlineKeyboardMarkup:
+def payment_choice_menu(credit: int, rialit_available: bool = True) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text=f"💰 استفاده از اعتبار | {credit:,} تومان", callback_data="pay:wallet", style="success")],
     ]
-    if variza_available:
-        rows.append([InlineKeyboardButton(text="⚡ پرداخت آنلاین با واریزا", callback_data="pay:variza", style="primary")])
-    rows.append([InlineKeyboardButton(text="💠 پرداخت آنلاین با ریالیت", callback_data="pay:rialit", style="primary")])
+    if rialit_available:
+        rows.append([InlineKeyboardButton(text="🔐 درگاه پرداخت رمز پویا", callback_data="pay:rialit", style="primary")])
     rows.extend([
         [InlineKeyboardButton(text="💳 کارت به کارت", callback_data="pay:card", style="primary")],
         [InlineKeyboardButton(text="🏷️ کد تخفیف", callback_data="pay:coupon", style="primary")],
@@ -143,13 +142,15 @@ def wallet_topup_cancel_menu() -> InlineKeyboardMarkup:
     ])
 
 
-def wallet_topup_choice_menu() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚡ پرداخت آنلاین با واریزا", callback_data="wallet:topup:variza", style="primary")],
-        [InlineKeyboardButton(text="💠 پرداخت آنلاین با ریالیت", callback_data="wallet:topup:rialit", style="primary")],
+def wallet_topup_choice_menu(rialit_available: bool = True) -> InlineKeyboardMarkup:
+    rows = []
+    if rialit_available:
+        rows.append([InlineKeyboardButton(text="🔐 درگاه پرداخت رمز پویا", callback_data="wallet:topup:rialit", style="primary")])
+    rows.extend([
         [InlineKeyboardButton(text="💳 کارت به کارت", callback_data="wallet:topup:card", style="primary")],
         [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
     ])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 def services_menu(enabled_codes: set[str] | None = None) -> InlineKeyboardMarkup:
