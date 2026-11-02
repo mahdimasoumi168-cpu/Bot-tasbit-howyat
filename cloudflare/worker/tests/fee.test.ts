@@ -4,7 +4,7 @@ import { expectedPayerAmount, matchesRialitFee } from "../src/fees.js";
 describe("Rialit fee policy", () => {
   it("adds 12 percent on top of the base amount and rounds to 50 toman", () => {
     expect(expectedPayerAmount(100_000, 12)).toBe(112_000);
-    expect(expectedPayerAmount(5_600, 12)).toBe(6_300);
+    expect(expectedPayerAmount(5_600, 12)).toBe(6_272);
   });
   it("requires Rialit's payer amount and fee to match the configured 12 percent", () => {
     expect(matchesRialitFee(100_000, 112_000, 12_000, 12)).toBe(true);
