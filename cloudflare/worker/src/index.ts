@@ -410,7 +410,7 @@ async function bootstrap(request: Request, env: Env): Promise<Response> {
 async function createOrder(request: Request, env: Env): Promise<Response> {
   const user = await miniAppUser(request, env);
   if (!user) return json({ ok: false, error: "unauthorized" }, 401);
-  const body = await request.json().catch(() => null);
+  const body = await request.json().catch(() => null) as any;
   const serviceCode = String(body?.service_code || "");
   const formData = body?.form_data;
   if (body?.rules_accepted !== true) return json({ ok: false, error: "rules_not_accepted" }, 400);
@@ -638,7 +638,7 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
 
   const eventHeader = request.headers.get("x-rialit-event") || "";
   const deliveryHeader = request.headers.get("x-rialit-delivery") || "";
-  const payload = await request.json().catch(() => null);
+  const payload = await request.json().catch(() => null) as any;
   if (!payload || typeof payload !== "object") return json({ ok: false, error: "invalid_payload" }, 400);
   const eventId = String(payload.event_id || "");
   const eventType = String(payload.type || "");
@@ -674,7 +674,7 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
     return json({ ok: false, error: "rialit_verification_unavailable" }, 503);
   }
   if (!verifiedResponse.ok) return json({ ok: false, error: "rialit_verification_unavailable" }, 503);
-  const verified = await verifiedResponse.json().catch(() => ({}));
+  const verified = await verifiedResponse.json().catch(() => ({})) as any;
   const status = String(verified?.status || verified?.data?.status || "");
   const verifiedAmount = Number(verified?.amount ?? verified?.data?.amount);
   const verifiedPayer = Number(verified?.payer_id ?? verified?.data?.payer_id);
