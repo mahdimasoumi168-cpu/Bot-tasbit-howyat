@@ -9,8 +9,7 @@ from app.payments.rialit import RialitError, create_rialit_link
 router = Router()
 
 VPN_BASE_PRICE_PER_GB_TOMAN = 6_000
-VPN_PAYMENT_FEE_PERCENT = 15
-VPN_PRICE_PER_GB_TOMAN = (VPN_BASE_PRICE_PER_GB_TOMAN * (100 + VPN_PAYMENT_FEE_PERCENT) + 99) // 100
+VPN_PRICE_PER_GB_TOMAN = VPN_BASE_PRICE_PER_GB_TOMAN
 VPN_MIN_GB = 10
 VPN_MAX_GB = 100
 VPN_STEP_GB = 10
@@ -109,8 +108,7 @@ async def vpn_choose_data(callback: CallbackQuery) -> None:
         f"⏳ مدت اشتراک: {months} ماه\n"
         f"📦 حجم: {gigabytes} گیگابایت\n"
         f"💰 قیمت پایه هر گیگابایت: {VPN_BASE_PRICE_PER_GB_TOMAN:,} تومان\n"
-        f"🧾 کارمزد پرداخت ({VPN_PAYMENT_FEE_PERCENT}٪): {VPN_BASE_PRICE_PER_GB_TOMAN * VPN_PAYMENT_FEE_PERCENT // 100:,} تومان به‌ازای هر گیگ\n"
-        f"💰 قیمت نهایی هر گیگابایت: {VPN_PRICE_PER_GB_TOMAN:,} تومان\n"
+        f"💰 قیمت هر گیگابایت: {VPN_PRICE_PER_GB_TOMAN:,} تومان\n"
         f"💵 مبلغ کل: {amount:,} تومان\n\n"
         "برای پرداخت، گزینه «ادامه به پرداخت» را بزنید تا لینک امن ریالیت ساخته شود. "
         "پرداخت فقط پس از تأیید سمت سرور ثبت می‌شود و سپس ربات برای ساخت اشتراک به گذربان متصل می‌شود.",
