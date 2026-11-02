@@ -1,34 +1,32 @@
 name: Build Cloudflare Worker bundle
 
 on:
-  push:
-    branches:
-      - main
-      - cloudflare-release-check-2026-11-02
-      - cloudflare-production-final-2026-11-02
+  pull_request:
+    branches: ["main"]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 jobs:
   build:
-    if: ${{ !contains(github.event.head_commit.message, '[bundle]') }}
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: cloudflare/worker
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: npm install
-      - run: npm run build
+      - run: cd cloudflare/worker && npm install
+      - run: cd cloudflare/worker && npm run build
       - name: Commit bundle
-        working-directory: .
         run: |
+          if git log -1 --pretty=%B | grep -q '\[bundle\]'; then
+            echo "Bundle already current"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add cloudflare/worker/dist/index.js
@@ -37,4 +35,4 @@ jobs:
             exit 0
           fi
           git commit -m "Build Cloudflare Worker bundle [bundle]"
-          git push origin HEAD:${GITHUB_REF_NAME}
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
