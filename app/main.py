@@ -74,8 +74,8 @@ async def main() -> None:
             source_ip = str(ipaddress.ip_address(raw_ip.strip()))
         except ValueError:
             source_ip = ""
-        if configured_ips and source_ip not in configured_ips:
-            logging.getLogger(__name__).warning("Rejected Rialit webhook from an untrusted source")
+        if not configured_ips or not source_ip or source_ip not in configured_ips:
+            logging.getLogger(__name__).warning("Rejected Rialit webhook from untrusted source IP %s", source_ip or "unknown")
             return web.json_response({"ok": False, "error": "source_ip_not_allowed"}, status=403)
 
         # Rialit may return to callback_url with a token query parameter.
