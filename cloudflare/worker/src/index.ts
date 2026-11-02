@@ -292,6 +292,23 @@ async function handleTelegram(request: Request, env: Env): Promise<Response> {
         await env.DB.prepare("UPDATE telegram_updates SET status='processed',processed_at=CURRENT_TIMESTAMP WHERE update_id=?").bind(update.update_id).run();
         return json({ok:true});
       }
+      const incomingText = String(message.text || "").trim();
+      if (incomingText.startsWith("/setcard")) {
+        if (!await isAdmin(env,user.id)) {
+          await telegram(env,"sendMessage",{chat_id:user.id,text:"دسترسی مدیریت ندارید."});
+        } else {
+          const values = incomingText.replace(/^\/setcard\s*/,"").split("|").map((x:string)=>x.trim());
+          if (values.length < 3 || !/^\d{16}$/.test(values[0])) {
+            await telegram(env,"sendMessage",{chat_id:user.id,text:"قالب دستور: /setcard شماره‌کارت۱۶رقمی|نام‌دارنده|نام‌بانک"});
+          } else {
+            const pairs = [["card_number",values[0]],["card_holder",values[1]],["card_bank",values[2]]];
+            await env.DB.batch(pairs.map(([key,value])=>env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP").bind(key,value)));
+            await telegram(env,"sendMessage",{chat_id:user.id,text:"✅ اطلاعات کارت دفتر ذخیره شد."});
+          }
+        }
+        await env.DB.prepare("UPDATE telegram_updates SET status='processed',processed_at=CURRENT_TIMESTAMP WHERE update_id=?").bind(update.update_id).run();
+        return json({ok:true});
+      }
       if (await processReceiptMessage(message,user,userId,env)) {
         await env.DB.prepare("UPDATE telegram_updates SET status='processed',processed_at=CURRENT_TIMESTAMP WHERE update_id=?").bind(update.update_id).run();
         return json({ok:true});
@@ -703,6 +720,8 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
         .bind(payment.amount_toman, payment.topup_id),
       env.DB.prepare("INSERT OR IGNORE INTO wallet_transactions(user_id,amount_toman,balance_after_toman,kind,description,topup_id,source_rialit_payment_id) SELECT w.user_id,?,w.balance_toman,'topup',?, ?, ? FROM wallets w JOIN wallet_topups t ON t.user_id = w.user_id WHERE t.id = ? AND changes() = 1")
         .bind(payment.amount_toman, `افزایش اعتبار ریالت #${payment.topup_id}`, payment.topup_id, payment.id, payment.topup_id),
+      env.DB.prepare("INSERT OR IGNORE INTO payments(user_id,provider,provider_payment_id,amount_toman,receipt_type,status,verified_at,provider_metadata_json,source_rialit_payment_id) SELECT ?, 'rialit', ?, ?, 'online', 'approved', CURRENT_TIMESTAMP, ?, ? WHERE EXISTS (SELECT 1 FROM wallet_topups WHERE id=? AND status='approved')")
+        .bind(payment.user_id,payment.token,payment.amount_toman,JSON.stringify({payer_amount_toman:payment.payer_amount_toman,payer_fee_toman:payment.payer_fee_toman}),payment.id,payment.topup_id),
     );
   }
 
