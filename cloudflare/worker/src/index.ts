@@ -128,11 +128,23 @@ async function handleTelegram(request: Request, env: Env): Promise<Response> {
   const update = await request.json().catch(() => null);
   if (!update || !Number.isInteger(update.update_id)) return json({ ok: false }, 400);
 
-  const inserted = await env.DB.prepare(
-    "INSERT OR IGNORE INTO telegram_updates(update_id) VALUES (?)"
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO telegram_updates(update_id,status,processing_at) VALUES (?,'received',CURRENT_TIMESTAMP)"
   ).bind(update.update_id).run();
-  if ((inserted.meta?.changes || 0) === 0) return json({ ok: true, duplicate: true });
+  const claim = await env.DB.prepare(`
+    UPDATE telegram_updates SET status = 'processing', processing_at = CURRENT_TIMESTAMP
+    WHERE update_id = ? AND (
+      status = 'received' OR
+      (status = 'processing' AND processing_at < datetime('now','-1 minute'))
+    )
+  `).bind(update.update_id).run();
+  if ((claim.meta?.changes || 0) !== 1) {
+    const current = await env.DB.prepare("SELECT status FROM telegram_updates WHERE update_id = ?")
+      .bind(update.update_id).first<{status:string}>();
+    return json({ ok: true, duplicate: current?.status === "processed", processing: current?.status === "processing" });
+  }
 
+  try {
   const message = update.message;
   if (message?.from?.id) {
     const user = message.from as TelegramUser;
@@ -168,7 +180,15 @@ async function handleTelegram(request: Request, env: Env): Promise<Response> {
       });
     }
   }
+  await env.DB.prepare("UPDATE telegram_updates SET status='processed', processed_at=CURRENT_TIMESTAMP WHERE update_id = ?")
+    .bind(update.update_id).run();
   return json({ ok: true });
+  } catch (error) {
+    await env.DB.prepare("UPDATE telegram_updates SET status='received', processing_at=NULL WHERE update_id = ?")
+      .bind(update.update_id).run();
+    console.error("Telegram update processing failed", error);
+    return json({ ok: false, error: "telegram_update_failed" }, 503);
+  }
 }
 
 async function bootstrap(request: Request, env: Env): Promise<Response> {
@@ -206,20 +226,23 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
     return json({ ok: false, error: "invalid_request" }, 400);
   }
   const userId = await ensureUser(env.DB, user);
+  const serializedForm = JSON.stringify(formData);
+  if (serializedForm.length > 20_000) return json({ ok: false, error: "form_too_large" }, 413);
   const service = await env.DB.prepare(
     "SELECT id, price_toman FROM services WHERE code = ? AND enabled = 1"
   ).bind(serviceCode).first<{ id: number; price_toman: number }>();
   if (!service) return json({ ok: false, error: "service_unavailable" }, 404);
+  if (!Number.isSafeInteger(service.price_toman) || service.price_toman < 1) {
+    return json({ ok: false, error: "service_price_not_configured" }, 503);
+  }
 
+  const publicId = `YM-${crypto.randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase()}`;
   const created = await env.DB.prepare(`
     INSERT INTO orders (public_id, user_id, service_id, price_snapshot_toman, status, data_json)
-    VALUES ('', ?, ?, ?, 'waiting_payment', ?)
+    VALUES (?, ?, ?, ?, 'waiting_payment', ?)
     RETURNING id
-  `).bind(userId, service.id, service.price_toman, JSON.stringify(formData)).first<{ id: number }>();
+  `).bind(publicId, userId, service.id, service.price_toman, serializedForm).first<{ id: number }>();
   if (!created) return json({ ok: false, error: "order_create_failed" }, 500);
-  const publicId = `YM-${String(created.id).padStart(7, "0")}`;
-  await env.DB.prepare("UPDATE orders SET public_id = ? WHERE id = ?")
-    .bind(publicId, created.id).run();
   return json({ ok: true, order_id: created.id, public_id: publicId, amount_toman: service.price_toman });
 }
 
@@ -243,19 +266,24 @@ async function createRialitPayment(request: Request, env: Env): Promise<Response
   }
   if (!env.RIALIT_API_KEY) return json({ ok: false, error: "rialit_not_configured" }, 503);
 
-  const providerOrderId = `mohajer-order-${order.id}`;
-  const existing = await env.DB.prepare(
-    "SELECT token, pay_url, payer_amount_toman, payer_fee_toman FROM rialit_payments WHERE provider_order_id = ? AND status = 'pending'"
-  ).bind(providerOrderId).first<any>();
-  if (existing?.pay_url) {
-    return json({ ok: true, pay_url: existing.pay_url, payer_amount_toman: existing.payer_amount_toman, payer_fee_toman: existing.payer_fee_toman });
+  const previous = await env.DB.prepare(
+    "SELECT id, token, pay_url, payer_amount_toman, payer_fee_toman, status, attempt_no FROM rialit_payments WHERE order_id = ? ORDER BY attempt_no DESC LIMIT 1"
+  ).bind(order.id).first<any>();
+  if (previous?.status === "pending" && previous.pay_url) {
+    return json({ ok: true, pay_url: previous.pay_url, payer_amount_toman: previous.payer_amount_toman, payer_fee_toman: previous.payer_fee_toman });
   }
-
-  await env.DB.prepare(`
-    INSERT OR IGNORE INTO rialit_payments
-      (provider_order_id, kind, order_id, user_id, amount_toman, status)
-    VALUES (?, 'order', ?, ?, ?, 'pending')
-  `).bind(providerOrderId, order.id, userId, amount).run();
+  if (previous && !["pending", "expired", "cancelled", "failed"].includes(String(previous.status))) {
+    return json({ ok: false, error: "payment_not_reopenable" }, 409);
+  }
+  const attemptNo = previous?.status === "pending" ? Number(previous.attempt_no) : Number(previous?.attempt_no || 0) + 1;
+  const providerOrderId = `mohajer-order-${order.id}-${attemptNo}`;
+  if (!previous || previous.status !== "pending") {
+    await env.DB.prepare(`
+      INSERT OR IGNORE INTO rialit_payments
+        (provider_order_id, attempt_no, kind, order_id, user_id, amount_toman, status)
+      VALUES (?, ?, 'order', ?, ?, ?, 'pending')
+    `).bind(providerOrderId, attemptNo, order.id, userId, amount).run();
+  }
 
   const apiBase = (env.RIALIT_API_BASE_URL || "https://api.rialit.io/api/v1").replace(/\/$/, "");
   const payload = { amount, order_id: providerOrderId, payer_id: user.id };
@@ -284,7 +312,7 @@ async function createRialitPayment(request: Request, env: Env): Promise<Response
   const token = String(result?.token || "");
   const payerAmount = Number(result?.payer_amount);
   const payerFee = Number(result?.payer_fee);
-  if (!/^[A-Za-z0-9]{1,64}$/.test(token) || !Number.isSafeInteger(payerAmount) || !Number.isSafeInteger(payerFee) || Number(result?.amount) !== amount) {
+  if (!/^[A-Za-z0-9]{1,64}$/.test(token) || !Number.isSafeInteger(payerAmount) || !Number.isSafeInteger(payerFee) || Number(result?.amount) !== amount || !["pending", "paid"].includes(String(result?.status || "pending"))) {
     return json({ ok: false, error: "rialit_invalid_response" }, 502);
   }
   const payUrl = `https://pay.rialit.io/v1/${token}`;
@@ -319,7 +347,7 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
   if (!payload || typeof payload !== "object") return json({ ok: false, error: "invalid_payload" }, 400);
   const eventId = String(payload.event_id || "");
   const eventType = String(payload.type || "");
-  if (!eventId || eventId !== deliveryHeader || eventType !== eventHeader) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(eventId) || eventId !== deliveryHeader || eventType !== eventHeader) {
     return json({ ok: false, error: "invalid_event_headers" }, 400);
   }
   if (eventType === "webhook.test") return json({ ok: true });
@@ -356,10 +384,14 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
   const verifiedAmount = Number(verified?.amount ?? verified?.data?.amount);
   const verifiedPayer = Number(verified?.payer_id ?? verified?.data?.payer_id);
   const verifiedOrderId = String(verified?.order_id ?? verified?.data?.order_id ?? "");
+  const verifiedPayerAmount = Number(verified?.payer_amount ?? verified?.data?.payer_amount);
+  const verifiedPayerFee = Number(verified?.payer_fee ?? verified?.data?.payer_fee);
   if (status === "paid" && (
     verifiedAmount !== Number(payment.amount_toman) ||
     verifiedPayer !== Number(payment.user_telegram_id) ||
-    verifiedOrderId !== payment.provider_order_id
+    verifiedOrderId !== payment.provider_order_id ||
+    verifiedPayerAmount !== Number(payment.payer_amount_toman) ||
+    verifiedPayerFee !== Number(payment.payer_fee_toman)
   )) {
     await env.DB.prepare(
       "INSERT OR IGNORE INTO rialit_webhook_events(event_id,event_type,payment_token,processed_at) VALUES(?,?,?,CURRENT_TIMESTAMP)"
@@ -393,8 +425,8 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
         .bind(payment.topup_id),
       env.DB.prepare("INSERT OR IGNORE INTO wallets(user_id,balance_toman) SELECT user_id,0 FROM wallet_topups WHERE id = ? AND status = 'approved'")
         .bind(payment.topup_id),
-      env.DB.prepare("INSERT OR IGNORE INTO wallet_credit_events(payment_id) SELECT ? WHERE changes() = 1")
-        .bind(payment.id),
+      env.DB.prepare("INSERT OR IGNORE INTO wallet_credit_events(payment_id) SELECT ? WHERE EXISTS (SELECT 1 FROM wallet_topups WHERE id = ? AND status = 'approved') AND NOT EXISTS (SELECT 1 FROM wallet_credit_events WHERE payment_id = ?)")
+        .bind(payment.id, payment.topup_id, payment.id),
       env.DB.prepare("UPDATE wallets SET balance_toman = balance_toman + ? WHERE user_id = (SELECT user_id FROM wallet_topups WHERE id = ?) AND changes() = 1")
         .bind(payment.amount_toman, payment.topup_id),
       env.DB.prepare("INSERT OR IGNORE INTO wallet_transactions(user_id,amount_toman,balance_after_toman,kind,description,topup_id,source_rialit_payment_id) SELECT w.user_id,?,w.balance_toman,'topup',?, ?, ? FROM wallets w JOIN wallet_topups t ON t.user_id = w.user_id WHERE t.id = ? AND changes() = 1")
