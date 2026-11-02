@@ -2,6 +2,7 @@ interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
   BOT_TOKEN: string;
+  TELEGRAM_WEBHOOK_SECRET: string;
   RIALIT_API_KEY: string;
   API_VPN?: string;
   RIALIT_API_BASE_URL?: string;
@@ -124,7 +125,7 @@ async function handleTelegram(request: Request, env: Env): Promise<Response> {
   const supplied = request.headers.get("x-telegram-bot-api-secret-token");
   if (!expected || supplied !== expected) return text("forbidden", 403);
 
-  const update = await request.json<any>().catch(() => null);
+  const update = await request.json().catch(() => null);
   if (!update || !Number.isInteger(update.update_id)) return json({ ok: false }, 400);
 
   const inserted = await env.DB.prepare(
@@ -198,7 +199,7 @@ async function bootstrap(request: Request, env: Env): Promise<Response> {
 async function createOrder(request: Request, env: Env): Promise<Response> {
   const user = await miniAppUser(request, env);
   if (!user) return json({ ok: false, error: "unauthorized" }, 401);
-  const body = await request.json<any>().catch(() => null);
+  const body = await request.json().catch(() => null);
   const serviceCode = String(body?.service_code || "");
   const formData = body?.form_data;
   if (!serviceCode || !formData || typeof formData !== "object" || Array.isArray(formData)) {
@@ -225,7 +226,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
 async function createRialitPayment(request: Request, env: Env): Promise<Response> {
   const user = await miniAppUser(request, env);
   if (!user) return json({ ok: false, error: "unauthorized" }, 401);
-  const body = await request.json<any>().catch(() => null);
+  const body = await request.json().catch(() => null);
   const orderId = Number(body?.order_id);
   if (!Number.isSafeInteger(orderId) || orderId < 1) return json({ ok: false, error: "invalid_order" }, 400);
   const userId = await ensureUser(env.DB, user);
@@ -293,7 +294,8 @@ async function createRialitPayment(request: Request, env: Env): Promise<Response
     WHERE provider_order_id = ? AND status = 'pending'
   `).bind(token, payUrl, payerAmount, payerFee, providerOrderId).run();
 
-  const expectedPayerAmount = Math.ceil((amount * 100 / 88) / 50) * 50;
+  const feePercent = Math.min(50, Math.max(0, Number(env.PAYMENT_FEE_PERCENT || '12')));
+  const expectedPayerAmount = Math.ceil((amount * 100 / (100 - feePercent)) / 50) * 50;
   const feeMatchesTwelvePercent = payerAmount === expectedPayerAmount;
   return json({
     ok: true,
@@ -313,7 +315,7 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
 
   const eventHeader = request.headers.get("x-rialit-event") || "";
   const deliveryHeader = request.headers.get("x-rialit-delivery") || "";
-  const payload = await request.json<any>().catch(() => null);
+  const payload = await request.json().catch(() => null);
   if (!payload || typeof payload !== "object") return json({ ok: false, error: "invalid_payload" }, 400);
   const eventId = String(payload.event_id || "");
   const eventType = String(payload.type || "");
@@ -332,7 +334,7 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
   if (duplicate) return json({ ok: true, duplicate: true });
 
   const payment = await env.DB.prepare(
-    "SELECT * FROM rialit_payments WHERE token = ?"
+    "SELECT rp.*, u.telegram_id AS user_telegram_id FROM rialit_payments rp JOIN users u ON u.id = rp.user_id WHERE rp.token = ?"
   ).bind(token).first<any>();
   if (!payment) return json({ ok: true, ignored: true });
 
@@ -349,14 +351,14 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
     return json({ ok: false, error: "rialit_verification_unavailable" }, 503);
   }
   if (!verifiedResponse.ok) return json({ ok: false, error: "rialit_verification_unavailable" }, 503);
-  const verified = await verifiedResponse.json<any>().catch(() => ({}));
+  const verified = await verifiedResponse.json().catch(() => ({}));
   const status = String(verified?.status || verified?.data?.status || "");
   const verifiedAmount = Number(verified?.amount ?? verified?.data?.amount);
   const verifiedPayer = Number(verified?.payer_id ?? verified?.data?.payer_id);
   const verifiedOrderId = String(verified?.order_id ?? verified?.data?.order_id ?? "");
   if (status === "paid" && (
     verifiedAmount !== Number(payment.amount_toman) ||
-    verifiedPayer !== Number(payment.user_id ? payload.data?.payer_id : 0) ||
+    verifiedPayer !== Number(payment.user_telegram_id) ||
     verifiedOrderId !== payment.provider_order_id
   )) {
     await env.DB.prepare(
@@ -407,11 +409,11 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
       INSERT OR IGNORE INTO vpn_provisioning_jobs
         (rialit_payment_id, telegram_user_id, months, gigabytes, status)
       VALUES (?, ?, ?, ?, 'blocked_waiting_api_schema')
-    `).bind(payment.id, Number(payload.data?.payer_id || 0), Number(payment.vpn_months || 0), Number(payment.vpn_gigabytes || 0)).run();
+    `).bind(payment.id, Number(payment.user_telegram_id), Number(payment.vpn_months || 0), Number(payment.vpn_gigabytes || 0)).run();
   }
   if (status === "paid") {
     ctx.waitUntil(telegram(env, "sendMessage", {
-      chat_id: payment.user_telegram_id || payload.data?.payer_id,
+      chat_id: payment.user_telegram_id,
       text: "✅ پرداخت شما توسط ریالت‌پی تأیید شد. برای مشاهده وضعیت پرونده، مینی‌اپ را باز کنید.",
     }).catch(() => undefined));
   }
