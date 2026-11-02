@@ -15,7 +15,23 @@
       }
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.ok === false) throw new Error(data.error || "خطا در دریافت اطلاعات");
+    if (!response.ok || data.ok === false) {
+      const messages = {
+        unauthorized:"برای امنیت، مینی‌اپ را از داخل ربات تلگرام باز کنید.",
+        rialit_not_configured:"کلید درگاه ریالت در Worker ثبت نشده است.",
+        rialit_key_invalid:"کلید پذیرنده ریالت معتبر نیست.",
+        rialit_outbound_ip_not_allowed:"IP خروجی Worker در فهرست IPهای مجاز پذیرنده ریالت نیست.",
+        rialit_merchant_inactive:"حساب پذیرنده ریالت فعال نیست.",
+        rialit_fee_mismatch:"کارمزد درگاه با ۱۲٪ تنظیم‌شده مطابقت ندارد؛ پرداخت متوقف شد. تنظیمات پذیرنده ریالت باید بررسی شود.",
+        rialit_network_error:"ارتباط Worker با ریالت برقرار نشد. سفارش ثبت شده و می‌توانید دوباره تلاش کنید.",
+        rialit_retry_later:"درگاه موقتاً پاسخ نمی‌دهد؛ چند دقیقه بعد دوباره تلاش کنید.",
+        rialit_amount_out_of_range:"مبلغ خارج از محدوده مجاز ریالت است؛ از کارت‌به‌کارت استفاده کنید.",
+        card_not_configured:"شماره کارت دفتر هنوز در تنظیمات مدیریت ثبت نشده است.",
+        order_not_payable:"این سفارش در وضعیت قابل پرداخت نیست.",
+        service_unavailable:"این خدمت فعلاً فعال نیست."
+      };
+      throw new Error(messages[data.error] || data.error || "خطا در دریافت اطلاعات");
+    }
     return data;
   };
   const icons = { identity:"🪪", khodnevis:"🏠", fida:"🧾", dolatman_login:"🔐", student_screening:"🎓", other_service:"📝" };
@@ -194,7 +210,23 @@
       finally { b.disabled = false; }
     };
   }
+  function setTheme(theme) {
+    document.body.dataset.theme = theme;
+    const button = $("themeButton");
+    if (button) {
+      button.textContent = theme === "dark" ? "☀️ حالت روز" : "🌙 حالت شب";
+      button.setAttribute("aria-pressed", theme === "dark" ? "true" : "false");
+    }
+    try { localStorage.setItem("netyar-theme", theme); } catch {}
+  }
+  function initTheme() {
+    let saved = "";
+    try { saved = localStorage.getItem("netyar-theme") || ""; } catch {}
+    setTheme(saved === "dark" || (!saved && tg?.colorScheme === "dark") ? "dark" : "light");
+    $("themeButton")?.addEventListener("click", () => setTheme(document.body.dataset.theme === "dark" ? "light" : "dark"));
+  }
   async function boot() {
+    initTheme();
     try {
       const data = await api("/api/miniapp/bootstrap");
       state.data = data;
