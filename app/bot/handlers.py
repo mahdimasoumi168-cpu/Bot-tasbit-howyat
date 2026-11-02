@@ -29,7 +29,7 @@ from app.bot.states import AdditionalServiceForm, IdentityForm, KhodnevisForm, R
 from app.core.config import get_settings
 from app.db.models import Companion, Document, Operator, Order, Payment, Service, ServiceCode, Setting, Ticket, TicketMessage, User, Wallet, WalletTransaction, WalletTopup, DiscountCode, AuditLog
 from app.db.session import SessionLocal
-from app.payments.rialit import RialitError, create_rialit_link
+from app.payments.rialit import RialitError, create_rialit_link, rialit_amount_breakdown
 from app.db.queries import find_custom_service_order_without_payment
 from app.utils.dates import gregorian_display, jalali_to_gregorian
 from app.utils.ids import public_order_id
@@ -1719,11 +1719,14 @@ async def pay_rialit(callback: CallbackQuery, state: FSMContext) -> None:
         await callback.answer(str(exc)[:190], show_alert=True)
         return
     await callback.answer()
+    base_amount, payer_fee, payer_amount = rialit_amount_breakdown(amount)
     extra = f"\n🏷️ تخفیف: {discount:,} تومان" if discount else ""
     await callback.message.edit_text(
         f"🔐 <b>درگاه پرداخت رمز پویا</b>\n\n📌 خدمت: {service.name}\n🔢 شماره درخواست: <code>{public_id}</code>\n"
-        f"💰 مبلغ دقیق: <code>{amount:,}</code> تومان{extra}\n\n"
-        "لطفاً دقیقاً همین مبلغ را پرداخت کنید. پس از پرداخت، درگاه به‌صورت سمت سرور بررسی می‌شود؛ "
+        f"💰 مبلغ پایه: <code>{base_amount:,}</code> تومان{extra}\n"
+        f"🧾 کارمزد ریالت‌پی (۱۲٪): <code>{payer_fee:,}</code> تومان\n"
+        f"💳 مبلغ نهایی پرداخت: <code>{payer_amount:,}</code> تومان\n\n"
+        "لطفاً دقیقاً مبلغ نهایی اعلام‌شده را پرداخت کنید. پس از پرداخت، درگاه به‌صورت سمت سرور بررسی می‌شود؛ "
         "بازگشت از صفحه به‌تنهایی تأیید پرداخت نیست. تا پیام تأیید ربات، پرداخت را تکرار نکنید.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔐 ورود به درگاه پرداخت رمز پویا", url=pay_url, style="primary")],
@@ -1892,9 +1895,12 @@ async def wallet_topup_rialit(callback: CallbackQuery, state: FSMContext) -> Non
         await callback.answer(str(exc)[:190], show_alert=True)
         return
     await callback.answer()
+    base_amount, payer_fee, payer_amount = rialit_amount_breakdown(amount)
     await callback.message.edit_text(
-        f"💠 <b>پرداخت آنلاین با ریالیت</b>\n\n💰 مبلغ دقیق افزایش اعتبار: <code>{amount:,}</code> تومان\n\n"
-        "لطفاً دقیقاً همین مبلغ را پرداخت کنید. اعتبار فقط پس از تأیید سمت سرور افزایش می‌یابد. "
+        f"💠 <b>پرداخت آنلاین با ریالت‌پی</b>\n\n💰 مبلغ پایه افزایش اعتبار: <code>{base_amount:,}</code> تومان\n"
+        f"🧾 کارمزد ریالت‌پی (۱۲٪): <code>{payer_fee:,}</code> تومان\n"
+        f"💳 مبلغ نهایی پرداخت: <code>{payer_amount:,}</code> تومان\n\n"
+        "لطفاً دقیقاً مبلغ نهایی اعلام‌شده را پرداخت کنید. اعتبار فقط پس از تأیید سمت سرور افزایش می‌یابد. "
         "تا پیام تأیید ربات، پرداخت را تکرار نکنید.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔗 پرداخت با ریالیت", url=pay_url, style="primary")],
