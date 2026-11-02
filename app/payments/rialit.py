@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -17,7 +18,7 @@ from app.db.session import SessionLocal
 from app.payments.gozarban import GozarbanError, ensure_vpn_subscription
 
 logger = logging.getLogger(__name__)
-API_ROOT = "https://api.rialit.org/api/v1"
+API_ROOT = "https://api.rialit.io/api/v1"
 
 
 class RialitError(RuntimeError):
@@ -36,8 +37,8 @@ async def create_rialit_link(*, kind: str, user_id: int, amount_toman: int,
                              topup_id: int | None = None,
                              vpn_months: int | None = None,
                              vpn_gigabytes: int | None = None) -> str:
-    if kind not in {"order", "topup", "vpn"} or amount_toman <= 0:
-        raise RialitError("اطلاعات پرداخت معتبر نیست.")
+    if kind not in {"order", "topup", "vpn"} or not 50000 <= amount_toman <= 10000000:
+        raise RialitError("مبلغ پرداخت ریالت باید بین ۵۰٬۰۰۰ تا ۱۰٬۰۰۰٬۰۰۰ تومان باشد.")
     if kind == "vpn" and (vpn_months not in (1, 2, 3, 4) or vpn_gigabytes not in range(10, 101, 10)):
         raise RialitError("بسته VPN معتبر نیست.")
     settings = get_settings()
@@ -57,14 +58,33 @@ async def create_rialit_link(*, kind: str, user_id: int, amount_toman: int,
             q = q.where(RialitPayment.vpn_months == vpn_months,
                          RialitPayment.vpn_gigabytes == vpn_gigabytes,
                          RialitPayment.user_id == user_id)
+        user = await session.get(User, user_id)
+        if user is None:
+            raise RialitError("حساب مشترک برای پرداخت پیدا نشد.")
+        payer_id = int(user.telegram_id)
         existing = (await session.execute(q.order_by(RialitPayment.id.desc()))).scalars().first()
         if existing and existing.pay_url:
             return existing.pay_url
+        if existing:
+            payment_id = existing.id
+        else:
+            pending = RialitPayment(
+                token=f"pending-{uuid.uuid4().hex}", kind=kind,
+                order_id=order_id, topup_id=topup_id, user_id=user_id,
+                amount_toman=amount_toman,
+                vpn_months=vpn_months if kind == "vpn" else None,
+                vpn_gigabytes=vpn_gigabytes if kind == "vpn" else None,
+                pay_url="", status="pending",
+            )
+            session.add(pending)
+            await session.flush()
+            payment_id = pending.id
+            await session.commit()
+    # A stable order_id makes retries idempotent at Rialit's side.
     payload = {
         "amount": amount_toman,
-        "callback_url": _base_url() + "/webhooks/rialit",
-        "order_id": f"{kind}-{order_id if kind == 'order' else topup_id if kind == 'topup' else f'{user_id}-{vpn_months}-{vpn_gigabytes}'}-{int(datetime.now(timezone.utc).timestamp())}",
-        "user_id": int(user_id),
+        "order_id": f"ny-{kind}-{payment_id}",
+        "payer_id": payer_id,
     }
     timeout = aiohttp.ClientTimeout(total=25)
     try:
@@ -88,15 +108,13 @@ async def create_rialit_link(*, kind: str, user_id: int, amount_toman: int,
     token = str(body.get("token") or nested.get("token") or "").strip()
     if not token or len(token) > 64 or any(ch in token for ch in "/?#"):
         raise RialitError("پاسخ درگاه ریالیت برای ساخت لینک معتبر نبود.")
-    pay_url = f"{API_ROOT}/redirect/{token}"
+    pay_url = f"https://pay.rialit.io/v1/{token}"
     async with SessionLocal() as session:
-        session.add(RialitPayment(
-            token=token, kind=kind, order_id=order_id, topup_id=topup_id,
-            user_id=user_id, amount_toman=amount_toman,
-            vpn_months=vpn_months if kind == "vpn" else None,
-            vpn_gigabytes=vpn_gigabytes if kind == "vpn" else None,
-            pay_url=pay_url, status="pending"
-        ))
+        row = await session.get(RialitPayment, payment_id)
+        if row is None:
+            raise RialitError("سفارش پرداخت در پایگاه داده پیدا نشد.")
+        row.token = token
+        row.pay_url = pay_url
         await session.commit()
     return pay_url
 
@@ -139,7 +157,10 @@ async def _provision_paid_vpn(
 
 async def process_rialit_webhook(payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
     """Never trust callback parameters as proof; query Rialit verify API."""
-    token = str(payload.get("token") or payload.get("payment_token") or "").strip()
+    event_data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    if payload.get("type") == "webhook.test" or payload.get("event") == "webhook.test":
+        return 200, {"ok": True, "action": "test_acknowledged"}
+    token = str(event_data.get("id") or payload.get("token") or payload.get("payment_token") or "").strip()
     if not token:
         return 400, {"ok": False, "error": "missing_token"}
     settings = get_settings()
@@ -171,8 +192,8 @@ async def process_rialit_webhook(payload: dict[str, Any]) -> tuple[int, dict[str
     timeout = aiohttp.ClientTimeout(total=25)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as client:
-            async with client.post(
-                f"{API_ROOT}/verify/{token}",
+            async with client.get(
+                f"{API_ROOT}/status/{token}",
                 headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
             ) as response:
                 raw = await response.text()
@@ -189,18 +210,11 @@ async def process_rialit_webhook(payload: dict[str, Any]) -> tuple[int, dict[str
         logger.warning("Rialit verify request failed: %s", type(exc).__name__)
         return 502, {"ok": False, "error": "verification_unavailable"}
     data = verified.get("data") if isinstance(verified.get("data"), dict) else verified
-    try:
-        status = int(data.get("status"))
-    except (TypeError, ValueError):
-        return 502, {"ok": False, "error": "invalid_verification_response"}
-    if status == 4:
-        async with SessionLocal() as session:
-            row = await session.get(RialitPayment, payment_id)
-            if row and row.status == "pending":
-                row.status = "failed"
-                await session.commit()
-        return 200, {"ok": True, "action": "failed"}
-    if status != 3:
+    status = str(data.get("status") or "").strip().lower()
+    if status in {"expired", "cancelled"}:
+        # Keep the local payment pending: Rialit can approve a late payment later.
+        return 200, {"ok": True, "action": status}
+    if status != "paid":
         return 202, {"ok": True, "action": "pending"}
     try:
         verified_amount_raw = data.get("amount", data.get("paid_amount"))
