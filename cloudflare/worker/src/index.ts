@@ -1,3 +1,5 @@
+import { expectedPayerAmount } from "./fees.js";
+
 interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
@@ -322,9 +324,8 @@ async function createRialitPayment(request: Request, env: Env): Promise<Response
     WHERE provider_order_id = ? AND status = 'pending'
   `).bind(token, payUrl, payerAmount, payerFee, providerOrderId).run();
 
-  const feePercent = Math.min(50, Math.max(0, Number(env.PAYMENT_FEE_PERCENT || '12')));
-  const expectedPayerAmount = Math.ceil((amount * 100 / (100 - feePercent)) / 50) * 50;
-  const feeMatchesTwelvePercent = payerAmount === expectedPayerAmount;
+  const feePercent = Math.min(50, Math.max(0, Number(env.PAYMENT_FEE_PERCENT || "12")));
+  const feeMatchesTwelvePercent = payerAmount === expectedPayerAmount(amount, feePercent);
   return json({
     ok: true,
     pay_url: payUrl,
@@ -425,8 +426,8 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
         .bind(payment.topup_id),
       env.DB.prepare("INSERT OR IGNORE INTO wallets(user_id,balance_toman) SELECT user_id,0 FROM wallet_topups WHERE id = ? AND status = 'approved'")
         .bind(payment.topup_id),
-      env.DB.prepare("INSERT OR IGNORE INTO wallet_credit_events(payment_id) SELECT ? WHERE EXISTS (SELECT 1 FROM wallet_topups WHERE id = ? AND status = 'approved') AND NOT EXISTS (SELECT 1 FROM wallet_credit_events WHERE payment_id = ?)")
-        .bind(payment.id, payment.topup_id, payment.id),
+      env.DB.prepare("INSERT OR IGNORE INTO wallet_credit_events(payment_id) SELECT ? WHERE EXISTS (SELECT 1 FROM wallet_topups WHERE id = ? AND status = 'approved') AND NOT EXISTS (SELECT 1 FROM wallet_credit_events WHERE payment_id = ?) AND NOT EXISTS (SELECT 1 FROM wallet_transactions WHERE topup_id = ?)")
+        .bind(payment.id, payment.topup_id, payment.id, payment.topup_id),
       env.DB.prepare("UPDATE wallets SET balance_toman = balance_toman + ? WHERE user_id = (SELECT user_id FROM wallet_topups WHERE id = ?) AND changes() = 1")
         .bind(payment.amount_toman, payment.topup_id),
       env.DB.prepare("INSERT OR IGNORE INTO wallet_transactions(user_id,amount_toman,balance_after_toman,kind,description,topup_id,source_rialit_payment_id) SELECT w.user_id,?,w.balance_toman,'topup',?, ?, ? FROM wallets w JOIN wallet_topups t ON t.user_id = w.user_id WHERE t.id = ? AND changes() = 1")
