@@ -8,7 +8,7 @@ from app.payments.rialit import RialitError, create_rialit_link
 
 router = Router()
 
-VPN_BASE_PRICE_PER_GB_TOMAN = 6_000
+VPN_BASE_PRICE_PER_GB_TOMAN = 5_600
 VPN_PAYMENT_FEE_PERCENT = 12
 VPN_PRICE_PER_GB_TOMAN = (VPN_BASE_PRICE_PER_GB_TOMAN * (100 + VPN_PAYMENT_FEE_PERCENT) + 99) // 100
 VPN_MIN_GB = 10
