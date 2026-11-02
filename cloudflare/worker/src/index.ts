@@ -1,9 +1,9 @@
+import { MINIAPP_HTML, MINIAPP_JS } from "./generated/miniapp.js";
 import { expectedPayerAmount, matchesRialitFee } from "./fees.js";
 
 interface Env {
   DB: D1Database;
   LEGACY_DB: D1Database;
-  ASSETS: Fetcher;
   BOT_TOKEN: string;
   TELEGRAM_WEBHOOK_SECRET: string;
   RIALIT_API_KEY: string;
@@ -271,6 +271,31 @@ async function handleAdminPaymentCallback(callback: any, env: Env): Promise<bool
     await telegram(env,"editMessageReplyMarkup",{chat_id:callback.message.chat.id,message_id:callback.message.message_id,reply_markup:{inline_keyboard:[]}});
   }
   return true;
+}
+
+async function ensureTelegramWebhook(env: Env, origin: string): Promise<void> {
+  if (!env.BOT_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET) return;
+  const existing = await env.DB.prepare("SELECT value FROM settings WHERE key='telegram_webhook_origin'").first<{value:string}>();
+  if (existing?.value === origin) return;
+  const url = origin.replace(/\\/$/,"") + "/webhooks/telegram";
+  try {
+    const response = await fetch("https://api.telegram.org/bot" + env.BOT_TOKEN + "/setWebhook", {
+      method:"POST",
+      headers:{"content-type":"application/json"},
+      body:JSON.stringify({url,secret_token:env.TELEGRAM_WEBHOOK_SECRET,allowed_updates:["message","callback_query"],drop_pending_updates:false}),
+      signal:AbortSignal.timeout(12_000)
+    });
+    const result = await response.json().catch(()=>({})) as any;
+    if (!response.ok || result?.ok !== true) {
+      console.error("Telegram webhook setup failed",response.status);
+      return;
+    }
+    await env.DB.prepare("INSERT INTO settings(key,value) VALUES('telegram_webhook_origin',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP")
+      .bind(origin).run();
+    await telegram(env,"setChatMenuButton",{menu_button:{type:"web_app",text:"کمک‌یار مهاجر",web_app:{url:origin+"/app/"}}}).catch(()=>undefined);
+  } catch (error) {
+    console.error("Telegram webhook setup unavailable",error);
+  }
 }
 
 async function handleTelegram(request: Request, env: Env): Promise<Response> {
@@ -966,10 +991,11 @@ export default {
     if (url.pathname === "/api/miniapp/topups" && request.method === "POST") return createWalletTopup(request, env);
     if (url.pathname === "/api/miniapp/topups/rialit" && request.method === "POST") return createRialitTopupPayment(request, env);
     if (url.pathname === "/app" || url.pathname === "/app/") {
-      const assetUrl = new URL("/index.html", request.url);
-      return env.ASSETS.fetch(new Request(assetUrl.toString(), { method: request.method, headers: request.headers }));
+      ctx.waitUntil(ensureTelegramWebhook(env,url.origin));
+      return new Response(MINIAPP_HTML,{headers:{"content-type":"text/html; charset=utf-8","cache-control":"no-store"}});
     }
+    if (url.pathname === "/app.js") return new Response(MINIAPP_JS,{headers:{"content-type":"application/javascript; charset=utf-8","cache-control":"no-store"}});
     if (url.pathname.startsWith("/api/")) return json({ ok: false, error: "not_found" }, 404);
-    return env.ASSETS.fetch(request);
+    return text("not found",404);
   },
 };
