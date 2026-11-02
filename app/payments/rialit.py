@@ -99,8 +99,19 @@ async def create_rialit_link(*, kind: str, user_id: int, amount_toman: int,
                 except json.JSONDecodeError:
                     body = {}
                 if response.status not in (200, 201) or not isinstance(body, dict):
-                    logger.warning("Rialit link creation failed HTTP %s", response.status)
-                    raise RialitError(f"ساخت لینک ریالیت ناموفق بود (HTTP {response.status}).")
+                    api_error = str(body.get("error") or "").strip().lower() if isinstance(body, dict) else ""
+                    logger.warning("Rialit link creation failed HTTP %s (%s)", response.status, api_error or "no error detail")
+                    if response.status == 401:
+                        raise RialitError("کلید API ریالت‌پی معتبر نیست یا لغو شده است؛ کلید پذیرنده را در تنظیمات سرور بررسی کنید.")
+                    if response.status == 403 and "ip" in api_error:
+                        raise RialitError("ریالت‌پی IP خروجی سرور را مجاز نمی‌داند؛ IP واقعی خروجی سرویس ربات را در بخش IPهای مجاز پذیرنده ثبت کنید.")
+                    if response.status == 403:
+                        raise RialitError("پذیرنده ریالت‌پی فعال نیست؛ وضعیت پذیرنده را از پشتیبانی ریالت پیگیری کنید.")
+                    if response.status == 409:
+                        raise RialitError("شناسه سفارش پرداخت قبلاً با اطلاعات دیگری استفاده شده است؛ با پشتیبانی تماس بگیرید.")
+                    if response.status == 429:
+                        raise RialitError("تعداد درخواست‌های درگاه زیاد است؛ چند لحظه دیگر دوباره تلاش کنید.")
+                    raise RialitError(f"ساخت لینک ریالت‌پی ناموفق بود (HTTP {response.status}).")
     except aiohttp.ClientError as exc:
         logger.warning("Rialit request failed: %s", type(exc).__name__)
         raise RialitError("ارتباط با درگاه ریالیت برقرار نشد؛ کمی بعد دوباره تلاش کنید.") from exc
