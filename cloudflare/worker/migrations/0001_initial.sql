@@ -1,5 +1,3 @@
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   telegram_id INTEGER NOT NULL UNIQUE,
@@ -62,7 +60,7 @@ CREATE TABLE IF NOT EXISTS variza_payments (
 CREATE TABLE IF NOT EXISTS rialit_payments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   token TEXT UNIQUE,
-  provider_order_id TEXT NOT NULL UNIQUE,
+  provider_order_id TEXT UNIQUE,
   attempt_no INTEGER NOT NULL DEFAULT 1,
   kind TEXT NOT NULL,
   order_id INTEGER REFERENCES orders(id),
@@ -234,3 +232,17 @@ CREATE INDEX IF NOT EXISTS idx_rialit_order_attempt ON rialit_payments(order_id,
 CREATE INDEX IF NOT EXISTS idx_rialit_order ON rialit_payments(order_id);
 CREATE INDEX IF NOT EXISTS idx_wallet_tx_user_created ON wallet_transactions(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_topups_status ON wallet_topups(status, created_at);
+
+CREATE TABLE IF NOT EXISTS migration_batches (
+  batch_id TEXT PRIMARY KEY,
+  table_name TEXT NOT NULL,
+  row_count INTEGER NOT NULL,
+  checksum TEXT NOT NULL,
+  imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS migration_manifest (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  manifest_json TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
