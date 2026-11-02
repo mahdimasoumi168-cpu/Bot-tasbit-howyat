@@ -1,0 +1,39 @@
+name: Build Cloudflare Worker bundle
+
+on:
+  push:
+    branches:
+      - main
+      - cloudflare-release-check-2026-11-02
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: ${{ !contains(github.event.head_commit.message, '[bundle]') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare/worker
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install
+      - run: npm run build
+      - name: Commit bundle
+        working-directory: .
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cloudflare/worker/dist/index.js
+          if git diff --cached --quiet; then
+            echo "Bundle unchanged"
+            exit 0
+          fi
+          git commit -m "Build Cloudflare Worker bundle [bundle]"
+          git push origin HEAD:${GITHUB_REF_NAME}
