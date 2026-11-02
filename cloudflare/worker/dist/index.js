@@ -32,11 +32,13 @@ var MINIAPP_JS = `(() => {
         order_not_payable:"\u0627\u06CC\u0646 \u0633\u0641\u0627\u0631\u0634 \u062F\u0631 \u0648\u0636\u0639\u06CC\u062A \u0642\u0627\u0628\u0644 \u067E\u0631\u062F\u0627\u062E\u062A \u0646\u06CC\u0633\u062A.",
         service_unavailable:"\u0627\u06CC\u0646 \u062E\u062F\u0645\u062A \u0641\u0639\u0644\u0627\u064B \u0641\u0639\u0627\u0644 \u0646\u06CC\u0633\u062A.",
         vpn_payment_not_configured:"\u0627\u062A\u0635\u0627\u0644 \u067E\u0631\u062F\u0627\u062E\u062A \u06CC\u0627 API \u0641\u06CC\u0644\u062A\u0631\u0634\u06A9\u0646 \u062F\u0631 Worker \u062A\u0646\u0638\u06CC\u0645 \u0646\u0634\u062F\u0647 \u0627\u0633\u062A.",
-        gozarban_not_ready:"\u067E\u0646\u0644 \u0641\u06CC\u0644\u062A\u0631\u0634\u06A9\u0646 \u0622\u0645\u0627\u062F\u0647 \u0646\u06CC\u0633\u062A\u061B \u062A\u0646\u0638\u06CC\u0645 API \u06CC\u0627 \u067E\u0644\u0646 \u0641\u0639\u0627\u0644 \u0631\u0627 \u0628\u0631\u0631\u0633\u06CC \u06A9\u0646\u06CC\u062F.",
+        gozarban_not_ready:"\u0627\u062A\u0635\u0627\u0644 \u067E\u0646\u0644 \u0641\u06CC\u0644\u062A\u0631\u0634\u06A9\u0646 \u06CC\u0627 \u067E\u0644\u0646 \u0641\u0639\u0627\u0644 \u062F\u0631 \u062F\u0633\u062A\u0631\u0633 \u0646\u06CC\u0633\u062A.",
         invalid_vpn_selection:"\u062D\u062C\u0645 \u06CC\u0627 \u0645\u062F\u062A \u0627\u0646\u062A\u062E\u0627\u0628\u06CC \u0645\u0639\u062A\u0628\u0631 \u0646\u06CC\u0633\u062A.",
         vpn_payment_already_paid:"\u0627\u06CC\u0646 \u0633\u0641\u0627\u0631\u0634 VPN \u0642\u0628\u0644\u0627\u064B \u067E\u0631\u062F\u0627\u062E\u062A \u0634\u062F\u0647 \u0627\u0633\u062A."
       };
-      throw new Error(messages[data.error] || data.error || "\u062E\u0637\u0627 \u062F\u0631 \u062F\u0631\u06CC\u0627\u0641\u062A \u0627\u0637\u0644\u0627\u0639\u0627\u062A");
+      let message = messages[data.error] || data.error || "\u062E\u0637\u0627 \u062F\u0631 \u062F\u0631\u06CC\u0627\u0641\u062A \u0627\u0637\u0644\u0627\u0639\u0627\u062A";
+      if (data.detail) message += " (" + String(data.detail) + ")";
+      throw new Error(message);
     }
     return data;
   };
@@ -100,7 +102,7 @@ var MINIAPP_JS = `(() => {
   function openVpnForm() {
     const root = $("sheetRoot");
     root.className = "backdrop";
-    root.innerHTML = '<section class="sheet"><h2>\u{1F510} \u062E\u0631\u06CC\u062F \u0641\u06CC\u0644\u062A\u0631\u0634\u06A9\u0646</h2><p class="muted">\u0642\u06CC\u0645\u062A \u067E\u0627\u06CC\u0647 \u0647\u0631 \u06AF\u06CC\u06AF: \u06F5\u066C\u06F6\u06F0\u06F0 \u062A\u0648\u0645\u0627\u0646. \u06A9\u0627\u0631\u0645\u0632\u062F \u0631\u06CC\u0627\u0644\u062A: \u06F1\u06F2\u066A \u0627\u0632 \u0645\u0628\u0644\u063A \u067E\u0627\u06CC\u0647.</p><label class="field"><span>\u0645\u062F\u062A \u0627\u0634\u062A\u0631\u0627\u06A9</span><select id="vpnMonths"><option value="1">\u06F1 \u0645\u0627\u0647</option><option value="2">\u06F2 \u0645\u0627\u0647</option><option value="3">\u06F3 \u0645\u0627\u0647</option><option value="4">\u06F4 \u0645\u0627\u0647</option></select></label><label class="field"><span>\u062D\u062C\u0645 \u0627\u0634\u062A\u0631\u0627\u06A9</span><select id="vpnGb"></select></label><div id="vpnPrice" class="notice"></div><div class="actions"><button class="primary" id="vpnPay">\u0627\u062F\u0627\u0645\u0647 \u0648 \u062F\u0631\u06CC\u0627\u0641\u062A \u0644\u06CC\u0646\u06A9 \u067E\u0631\u062F\u0627\u062E\u062A</button><button class="secondary" id="vpnClose">\u0628\u0627\u0632\u06AF\u0634\u062A</button></div><div id="vpnResult"></div></section>';
+    root.innerHTML = '<section class="sheet"><h2>\u{1F510} \u062E\u0631\u06CC\u062F \u0641\u06CC\u0644\u062A\u0631\u0634\u06A9\u0646</h2><p class="muted">\u0642\u06CC\u0645\u062A \u067E\u0627\u06CC\u0647 \u0647\u0631 \u06AF\u06CC\u06AF: \u06F5\u066C\u06F6\u06F0\u06F0 \u062A\u0648\u0645\u0627\u0646. \u06A9\u0627\u0631\u0645\u0632\u062F \u0631\u06CC\u0627\u0644\u062A: \u06F1\u06F2\u066A \u0627\u0632 \u0645\u0628\u0644\u063A \u067E\u0627\u06CC\u0647.</p><label class="field"><span>\u0645\u062F\u062A \u0627\u0634\u062A\u0631\u0627\u06A9</span><select id="vpnMonths"><option value="1">\u06F1 \u0645\u0627\u0647</option><option value="2">\u06F2 \u0645\u0627\u0647</option><option value="3">\u06F3 \u0645\u0627\u0647</option><option value="4">\u06F4 \u0645\u0627\u0647</option></select></label><label class="field"><span>\u062D\u062C\u0645 \u0627\u0634\u062A\u0631\u0627\u06A9</span><select id="vpnGb"></select></label><div id="vpnPrice" class="notice"></div><div class="actions"><button class="secondary" id="vpnCheck">\u0628\u0631\u0631\u0633\u06CC \u0627\u062A\u0635\u0627\u0644 API \u0641\u06CC\u0644\u062A\u0631\u0634\u06A9\u0646</button><button class="primary" id="vpnPay">\u0627\u062F\u0627\u0645\u0647 \u0648 \u062F\u0631\u06CC\u0627\u0641\u062A \u0644\u06CC\u0646\u06A9 \u067E\u0631\u062F\u0627\u062E\u062A</button><button class="secondary" id="vpnClose">\u0628\u0627\u0632\u06AF\u0634\u062A</button></div><div id="vpnResult"></div></section>';
     const gb = $("vpnGb");
     for (let n=10;n<=100;n+=10) { const option=document.createElement("option"); option.value=String(n); option.textContent=new Intl.NumberFormat("fa-IR").format(n)+" \u06AF\u06CC\u06AF\u0627\u0628\u0627\u06CC\u062A"; gb.appendChild(option); }
     const updatePrice = () => {
@@ -112,6 +114,15 @@ var MINIAPP_JS = `(() => {
     $("vpnMonths").addEventListener("change",updatePrice);
     updatePrice();
     $("vpnClose").onclick = closeSheet;
+    $("vpnCheck").onclick = async () => {
+      const b=$("vpnCheck"); b.disabled=true; b.textContent="\u062F\u0631 \u062D\u0627\u0644 \u0628\u0631\u0631\u0633\u06CC \u0627\u062A\u0635\u0627\u0644 \u06AF\u0630\u0631\u0628\u0627\u0646\u2026";
+      try {
+        const result=await api("/api/miniapp/vpn/status");
+        $("vpnResult").innerHTML='<div class="notice success">\u2705 \u0627\u062A\u0635\u0627\u0644 API \u06AF\u0630\u0631\u0628\u0627\u0646 \u0628\u0631\u0642\u0631\u0627\u0631 \u0627\u0633\u062A.<br>\u067E\u0644\u0646 \u0641\u0639\u0627\u0644: <strong>'+escapeHtml(result.plan_name)+'</strong><br>\u0642\u06CC\u0645\u062A \u067E\u0627\u06CC\u0647 \u0647\u0631 \u06AF\u06CC\u06AF: '+money(result.base_price_per_gb_toman)+' \u062A\u0648\u0645\u0627\u0646<br>\u06A9\u0627\u0631\u0645\u0632\u062F \u067E\u0631\u062F\u0627\u062E\u062A \u0631\u06CC\u0627\u0644\u062A: '+result.fee_percent+'\u066A</div>';
+      } catch(error) {
+        $("vpnResult").innerHTML='<div class="notice error">'+escapeHtml(error.message)+'</div>';
+      } finally { b.disabled=false; b.textContent="\u0628\u0631\u0631\u0633\u06CC \u0627\u062A\u0635\u0627\u0644 API \u0641\u06CC\u0644\u062A\u0631\u0634\u06A9\u0646"; }
+    };
     $("vpnPay").onclick = async () => {
       const b=$("vpnPay"); b.disabled=true; b.textContent="\u062F\u0631 \u062D\u0627\u0644 \u0628\u0631\u0631\u0633\u06CC \u0627\u062A\u0635\u0627\u0644 \u0648 \u0633\u0627\u062E\u062A \u0644\u06CC\u0646\u06A9\u2026";
       try {
@@ -939,6 +950,18 @@ async function provisionVpnPayment(env, paymentId) {
     await telegram(env, "sendMessage", { chat_id: job.telegram_user_id, text: "\u26A0\uFE0F \u067E\u0631\u062F\u0627\u062E\u062A VPN \u062A\u0623\u06CC\u06CC\u062F \u0634\u062F\u0647\u060C \u0627\u0645\u0627 \u0633\u0627\u062E\u062A \u0627\u0634\u062A\u0631\u0627\u06A9 \u062F\u0631 \u067E\u0646\u0644 \u06AF\u0630\u0631\u0628\u0627\u0646 \u0646\u0627\u0645\u0648\u0641\u0642 \u0628\u0648\u062F. \u0633\u0641\u0627\u0631\u0634 \u0634\u0645\u0627 \u0645\u062D\u0641\u0648\u0638 \u0627\u0633\u062A \u0648 \u0628\u0631\u0627\u06CC \u0628\u0631\u0631\u0633\u06CC \u0628\u0647 \u067E\u0634\u062A\u06CC\u0628\u0627\u0646\u06CC \u0627\u0637\u0644\u0627\u0639 \u062F\u0627\u062F\u0647 \u0634\u062F." }).catch(() => void 0);
   }
 }
+async function checkVpnApi(request, env) {
+  const user = await miniAppUser(request, env);
+  if (!user) return json({ ok: false, error: "unauthorized" }, 401);
+  if (!env.API_VPN) return json({ ok: false, error: "vpn_payment_not_configured" }, 503);
+  try {
+    const plan = await getGozarbanPlan(env);
+    return json({ ok: true, connected: true, plan_name: plan.name, plan_id: plan.id, base_price_per_gb_toman: VPN_BASE_PRICE_PER_GB_TOMAN, fee_percent: Number(env.PAYMENT_FEE_PERCENT || "12"), rialit_configured: Boolean(env.RIALIT_API_KEY) });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "gozarban_unavailable";
+    return json({ ok: false, error: "gozarban_not_ready", detail }, 503);
+  }
+}
 async function createVpnPayment(request, env) {
   const user = await miniAppUser(request, env);
   if (!user) return json({ ok: false, error: "unauthorized" }, 401);
@@ -1147,6 +1170,7 @@ var index_default = {
     if (url.pathname === "/api/miniapp/bootstrap" && request.method === "GET") return bootstrap(request, env);
     if (url.pathname === "/api/miniapp/orders" && request.method === "POST") return createOrder(request, env);
     if (url.pathname === "/api/miniapp/payments/rialit" && request.method === "POST") return createRialitPayment(request, env);
+    if (url.pathname === "/api/miniapp/vpn/status" && request.method === "GET") return checkVpnApi(request, env);
     if (url.pathname === "/api/miniapp/vpn/pay" && request.method === "POST") return createVpnPayment(request, env);
     if (url.pathname === "/api/miniapp/payments/card" && request.method === "POST") return createCardPayment(request, env);
     if (url.pathname === "/api/miniapp/topups" && request.method === "POST") return createWalletTopup(request, env);
