@@ -256,6 +256,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
   const body = await request.json().catch(() => null);
   const serviceCode = String(body?.service_code || "");
   const formData = body?.form_data;
+  if (body?.rules_accepted !== true) return json({ ok: false, error: "rules_not_accepted" }, 400);
   if (!serviceCode || !formData || typeof formData !== "object" || Array.isArray(formData)) {
     return json({ ok: false, error: "invalid_request" }, 400);
   }
