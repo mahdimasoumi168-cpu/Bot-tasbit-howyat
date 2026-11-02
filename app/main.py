@@ -1,5 +1,6 @@
 import asyncio
 import json
+import ipaddress
 import logging
 import os
 from pathlib import Path
@@ -62,6 +63,21 @@ async def main() -> None:
     app.router.add_get("/health", health)
 
     async def rialit_webhook(request: web.Request) -> web.Response:
+        # Rialit webhooks are unsigned: enforce the provider's published source IPs.
+        configured_ips = {
+            item.strip()
+            for item in settings.rialit_webhook_ips.split(",")
+            if item.strip()
+        }
+        raw_ip = request.headers.get("CF-Connecting-IP") or request.remote or ""
+        try:
+            source_ip = str(ipaddress.ip_address(raw_ip.strip()))
+        except ValueError:
+            source_ip = ""
+        if configured_ips and source_ip not in configured_ips:
+            logging.getLogger(__name__).warning("Rejected Rialit webhook from an untrusted source")
+            return web.json_response({"ok": False, "error": "source_ip_not_allowed"}, status=403)
+
         # Rialit may return to callback_url with a token query parameter.
         # Accept query parameters and JSON bodies; server-side verification
         # in process_rialit_webhook remains the only payment confirmation.
