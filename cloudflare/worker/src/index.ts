@@ -213,7 +213,7 @@ async function claimFirstAdmin(message: any, user: TelegramUser, env: Env): Prom
     await telegram(env,"sendMessage",{chat_id:user.id,text:"مدیر اصلی قبلاً ثبت شده است. برای افزودن مدیر جدید با مدیر فعلی تماس بگیرید."});
     return true;
   }
-  await env.DB.prepare("INSERT OR IGNORE INTO operators(telegram_id,display_name,role,permissions_json,active) VALUES(?,?,'admin','{"all":true}',1)")
+  await env.DB.prepare("INSERT OR IGNORE INTO operators(telegram_id,display_name,role,permissions_json,active) VALUES(?,?,'admin','{}',1)")
     .bind(String(user.id),[user.first_name,user.last_name].filter(Boolean).join(" ")).run();
   await env.DB.prepare("INSERT INTO settings(key,value) VALUES('admin_setup_claimed','1') ON CONFLICT(key) DO UPDATE SET value='1',updated_at=CURRENT_TIMESTAMP").run();
   await telegram(env,"sendMessage",{chat_id:user.id,text:"✅ دسترسی مدیر اصلی فعال شد. از این پس رسیدهای کارت‌به‌کارت برای بررسی به شما ارسال می‌شوند."});
