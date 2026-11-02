@@ -4,11 +4,6 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-11-02",
   "workers_dev": true,
-  "assets": {
-    "directory": "./public",
-    "binding": "ASSETS",
-    "run_worker_first": true
-  },
   "d1_databases": [
     {
       "binding": "DB",
@@ -26,7 +21,8 @@
     "APP_NAME": "کمک‌یار مهاجر",
     "PAYMENT_FEE_PERCENT": "12",
     "RIALIT_API_BASE_URL": "https://api.rialit.io/api/v1",
-    "RIALIT_WEBHOOK_IPS": "3.123.103.100"
+    "RIALIT_WEBHOOK_IPS": "3.123.103.100",
+    "GOZARBAN_API_ROOT": "https://gozarban.com"
   },
   "observability": {
     "enabled": true
