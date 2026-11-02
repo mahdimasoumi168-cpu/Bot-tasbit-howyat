@@ -844,7 +844,7 @@ export default {
     if (url.pathname === "/api/miniapp/topups/rialit" && request.method === "POST") return createRialitTopupPayment(request, env);
     if (url.pathname === "/app" || url.pathname === "/app/") {
       const assetUrl = new URL("/index.html", request.url);
-      return env.ASSETS.fetch(new Request(assetUrl, request));
+      return env.ASSETS.fetch(new Request(assetUrl.toString(), { method: request.method, headers: request.headers }));
     }
     if (url.pathname.startsWith("/api/")) return json({ ok: false, error: "not_found" }, 404);
     return env.ASSETS.fetch(request);
