@@ -1903,7 +1903,7 @@ async def wallet_topup_rialit(callback: CallbackQuery, state: FSMContext) -> Non
         "لطفاً دقیقاً مبلغ نهایی اعلام‌شده را پرداخت کنید. اعتبار فقط پس از تأیید سمت سرور افزایش می‌یابد. "
         "تا پیام تأیید ربات، پرداخت را تکرار نکنید.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 پرداخت با ریالیت", url=pay_url, style="primary")],
+            [InlineKeyboardButton(text="🔗 پرداخت با ریالت‌پی", url=pay_url, style="primary")],
             [InlineKeyboardButton(text="🔙 بازگشت به روش‌های پرداخت", callback_data="wallet:topup:back", style="primary")],
             [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
         ]), parse_mode=ParseMode.HTML,
