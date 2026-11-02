@@ -1,4 +1,5 @@
 const TABLES = {
+  fsm_states: ["storage_key","state","data"],
   users: ["id","telegram_id","first_name","last_name","username","created_at","updated_at"],
   services: ["id","code","name","price_toman","enabled","description"],
   orders: ["id","public_id","user_id","service_id","price_snapshot_toman","status","data_json","created_at","updated_at"],
