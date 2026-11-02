@@ -441,7 +441,7 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
 async function createRialitPayment(request: Request, env: Env): Promise<Response> {
   const user = await miniAppUser(request, env);
   if (!user) return json({ ok: false, error: "unauthorized" }, 401);
-  const body = await request.json().catch(() => null);
+  const body = await request.json().catch(() => null) as any;
   const orderId = Number(body?.order_id);
   if (!Number.isSafeInteger(orderId) || orderId < 1) return json({ ok: false, error: "invalid_order" }, 400);
   const userId = await ensureUser(env.DB, user);
