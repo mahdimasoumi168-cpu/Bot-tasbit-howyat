@@ -206,7 +206,6 @@ async def main() -> None:
         return web.json_response(result, status=status_code)
 
     app.router.add_post("/webhooks/rialit", rialit_webhook)
-    app.router.add_get("/webhooks/rialit", rialit_webhook)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", int(os.environ.get("PORT", "8080")))
