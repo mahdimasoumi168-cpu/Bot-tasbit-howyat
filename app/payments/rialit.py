@@ -63,9 +63,9 @@ async def create_rialit_link(*, kind: str, user_id: int, amount_toman: int,
             raise RialitError("حساب مشترک برای پرداخت پیدا نشد.")
         payer_id = int(user.telegram_id)
         existing = (await session.execute(q.order_by(RialitPayment.id.desc()))).scalars().first()
-        if existing and existing.pay_url:
+        if existing and existing.pay_url.startswith("https://pay.rialit.io/v1/"):
             return existing.pay_url
-        if existing:
+        if existing and not existing.pay_url:
             payment_id = existing.id
         else:
             pending = RialitPayment(
