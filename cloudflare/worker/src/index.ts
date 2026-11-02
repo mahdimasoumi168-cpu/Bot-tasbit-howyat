@@ -545,13 +545,15 @@ async function createWalletTopup(request: Request, env: Env): Promise<Response> 
   }
   if (method === "rialit" && amount < 50_000) return json({ ok: false, error: "rialit_minimum_50000" }, 400);
   const userId = await ensureUser(env.DB, user);
+  if (method === "card") {
+    const card = await env.DB.prepare("SELECT value FROM settings WHERE key='card_number'").first<{value:string}>();
+    if (!card?.value) return json({ok:false,error:"card_not_configured"},503);
+  }
   const status = method === "card" ? "awaiting_receipt" : "awaiting_payment";
   const topup = await env.DB.prepare("INSERT INTO wallet_topups(user_id,amount_toman,status) VALUES(?,?,?) RETURNING id")
     .bind(userId, amount, status).first<{id:number}>();
   if (!topup) return json({ ok: false, error: "topup_create_failed" }, 500);
   if (method === "card") {
-    const card = await env.DB.prepare("SELECT value FROM settings WHERE key='card_number'").first<{value:string}>();
-    if (!card?.value) return json({ok:false,error:"card_not_configured"},503);
     await env.DB.prepare("INSERT OR IGNORE INTO payments(user_id,provider,provider_payment_id,amount_toman,status,receipt_type) VALUES(?,'card_transfer',?,?,'awaiting_receipt','photo')")
       .bind(userId, "topup:" + topup.id, amount).run();
     await telegram(env,"sendMessage",{chat_id:user.id,text:"برای تکمیل افزایش اعتبار، مبلغ را به کارت دفتر واریز کنید و تصویر رسید را همین‌جا ارسال کنید."}).catch(()=>undefined);
