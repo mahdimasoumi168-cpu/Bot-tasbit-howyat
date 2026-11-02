@@ -1796,7 +1796,7 @@ async def wallet_topup_start(callback: CallbackQuery, state: FSMContext) -> None
     await state.set_state(WalletTopupForm.amount)
     await callback.answer()
     await callback.message.edit_text(
-        "➕ افزایش اعتبار\n\nمبلغ موردنظر را به تومان وارد کنید.\nمبلغ افزایش اعتبار باید بین ۵۰,۰۰۰ تا ۱۰,۰۰۰,۰۰۰ تومان باشد\nمثال: ۵۰,۰۰۰",
+        "➕ افزایش اعتبار\n\nمبلغ موردنظر را به تومان وارد کنید.\nمبلغ افزایش اعتبار باید بیشتر از ۲۰,۰۰۰ تومان باشد\nمثال: ۵۰,۰۰۰",
         reply_markup=cancel_menu(),
     )
 
@@ -1804,8 +1804,8 @@ async def wallet_topup_start(callback: CallbackQuery, state: FSMContext) -> None
 @router.message(WalletTopupForm.amount)
 async def wallet_topup_amount(message: Message, state: FSMContext) -> None:
     raw = normalize_digits(message.text or "").replace(",", "").replace("٬", "").strip()
-    if not raw.isdigit() or int(raw) < 50000 or int(raw) > 10000000:
-        await message.answer("❌ مبلغ باید بین ۵۰,۰۰۰ تا ۱۰,۰۰۰,۰۰۰ تومان باشد.\nمثال: ۵۰,۰۰۰", reply_markup=cancel_menu())
+    if not raw.isdigit() or int(raw) <= 20000:
+        await message.answer("❌ مبلغ باید بیشتر از ۲۰,۰۰۰ تومان باشد.\nمثال: ۵۰,۰۰۰", reply_markup=cancel_menu())
         return
     amount = int(raw)
     async with SessionLocal() as session:
@@ -1818,7 +1818,7 @@ async def wallet_topup_amount(message: Message, state: FSMContext) -> None:
     await state.set_state(WalletTopupForm.choice)
     await message.answer(
         f"➕ درخواست افزایش اعتبار ثبت شد.\n\n💰 مبلغ: {amount:,} تومان\n\nروش پرداخت را انتخاب کنید:",
-        reply_markup=wallet_topup_choice_menu(),
+        reply_markup=wallet_topup_choice_menu(rialit_available=50000 <= amount <= 10000000),
     )
 
 
