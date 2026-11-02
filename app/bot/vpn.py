@@ -153,13 +153,13 @@ async def vpn_payment_unavailable(callback: CallbackQuery) -> None:
         return
     await callback.answer()
     await callback.message.answer(
-        "💠 پرداخت VPN از طریق ریالیت\n\n"
+        "🔐 درگاه پرداخت رمز پویا برای VPN\n\n"
         f"⏳ مدت انتخابی: {months} ماه\n"
         f"📦 حجم: {gigabytes} گیگابایت\n"
         f"💰 مبلغ دقیق: {amount:,} تومان\n\n"
         "پس از پرداخت، نتیجه از سمت درگاه بررسی می‌شود و در صورت تأیید، ساخت اشتراک در گذربان آغاز می‌شود.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 پرداخت با ریالیت", url=pay_url, style="primary")],
+            [InlineKeyboardButton(text="🔐 درگاه پرداخت رمز پویا", url=pay_url, style="primary")],
             [InlineKeyboardButton(text="🔙 بازگشت به منوی VPN", callback_data="vpn:start", style="primary")],
         ]),
     )
