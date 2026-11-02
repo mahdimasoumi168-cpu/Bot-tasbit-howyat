@@ -256,7 +256,7 @@ CREATE TABLE IF NOT EXISTS rialit_webhook_events (
 );
 
 CREATE TABLE IF NOT EXISTS wallet_credit_events (
-  payment_id INTEGER PRIMARY KEY,
+  source_key TEXT PRIMARY KEY,
   credited_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS vpn_provisioning_jobs (
