@@ -50,10 +50,10 @@ def test_payment_options_include_rialit_and_card():
     ]
 
     assert {button.callback_data for button in payment_buttons} >= {
-        "pay:wallet", "pay:card", "pay:coupon", "pay:variza"
+        "pay:wallet", "pay:card", "pay:coupon", "pay:rialit"
     }
     assert {button.callback_data for button in topup_buttons} == {
-        "wallet:topup:variza", "wallet:topup:rialit", "wallet:topup:card", "flow:cancel"
+        "wallet:topup:rialit", "wallet:topup:card", "flow:cancel"
     }
 
 
