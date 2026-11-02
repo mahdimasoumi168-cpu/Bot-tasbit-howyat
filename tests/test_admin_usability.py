@@ -35,7 +35,7 @@ def test_payment_choice_displays_live_credit_amount():
     assert "125,000 تومان" in wallet_button.text
 
 
-def test_payment_options_include_variza_gateway():
+def test_payment_options_include_rialit_and_card():
     from app.bot.keyboards import wallet_topup_choice_menu
 
     payment_buttons = [
