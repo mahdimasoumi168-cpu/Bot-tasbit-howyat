@@ -130,17 +130,23 @@
         $("paymentResult").innerHTML = `<div class="notice error">${escapeHtml(error.message)}</div>`;
       } finally { b.disabled = false; b.textContent = "🔐 درگاه پرداخت رمز پویا"; }
     };
-    $("cardPay").onclick = () => {
-      const settings = state.data?.settings || {};
-      const number = settings.card_number || "";
-      const holder = settings.card_holder || "";
-      const bank = settings.card_bank || "";
-      if (number) {
-        $("paymentResult").innerHTML = '<div class="notice">مبلغ کارت‌به‌کارت: <strong>' + money(amount) + '</strong><br>شماره کارت: <strong>' + escapeHtml(number) + '</strong><br>به نام: <strong>' + escapeHtml(holder || "—") + '</strong><br>بانک: ' + escapeHtml(bank || "—") + '<br>پس از واریز، تصویر رسید را در گفتگوی ربات ارسال کنید.</div><button class="secondary" id="copyCard">کپی شماره کارت</button>';
-        $("copyCard").onclick = async () => { try { await navigator.clipboard.writeText(number); $("copyCard").textContent = "کپی شد"; } catch { $("copyCard").textContent = number; } };
-      } else {
-        $("paymentResult").innerHTML = '<div class="notice error">اطلاعات کارت دفتر هنوز در تنظیمات مدیریت ثبت نشده است. لطفاً از مدیریت دفتر پیگیری کنید.</div>';
-      }
+    $("cardPay").onclick = async () => {
+      const b = $("cardPay"); b.disabled = true;
+      try {
+        const result = await api("/api/miniapp/payments/card", { method:"POST", body:JSON.stringify({order_id:order.order_id}) });
+        const settings = result.settings || {};
+        const number = settings.card_number || state.data?.settings?.card_number || "";
+        const holder = settings.card_holder || state.data?.settings?.card_holder || "";
+        const bank = settings.card_bank || state.data?.settings?.card_bank || "";
+        if (number) {
+          $("paymentResult").innerHTML = '<div class="notice">مبلغ کارت‌به‌کارت: <strong>' + money(amount) + '</strong><br>شماره کارت: <strong>' + escapeHtml(number) + '</strong><br>به نام: <strong>' + escapeHtml(holder || "—") + '</strong><br>بانک: ' + escapeHtml(bank || "—") + '<br>پس از واریز، تصویر رسید را در گفتگوی ربات ارسال کنید.</div><button class="secondary" id="copyCard">کپی شماره کارت</button>';
+          $("copyCard").onclick = async () => { try { await navigator.clipboard.writeText(number); $("copyCard").textContent = "کپی شد"; } catch { $("copyCard").textContent = number; } };
+        } else {
+          $("paymentResult").innerHTML = '<div class="notice error">اطلاعات کارت دفتر هنوز در تنظیمات مدیریت ثبت نشده است.</div>';
+        }
+      } catch (error) {
+        $("paymentResult").innerHTML = '<div class="notice error">' + escapeHtml(error.message) + '</div>';
+      } finally { b.disabled = false; }
     };
   }
   function renderLegacy(legacy) {
@@ -155,6 +161,39 @@
     panel.innerHTML = "<h3>سوابق قبلی حساب</h3>" + rows.map(x => "<div class=\"order\"><div><strong>" + escapeHtml(x.label) + "</strong><div class=\"muted\">" + escapeHtml(x.date || "") + "</div></div><div style=\"text-align:left\"><strong>" + money(x.amount) + "</strong><div class=\"muted\">" + escapeHtml(x.status === "paid" || x.status === "approved" ? "پرداخت تأیید شده" : x.status === "payment_link_failed" ? "ساخت لینک ناموفق" : x.status) + "</div></div></div>").join("");
     document.querySelector(".shell").appendChild(panel);
   }
+  function openTopup() {
+    const root = $("sheetRoot");
+    root.className = "backdrop";
+    root.innerHTML = '<section class="sheet"><h2>افزایش اعتبار حساب</h2><div class="muted">مبلغ را به تومان وارد کنید. حداقل کارت‌به‌کارت ۲۰٬۰۰۰ و حداقل ریالت ۵۰٬۰۰۰ تومان است.</div><label class="field"><span>مبلغ افزایش اعتبار</span><input id="topupAmount" type="number" min="20000" max="10000000" step="1000" placeholder="مثلاً ۱۰۰۰۰۰"></label><div class="actions"><button class="primary" id="topupRialit">درگاه پرداخت رمز پویا</button><button class="secondary" id="topupCard">کارت به کارت</button></div><div id="topupResult"></div><div class="actions"><button class="secondary" id="closeTopup">بازگشت</button></div></section>';
+    $("closeTopup").onclick = closeSheet;
+    $("topupRialit").onclick = async () => {
+      const amount = Number($("topupAmount").value);
+      const b = $("topupRialit"); b.disabled = true;
+      try {
+        const topup = await api("/api/miniapp/topups", {method:"POST",body:JSON.stringify({amount_toman:amount,method:"rialit"})});
+        const result = await api("/api/miniapp/topups/rialit", {method:"POST",body:JSON.stringify({topup_id:topup.topup_id})});
+        $("topupResult").innerHTML = '<div class="notice success">مبلغ پایه: ' + money(result.amount_toman) + '<br>کارمزد ریالت: ' + money(result.payer_fee_toman) + '<br>مبلغ نهایی درگاه: <strong>' + money(result.payer_amount_toman) + '</strong></div><button class="primary" id="openTopupRialit">ورود به درگاه</button>';
+        $("openTopupRialit").onclick = () => tg?.openLink ? tg.openLink(result.pay_url) : window.open(result.pay_url,"_blank");
+      } catch(error) { $("topupResult").innerHTML = '<div class="notice error">' + escapeHtml(error.message) + '</div>'; }
+      finally { b.disabled = false; }
+    };
+    $("topupCard").onclick = async () => {
+      const amount = Number($("topupAmount").value);
+      const b = $("topupCard"); b.disabled = true;
+      try {
+        await api("/api/miniapp/topups", {method:"POST",body:JSON.stringify({amount_toman:amount,method:"card"})});
+        const settings = state.data?.settings || {};
+        const number = settings.card_number || "";
+        if (!number) {
+          $("topupResult").innerHTML = '<div class="notice error">اطلاعات کارت دفتر هنوز در تنظیمات مدیریت ثبت نشده است.</div>';
+        } else {
+          $("topupResult").innerHTML = '<div class="notice">مبلغ واریز: <strong>' + money(amount) + '</strong><br>شماره کارت: <strong>' + escapeHtml(number) + '</strong><br>به نام: ' + escapeHtml(settings.card_holder || "—") + '<br>پس از واریز، رسید را در گفتگوی ربات ارسال کنید.</div><button class="secondary" id="copyTopupCard">کپی شماره کارت</button>';
+          $("copyTopupCard").onclick = async () => { try { await navigator.clipboard.writeText(number); $("copyTopupCard").textContent = "کپی شد"; } catch { $("copyTopupCard").textContent = number; } };
+        }
+      } catch(error) { $("topupResult").innerHTML = '<div class="notice error">' + escapeHtml(error.message) + '</div>'; }
+      finally { b.disabled = false; }
+    };
+  }
   async function boot() {
     try {
       const data = await api("/api/miniapp/bootstrap");
@@ -163,9 +202,7 @@
       renderServices(data.services || []);
       renderOrders(data.orders || []);
       renderLegacy(data.legacy);
-      $("walletButton").onclick = () => {
-        $("orders").insertAdjacentHTML("afterbegin", '<div class="notice">برای افزایش اعتبار، از گزینه «اعتبار من» در ربات استفاده کنید.</div>');
-      };
+      $("walletButton").onclick = openTopup;
     } catch (error) {
       $("services").innerHTML = `<div class="empty">${escapeHtml(error.message)}<br>این صفحه باید از داخل ربات تلگرام باز شود.</div>`;
       $("orders").innerHTML = "";
