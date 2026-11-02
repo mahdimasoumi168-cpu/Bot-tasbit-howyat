@@ -233,6 +233,12 @@ CREATE INDEX IF NOT EXISTS idx_rialit_order ON rialit_payments(order_id);
 CREATE INDEX IF NOT EXISTS idx_wallet_tx_user_created ON wallet_transactions(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_topups_status ON wallet_topups(status, created_at);
 
+CREATE TABLE IF NOT EXISTS fsm_states (
+  storage_key TEXT PRIMARY KEY,
+  state TEXT,
+  data TEXT NOT NULL DEFAULT '{}'
+);
+
 CREATE TABLE IF NOT EXISTS migration_batches (
   batch_id TEXT PRIMARY KEY,
   table_name TEXT NOT NULL,
