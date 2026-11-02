@@ -730,12 +730,12 @@ async function createVpnPayment(request: Request, env: Env): Promise<Response> {
   const amount = VPN_BASE_PRICE_PER_GB_TOMAN * gigabytes;
   if (amount<50_000 || amount>10_000_000) return json({ok:false,error:"rialit_amount_out_of_range"},400);
   const providerOrderId = "mohajer-vpn-"+user.id+"-"+requestId;
-  const previous = await env.DB.prepare("SELECT id,token,pay_url,payer_amount_toman,payer_fee_toman,status,attempt_no FROM rialit_payments WHERE provider_order_id=?").bind(providerOrderId).first<any>();
+  const previous = await env.DB.prepare("SELECT id,provider_order_id,token,pay_url,payer_amount_toman,payer_fee_toman,status,attempt_no FROM rialit_payments WHERE provider_order_id=? OR provider_order_id LIKE ? ORDER BY attempt_no DESC LIMIT 1").bind(providerOrderId,providerOrderId+"-%").first<any>();
   if (previous?.status==="pending" && previous.pay_url) return json({ok:true,pay_url:previous.pay_url,amount_toman:amount,payer_amount_toman:previous.payer_amount_toman,payer_fee_toman:previous.payer_fee_toman,fee_percent:12});
   if (previous && previous.status==="paid") return json({ok:false,error:"vpn_payment_already_paid"},409);
-  const attemptNo = Number(previous?.attempt_no || 0)+1;
-  const stableOrderId = attemptNo>1 ? providerOrderId+"-"+attemptNo : providerOrderId;
-  if (!previous) await env.DB.prepare("INSERT INTO rialit_payments(provider_order_id,attempt_no,kind,user_id,amount_toman,vpn_months,vpn_gigabytes,status) VALUES(?,1,'vpn',?,?,?,?,'pending')").bind(stableOrderId,userId,amount,months,gigabytes).run();
+  const attemptNo = previous ? Number(previous.attempt_no || 1) + (previous.status==="pending" ? 0 : 1) : 1;
+  const stableOrderId = previous?.status==="pending" ? String(previous.provider_order_id) : attemptNo===1 ? providerOrderId : providerOrderId+"-"+attemptNo;
+  if (!previous || previous.status!=="pending") await env.DB.prepare("INSERT INTO rialit_payments(provider_order_id,attempt_no,kind,user_id,amount_toman,vpn_months,vpn_gigabytes,status) VALUES(?,?,'vpn',?,?,?,?,'pending')").bind(stableOrderId,attemptNo,userId,amount,months,gigabytes).run();
   let response: Response;
   try {
     response = await fetch((env.RIALIT_API_BASE_URL || "https://api.rialit.io/api/v1").replace(/\/$/,"")+"/send",{method:"POST",headers:{authorization:"Bearer "+env.RIALIT_API_KEY,"content-type":"application/json",accept:"application/json"},body:JSON.stringify({amount,order_id:stableOrderId,payer_id:user.id}),signal:AbortSignal.timeout(25_000)});
