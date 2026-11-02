@@ -1721,19 +1721,19 @@ async def pay_rialit(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     extra = f"\n🏷️ تخفیف: {discount:,} تومان" if discount else ""
     await callback.message.edit_text(
-        f"💠 <b>پرداخت آنلاین با ریالیت</b>\n\n📌 خدمت: {service.name}\n🔢 شماره درخواست: <code>{public_id}</code>\n"
+        f"🔐 <b>درگاه پرداخت رمز پویا</b>\n\n📌 خدمت: {service.name}\n🔢 شماره درخواست: <code>{public_id}</code>\n"
         f"💰 مبلغ دقیق: <code>{amount:,}</code> تومان{extra}\n\n"
         "لطفاً دقیقاً همین مبلغ را پرداخت کنید. پس از پرداخت، درگاه به‌صورت سمت سرور بررسی می‌شود؛ "
         "بازگشت از صفحه به‌تنهایی تأیید پرداخت نیست. تا پیام تأیید ربات، پرداخت را تکرار نکنید.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔗 پرداخت با ریالیت", url=pay_url, style="primary")],
+            [InlineKeyboardButton(text="🔐 ورود به درگاه پرداخت رمز پویا", url=pay_url, style="primary")],
             [InlineKeyboardButton(text="🔙 بازگشت به روش‌های پرداخت", callback_data="pay:back", style="primary")],
             [InlineKeyboardButton(text="❌ انصراف", callback_data="flow:cancel", style="danger")],
         ]), parse_mode=ParseMode.HTML,
     )
 
 @router.callback_query(F.data == "pay:back")
-async def pay_variza_back(callback: CallbackQuery, state: FSMContext) -> None:
+async def pay_back(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     order_id = data.get("order_id")
     if not order_id:
@@ -1904,7 +1904,7 @@ async def wallet_topup_rialit(callback: CallbackQuery, state: FSMContext) -> Non
     )
 
 @router.callback_query(F.data == "wallet:topup:back")
-async def wallet_topup_variza_back(callback: CallbackQuery, state: FSMContext) -> None:
+async def wallet_topup_back(callback: CallbackQuery, state: FSMContext) -> None:
     if await state.get_state() != WalletTopupForm.choice:
         await callback.answer("این مرحله دیگر فعال نیست؛ دوباره افزایش اعتبار را شروع کنید.", show_alert=True)
         return
