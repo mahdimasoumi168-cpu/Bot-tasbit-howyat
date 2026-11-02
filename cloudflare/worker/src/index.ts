@@ -977,6 +977,7 @@ async function handleMigrationStatus(request: Request, env: Env): Promise<Respon
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname !== "/webhooks/telegram") ctx.waitUntil(ensureTelegramWebhook(env,url.origin));
     if (url.pathname === "/health") return json({ ok: true, service: "help-yar-mohajer", platform: "cloudflare-workers" });
     if (url.pathname === "/internal/import" && request.method === "POST") return handleMigrationImport(request, env);
     if (url.pathname === "/internal/manifest" && request.method === "POST") return handleMigrationManifest(request, env);
@@ -991,7 +992,6 @@ export default {
     if (url.pathname === "/api/miniapp/topups" && request.method === "POST") return createWalletTopup(request, env);
     if (url.pathname === "/api/miniapp/topups/rialit" && request.method === "POST") return createRialitTopupPayment(request, env);
     if (url.pathname === "/app" || url.pathname === "/app/") {
-      ctx.waitUntil(ensureTelegramWebhook(env,url.origin));
       return new Response(MINIAPP_HTML,{headers:{"content-type":"text/html; charset=utf-8","cache-control":"no-store"}});
     }
     if (url.pathname === "/app.js") return new Response(MINIAPP_JS,{headers:{"content-type":"application/javascript; charset=utf-8","cache-control":"no-store"}});
