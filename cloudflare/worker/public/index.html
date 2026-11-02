@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#123d7a">
+  <title>کمک‌یار مهاجر</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{font-family:Vazirmatn,system-ui,sans-serif;color:#15243b;background:#f3f6fb;font-synthesis:none}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:linear-gradient(160deg,#eaf1fc 0%,#f7f9fc 42%,#eef3fa 100%)}
+    .shell{max-width:760px;margin:auto;padding:18px 16px 48px}
+    .hero{position:relative;overflow:hidden;padding:24px;border-radius:26px;color:white;background:linear-gradient(125deg,#123d7a,#2369b5 58%,#52a4dc);box-shadow:0 18px 45px #163e7826}
+    .hero:after{content:"";position:absolute;width:210px;height:210px;border:1px solid #ffffff35;border-radius:50%;left:-70px;top:-100px;box-shadow:0 0 0 24px #ffffff0b,0 0 0 50px #ffffff0b}
+    .eyebrow{font-size:12px;opacity:.82}.hero h1{margin:8px 0 6px;font-size:25px;font-weight:800}.hero p{margin:0;max-width:440px;font-size:13px;line-height:2;opacity:.9}
+    .wallet{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:22px;padding:14px 16px;border:1px solid #ffffff38;border-radius:17px;background:#ffffff16;backdrop-filter:blur(8px)}
+    .wallet small{display:block;opacity:.8}.wallet strong{font-size:19px}
+    .section-head{display:flex;align-items:center;justify-content:space-between;margin:25px 2px 12px}.section-head h2{font-size:17px;margin:0}.muted{color:#6d7b90;font-size:12px}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .service{padding:16px;border:1px solid #e3eaf3;border-radius:20px;background:#fff;box-shadow:0 8px 22px #1c46700a;min-height:150px;display:flex;flex-direction:column;gap:9px}
+    .service .symbol{width:38px;height:38px;border-radius:13px;background:#eaf2ff;color:#20579a;display:grid;place-items:center;font-size:19px}
+    .service h3{font-size:14px;margin:0}.service p{font-size:11px;line-height:1.8;color:#758197;margin:0;flex:1}
+    .service button,.primary,.secondary{border:0;border-radius:13px;padding:11px 13px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+    .service button,.primary{background:#1d5da4;color:#fff}.secondary{background:#edf3fb;color:#1e5189}
+    .panel{margin-top:16px;padding:17px;border:1px solid #e3eaf3;border-radius:20px;background:white}
+    .panel h3{margin:0 0 12px;font-size:15px}.empty{padding:18px;text-align:center;color:#7b8798;font-size:12px}
+    .order{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #eef1f6;font-size:12px}.order:last-child{border:0}
+    .status{color:#1d67a6;font-weight:700}.hidden{display:none!important}
+    .backdrop{position:fixed;inset:0;background:#0c1c33a6;display:grid;place-items:end center;padding:12px;z-index:5}
+    .sheet{width:min(100%,650px);max-height:88vh;overflow:auto;border-radius:24px 24px 18px 18px;background:#fff;padding:22px}
+    .sheet h2{font-size:18px;margin:0 0 6px}.field{display:block;margin:13px 0}.field span{display:block;font-size:12px;font-weight:700;margin-bottom:6px}
+    input,textarea,select{width:100%;border:1px solid #dbe4f0;border-radius:12px;padding:12px;background:#fbfcfe;font:inherit;font-size:13px;outline:none}
+    input:focus,textarea:focus,select:focus{border-color:#347ec1;box-shadow:0 0 0 3px #347ec11a}
+    .actions{display:flex;gap:9px;margin-top:18px}.actions>*{flex:1}
+    .notice{padding:12px;border-radius:13px;background:#f0f6ff;color:#255586;font-size:12px;line-height:1.9;margin:12px 0}
+    .error{background:#fff1f0;color:#9c3029}.success{background:#ecf9f1;color:#21623c}
+    @media(max-width:420px){.grid{grid-template-columns:1fr}.hero h1{font-size:22px}}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">دفتر نت‌یار مهاجر</div>
+      <h1>کمک‌یار مهاجر</h1>
+      <p>ثبت خدمات، پیگیری پرونده‌ها و مدیریت اعتبار؛ ساده، امن و همیشه در دسترس.</p>
+      <div class="wallet">
+        <div><small>اعتبار حساب شما</small><strong id="balance">— تومان</strong></div>
+        <button class="secondary" id="walletButton">افزایش اعتبار</button>
+      </div>
+    </section>
+    <div class="section-head"><h2>خدمات دفتر</h2><span class="muted">انتخاب خدمت و ثبت درخواست</span></div>
+    <section id="services" class="grid"><div class="empty">در حال دریافت خدمات…</div></section>
+    <section class="panel">
+      <div class="section-head" style="margin:0 0 8px"><h3>پرونده‌های اخیر</h3><span class="muted">آخرین درخواست‌ها</span></div>
+      <div id="orders" class="empty">در حال دریافت پرونده‌ها…</div>
+    </section>
+    <div class="muted" style="text-align:center;margin:24px 0 0">پشتیبانی: @NetYar_esf</div>
+  </main>
+  <div id="sheetRoot" class="hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
