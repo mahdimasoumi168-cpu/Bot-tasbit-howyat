@@ -109,11 +109,10 @@ async def vpn_choose_data(callback: CallbackQuery) -> None:
         f"⏳ مدت اشتراک: {months} ماه\n"
         f"📦 حجم: {gigabytes} گیگابایت\n"
         f"💰 قیمت پایه هر گیگابایت: {VPN_BASE_PRICE_PER_GB_TOMAN:,} تومان\n"
-        f"💰 قیمت پایه هر گیگابایت: {VPN_BASE_PRICE_PER_GB_TOMAN:,} تومان\n"
         f"💵 مبلغ پایه کل: {amount:,} تومان\n"
         f"🧾 کارمزد ریالت‌پی (۱۲٪): {amount * VPN_PAYMENT_FEE_PERCENT // 100:,} تومان\n"
         f"💳 مبلغ نهایی پرداخت: {amount + amount * VPN_PAYMENT_FEE_PERCENT // 100:,} تومان\n\n"
-        "برای پرداخت، گزینه «ادامه به پرداخت» را بزنید تا لینک امن ریالیت ساخته شود. "
+        "برای پرداخت، گزینه «ادامه به پرداخت» را بزنید تا لینک امن ریالت‌پی ساخته شود. "
         "پرداخت فقط پس از تأیید سمت سرور ثبت می‌شود و سپس ربات برای ساخت اشتراک به گذربان متصل می‌شود.",
         reply_markup=vpn_summary_menu(months, gigabytes),
     )
