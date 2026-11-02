@@ -2,6 +2,7 @@ import { expectedPayerAmount } from "./fees.js";
 
 interface Env {
   DB: D1Database;
+  LEGACY_DB: D1Database;
   ASSETS: Fetcher;
   BOT_TOKEN: string;
   TELEGRAM_WEBHOOK_SECRET: string;
@@ -85,10 +86,10 @@ async function ensureUser(db: D1Database, user: TelegramUser): Promise<number> {
       last_name = excluded.last_name,
       username = excluded.username,
       updated_at = CURRENT_TIMESTAMP
-  `).bind(user.id, user.first_name || null, user.last_name || null, user.username || null).run();
+  `).bind(String(user.id), user.first_name || null, user.last_name || null, user.username || null).run();
 
   const row = await db.prepare("SELECT id FROM users WHERE telegram_id = ?")
-    .bind(user.id).first<{ id: number }>();
+    .bind(String(user.id)).first<{ id: number }>();
   if (!row) throw new Error("user_upsert_failed");
   return row.id;
 }
@@ -199,21 +200,51 @@ async function bootstrap(request: Request, env: Env): Promise<Response> {
   if (!user) return json({ ok: false, error: "unauthorized" }, 401);
   const userId = await ensureUser(env.DB, user);
   const [services, wallet, orders, settings] = await Promise.all([
-    env.DB.prepare("SELECT id, code, name, price_toman, description FROM services WHERE enabled = 1 ORDER BY id").all(),
+    env.DB.prepare("SELECT id, code, name, price_toman, description, rules_text FROM services WHERE enabled = 1 ORDER BY id").all(),
     env.DB.prepare("SELECT balance_toman FROM wallets WHERE user_id = ?").bind(userId).first<{ balance_toman: number }>(),
     env.DB.prepare(`
-      SELECT o.id, o.public_id, o.status, o.price_snapshot_toman, o.created_at, s.name AS service_name
-      FROM orders o JOIN services s ON s.id = o.service_id
+      SELECT o.id, o.public_id, o.status, COALESCE(o.price_snapshot_toman,o.amount_toman) AS price_snapshot_toman, o.created_at, s.name AS service_name
+      FROM orders o LEFT JOIN services s ON s.id = o.service_id
       WHERE o.user_id = ? ORDER BY o.id DESC LIMIT 20
     `).bind(userId).all(),
     env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('card_number','card_holder','card_bank','support_username')").all(),
   ]);
+  let legacy = { wallet_topups: [] as any[], rialit_payments: [] as any[] };
+  let serviceRows = (services.results || []) as any[];
+  try {
+    const legacyUser = await env.LEGACY_DB.prepare("SELECT id FROM users WHERE telegram_id = ?")
+      .bind(String(user.id)).first<{id:number}>();
+    if (legacyUser) {
+      const [legacyTopups, legacyPayments] = await Promise.all([
+        env.LEGACY_DB.prepare("SELECT id,amount_toman,status,created_at,reviewed_at FROM wallet_topups WHERE user_id = ? ORDER BY id DESC LIMIT 20").bind(legacyUser.id).all(),
+        env.LEGACY_DB.prepare("SELECT kind,amount_toman,status,created_at,paid_at FROM rialit_payments WHERE user_id = ? ORDER BY id DESC LIMIT 20").bind(legacyUser.id).all(),
+      ]);
+      legacy = { wallet_topups: legacyTopups.results || [], rialit_payments: legacyPayments.results || [] };
+    }
+    const legacyServices = await env.LEGACY_DB.prepare("SELECT code,name,description,price_toman,enabled,rules_text FROM services").all();
+    const byCode = new Map((legacyServices.results || []).map((x: any) => [x.code, x]));
+    serviceRows = serviceRows.map((service) => {
+      const old = byCode.get(service.code) as any;
+      if (!old) return service;
+      return {
+        ...service,
+        name: service.name || old.name,
+        description: service.description || old.description,
+        price_toman: Number(service.price_toman || old.price_toman),
+        rules_text: service.rules_text || old.rules_text,
+      };
+    });
+  } catch {
+    console.warn("Legacy D1 read unavailable; primary data remains usable");
+  }
+
   return json({
     ok: true,
     user: { id: user.id, first_name: user.first_name, last_name: user.last_name },
-    services: services.results || [],
+    services: serviceRows,
     wallet: wallet || { balance_toman: 0 },
     orders: orders.results || [],
+    legacy,
     settings: Object.fromEntries((settings.results || []).map((x: any) => [x.key, x.value])),
     payment: { rialit_fee_percent: Number(env.PAYMENT_FEE_PERCENT || "12"), min_toman: 50_000, max_toman: 10_000_000 },
   });
@@ -241,10 +272,10 @@ async function createOrder(request: Request, env: Env): Promise<Response> {
 
   const publicId = `YM-${crypto.randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase()}`;
   const created = await env.DB.prepare(`
-    INSERT INTO orders (public_id, user_id, service_id, price_snapshot_toman, status, data_json)
-    VALUES (?, ?, ?, ?, 'waiting_payment', ?)
+    INSERT INTO orders (public_id, user_id, service_id, service_code, amount_toman, price_snapshot_toman, status, data_json)
+    VALUES (?, ?, ?, ?, ?, ?, 'waiting_payment', ?)
     RETURNING id
-  `).bind(publicId, userId, service.id, service.price_toman, serializedForm).first<{ id: number }>();
+  `).bind(publicId, userId, service.id, serviceCode, service.price_toman, service.price_toman, serializedForm).first<{ id: number }>();
   if (!created) return json({ ok: false, error: "order_create_failed" }, 500);
   return json({ ok: true, order_id: created.id, public_id: publicId, amount_toman: service.price_toman });
 }
@@ -416,8 +447,8 @@ async function handleRialitWebhook(request: Request, env: Env, ctx: ExecutionCon
     statements.push(
       env.DB.prepare("UPDATE orders SET status = 'payment_approved', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('waiting_payment','waiting_receipt_review') AND changes() = 1")
         .bind(payment.order_id),
-      env.DB.prepare("INSERT OR IGNORE INTO payments(order_id,amount_toman,receipt_file_id,receipt_type,status,source_rialit_payment_id) SELECT ?,?,NULL,'rialit','approved',? WHERE changes() = 1")
-        .bind(payment.order_id, payment.amount_toman, payment.id)
+      env.DB.prepare("INSERT OR IGNORE INTO payments(order_id,user_id,provider,provider_payment_id,amount_toman,receipt_file_id,receipt_type,status,verified_at,provider_metadata_json,source_rialit_payment_id) SELECT ?,?,'rialit',?,?,NULL,'rialit','approved',CURRENT_TIMESTAMP,?,? WHERE changes() = 1")
+        .bind(payment.order_id, payment.user_id, payment.token, payment.amount_toman, JSON.stringify({ payer_amount_toman: payment.payer_amount_toman, payer_fee_toman: payment.payer_fee_toman }), payment.id)
     );
   }
 
