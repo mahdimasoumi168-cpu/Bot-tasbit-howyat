@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - cloudflare-release-check-2026-11-02
+      - cloudflare-production-final-2026-11-02
 
 permissions:
   contents: write
