@@ -7,11 +7,13 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "d1:migrate:local": "wrangler d1 migrations apply bot-tasbit-howyat-migration --local",
-    "d1:migrate:remote": "wrangler d1 migrations apply bot-tasbit-howyat-migration --remote"
+    "d1:migrate:remote": "wrangler d1 migrations apply bot-tasbit-howyat-migration --remote",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20261102.0",
     "typescript": "^5.9.3",
-    "wrangler": "^4.45.0"
+    "wrangler": "^4.45.0",
+    "vitest": "^3.2.4"
   }
 }
