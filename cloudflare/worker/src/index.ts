@@ -544,8 +544,11 @@ async function createWalletTopup(request: Request, env: Env): Promise<Response> 
     .bind(userId, amount, status).first<{id:number}>();
   if (!topup) return json({ ok: false, error: "topup_create_failed" }, 500);
   if (method === "card") {
+    const card = await env.DB.prepare("SELECT value FROM settings WHERE key='card_number'").first<{value:string}>();
+    if (!card?.value) return json({ok:false,error:"card_not_configured"},503);
     await env.DB.prepare("INSERT OR IGNORE INTO payments(user_id,provider,provider_payment_id,amount_toman,status,receipt_type) VALUES(?,'card_transfer',?,?,'awaiting_receipt','photo')")
       .bind(userId, "topup:" + topup.id, amount).run();
+    await telegram(env,"sendMessage",{chat_id:user.id,text:"برای تکمیل افزایش اعتبار، مبلغ را به کارت دفتر واریز کنید و تصویر رسید را همین‌جا ارسال کنید."}).catch(()=>undefined);
   }
   return json({ ok: true, topup_id: topup.id, amount_toman: amount, method });
 }
@@ -617,11 +620,14 @@ async function createCardPayment(request: Request, env: Env): Promise<Response> 
     .bind(orderId,userId).first<any>();
   if (!order || order.status !== "waiting_payment") return json({ ok: false, error: "order_not_payable" }, 409);
   const amount = Number(order.price_snapshot_toman ?? order.amount_toman ?? 0);
+  const card = await env.DB.prepare("SELECT value FROM settings WHERE key='card_number'").first<{value:string}>();
+  if (!card?.value) return json({ok:false,error:"card_not_configured"},503);
   await env.DB.prepare("INSERT OR IGNORE INTO payments(order_id,user_id,provider,provider_payment_id,amount_toman,status,receipt_type) VALUES(?,?,'card_transfer',?,?,'awaiting_receipt','photo')")
     .bind(orderId,userId,"order:"+order.public_id,amount).run();
   await env.DB.prepare("UPDATE orders SET status='awaiting_receipt',updated_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?")
     .bind(orderId,userId).run();
   const settings = await env.DB.prepare("SELECT key,value FROM settings WHERE key IN ('card_number','card_holder','card_bank')").all();
+  await telegram(env,"sendMessage",{chat_id:user.id,text:"برای پرداخت پرونده، مبلغ را به کارت دفتر واریز کنید و تصویر رسید را همین‌جا ارسال کنید."}).catch(()=>undefined);
   return json({ok:true,amount_toman:amount,settings:Object.fromEntries((settings.results||[]).map((x:any)=>[x.key,x.value]))});
 }
 
