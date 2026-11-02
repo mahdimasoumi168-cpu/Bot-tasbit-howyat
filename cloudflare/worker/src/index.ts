@@ -400,7 +400,7 @@ async function bootstrap(request: Request, env: Env): Promise<Response> {
       .bind(String(user.id)).first<{id:number}>();
     if (legacyUser) {
       const [legacyTopups, legacyPayments] = await Promise.all([
-        env.LEGACY_DB.prepare("SELECT id,amount_toman,status,created_at,reviewed_at FROM wallet_topups WHERE user_id = ? ORDER BY id DESC LIMIT 20").bind(legacyUser.id).all(),
+        env.LEGACY_DB.prepare("SELECT t.id,t.amount_toman,CASE WHEN t.status='awaiting_payment' AND EXISTS(SELECT 1 FROM rialit_payments rp WHERE rp.topup_id=t.id AND rp.status IN ('failed','expired','cancelled')) THEN 'payment_link_failed' ELSE t.status END AS status,t.created_at,t.reviewed_at FROM wallet_topups t WHERE t.user_id = ? ORDER BY t.id DESC LIMIT 20").bind(legacyUser.id).all(),
         env.LEGACY_DB.prepare("SELECT kind,amount_toman,status,created_at,paid_at FROM rialit_payments WHERE user_id = ? ORDER BY id DESC LIMIT 20").bind(legacyUser.id).all(),
       ]);
       legacy = { wallet_topups: legacyTopups.results || [], rialit_payments: legacyPayments.results || [] };
