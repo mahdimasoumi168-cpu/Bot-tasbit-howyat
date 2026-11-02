@@ -1,4 +1,4 @@
-import { expectedPayerAmount } from "./fees.js";
+import { expectedPayerAmount, matchesRialitFee } from "./fees.js";
 
 interface Env {
   DB: D1Database;
@@ -459,7 +459,7 @@ async function createRialitPayment(request: Request, env: Env): Promise<Response
   if (!env.RIALIT_API_KEY) return json({ ok: false, error: "rialit_not_configured" }, 503);
 
   const previous = await env.DB.prepare(
-    "SELECT id, token, pay_url, payer_amount_toman, payer_fee_toman, status, attempt_no FROM rialit_payments WHERE order_id = ? ORDER BY attempt_no DESC LIMIT 1"
+    "SELECT id, token, provider_order_id, pay_url, payer_amount_toman, payer_fee_toman, status, attempt_no FROM rialit_payments WHERE order_id = ? ORDER BY attempt_no DESC LIMIT 1"
   ).bind(order.id).first<any>();
   if (previous?.status === "pending" && previous.provider_order_id && previous.pay_url) {
     return json({ ok: true, pay_url: previous.pay_url, payer_amount_toman: previous.payer_amount_toman, payer_fee_toman: previous.payer_fee_toman });
@@ -508,22 +508,26 @@ async function createRialitPayment(request: Request, env: Env): Promise<Response
     return json({ ok: false, error: "rialit_invalid_response" }, 502);
   }
   const payUrl = `https://pay.rialit.io/v1/${token}`;
+  const feePercent = Number(env.PAYMENT_FEE_PERCENT || "12");
+  if (!matchesRialitFee(amount, payerAmount, payerFee, feePercent)) {
+    await env.DB.prepare("UPDATE rialit_payments SET token=?,pay_url=?,payer_amount_toman=?,payer_fee_toman=?,status='fee_mismatch' WHERE provider_order_id=? AND status='pending'")
+      .bind(token,payUrl,payerAmount,payerFee,providerOrderId).run();
+    return json({ok:false,error:"rialit_fee_mismatch",expected_payer_amount_toman:expectedPayerAmount(amount,feePercent)},409);
+  }
   await env.DB.prepare(`
     UPDATE rialit_payments
     SET token = ?, pay_url = ?, payer_amount_toman = ?, payer_fee_toman = ?
     WHERE provider_order_id = ? AND status = 'pending'
   `).bind(token, payUrl, payerAmount, payerFee, providerOrderId).run();
 
-  const feePercent = Math.min(50, Math.max(0, Number(env.PAYMENT_FEE_PERCENT || "12")));
-  const feeMatchesTwelvePercent = payerAmount === expectedPayerAmount(amount, feePercent);
   return json({
     ok: true,
     pay_url: payUrl,
     amount_toman: amount,
     payer_amount_toman: payerAmount,
     payer_fee_toman: payerFee,
-    fee_percent: 12,
-    fee_configuration_matches: feeMatchesTwelvePercent,
+    fee_percent: feePercent,
+    fee_configuration_matches: true,
   });
 }
 
@@ -601,12 +605,17 @@ async function createRialitTopupPayment(request: Request, env: Env): Promise<Res
     return json({ ok: false, error: "rialit_invalid_response" }, 502);
   }
   const payUrl = "https://pay.rialit.io/v1/" + token;
+  const feePercent = Number(env.PAYMENT_FEE_PERCENT || "12");
+  if (!matchesRialitFee(amount,payerAmount,payerFee,feePercent)) {
+    await env.DB.prepare("INSERT INTO rialit_payments(token,provider_order_id,attempt_no,kind,topup_id,user_id,amount_toman,payer_amount_toman,payer_fee_toman,pay_url,status) VALUES(?,?,?,'topup',?,?,?,?,?,?,'fee_mismatch')")
+      .bind(token,providerOrderId,attemptNo,topupId,userId,amount,payerAmount,payerFee,payUrl).run();
+    return json({ok:false,error:"rialit_fee_mismatch",expected_payer_amount_toman:expectedPayerAmount(amount,feePercent)},409);
+  }
   await env.DB.prepare("INSERT INTO rialit_payments(token,provider_order_id,attempt_no,kind,topup_id,user_id,amount_toman,payer_amount_toman,payer_fee_toman,pay_url,status) VALUES(?,?,?,'topup',?,?,?,?,?,?,'pending')")
     .bind(token,providerOrderId,attemptNo,topupId,userId,amount,payerAmount,payerFee,payUrl).run();
   await env.DB.prepare("UPDATE wallet_topups SET status='awaiting_payment' WHERE id=? AND user_id=?")
     .bind(topupId,userId).run();
-  const feePercent = Math.min(50, Math.max(0, Number(env.PAYMENT_FEE_PERCENT || "12")));
-  return json({ok:true,pay_url:payUrl,amount_toman:amount,payer_amount_toman:payerAmount,payer_fee_toman:payerFee,fee_percent:12,fee_configuration_matches:payerAmount===expectedPayerAmount(amount,feePercent)});
+  return json({ok:true,pay_url:payUrl,amount_toman:amount,payer_amount_toman:payerAmount,payer_fee_toman:payerFee,fee_percent:feePercent,fee_configuration_matches:true});
 }
 
 async function createCardPayment(request: Request, env: Env): Promise<Response> {
