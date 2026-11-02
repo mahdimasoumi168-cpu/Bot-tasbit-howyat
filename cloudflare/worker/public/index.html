@@ -16,6 +16,9 @@
     .hero{position:relative;overflow:hidden;padding:24px;border-radius:26px;color:white;background:linear-gradient(125deg,#123d7a,#2369b5 58%,#52a4dc);box-shadow:0 18px 45px #163e7826}
     .hero:after{content:"";position:absolute;width:210px;height:210px;border:1px solid #ffffff35;border-radius:50%;left:-70px;top:-100px;box-shadow:0 0 0 24px #ffffff0b,0 0 0 50px #ffffff0b}
     .eyebrow{font-size:12px;opacity:.82}.hero h1{margin:8px 0 6px;font-size:25px;font-weight:800}.hero p{margin:0;max-width:440px;font-size:13px;line-height:2;opacity:.9}
+    .brand-row{display:flex;align-items:center;gap:12px}.brand-mark{width:54px;height:54px;flex:0 0 54px;display:grid;place-items:center;border:1px solid #ffffff45;border-radius:17px;background:#ffffff1c;box-shadow:inset 0 1px 0 #ffffff30}.brand-mark svg{width:38px;height:38px}
+    .hero-tools{display:flex;justify-content:flex-end;margin-bottom:12px}.theme-toggle{border:1px solid #ffffff55;border-radius:999px;padding:8px 12px;color:#fff;background:#ffffff16;font:inherit;font-size:11px;font-weight:700;cursor:pointer}
+    .fee-note{font-size:11px;opacity:.82;margin-top:4px}
     .wallet{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:22px;padding:14px 16px;border:1px solid #ffffff38;border-radius:17px;background:#ffffff16;backdrop-filter:blur(8px)}
     .wallet small{display:block;opacity:.8}.wallet strong{font-size:19px}
     .section-head{display:flex;align-items:center;justify-content:space-between;margin:25px 2px 12px}.section-head h2{font-size:17px;margin:0}.muted{color:#6d7b90;font-size:12px}
@@ -38,14 +41,35 @@
     .notice{padding:12px;border-radius:13px;background:#f0f6ff;color:#255586;font-size:12px;line-height:1.9;margin:12px 0}
     .error{background:#fff1f0;color:#9c3029}.success{background:#ecf9f1;color:#21623c}
     @media(max-width:420px){.grid{grid-template-columns:1fr}.hero h1{font-size:22px}}
+    body[data-theme="dark"]{color:#e8eef8;background:#0b1220}
+    body[data-theme="dark"] .shell{color:#e8eef8}
+    body[data-theme="dark"] .service,body[data-theme="dark"] .panel,body[data-theme="dark"] .sheet{background:#151f30;border-color:#2a3a52;color:#e8eef8;box-shadow:0 12px 28px #0005}
+    body[data-theme="dark"] .service .symbol{background:#203b5b;color:#b8dcff}
+    body[data-theme="dark"] .service p,body[data-theme="dark"] .muted{color:#a6b4c8}
+    body[data-theme="dark"] .order{border-color:#2b394d}
+    body[data-theme="dark"] .status{color:#8bc4ff}
+    body[data-theme="dark"] input,body[data-theme="dark"] textarea,body[data-theme="dark"] select{background:#0e1726;border-color:#34445c;color:#f1f5fb}
+    body[data-theme="dark"] .secondary{background:#263a54;color:#d9eaff}
+    body[data-theme="dark"] .notice{background:#1b3550;color:#d1e8ff}
+    body[data-theme="dark"] .notice.error{background:#4a252b;color:#ffd6d6}
+    body[data-theme="dark"] .notice.success{background:#183c30;color:#c7f4da}
+    body[data-theme="dark"] .backdrop{background:#020611d9}
+    body[data-theme="dark"] .empty{color:#a6b4c8}
+    @media(prefers-reduced-motion:no-preference){.service,.panel,.primary,.secondary{transition:background .2s,border-color .2s,transform .2s}.service:active{transform:scale(.99)}}
   </style>
 </head>
 <body>
   <main class="shell">
     <section class="hero">
-      <div class="eyebrow">دفتر نت‌یار مهاجر</div>
-      <h1>کمک‌یار مهاجر</h1>
+      <div class="hero-tools"><button type="button" class="theme-toggle" id="themeButton" aria-label="تغییر حالت نمایش">🌙 حالت شب</button></div>
+      <div class="brand-row">
+        <div class="brand-mark" aria-label="نشان ربات کمک‌یار مهاجر">
+          <svg viewBox="0 0 48 48" role="img" aria-hidden="true"><path d="M24 5v5" stroke="white" stroke-width="2.8" stroke-linecap="round"/><circle cx="24" cy="4" r="2.5" fill="#ffd76a"/><rect x="8" y="12" width="32" height="27" rx="9" fill="#f7fbff" stroke="#d5e8ff" stroke-width="1.5"/><rect x="13" y="18" width="22" height="13" rx="5" fill="#1c5795"/><circle cx="19" cy="24.5" r="2" fill="#8de4ff"/><circle cx="29" cy="24.5" r="2" fill="#8de4ff"/><path d="M19 34h10" stroke="#1c5795" stroke-width="2.4" stroke-linecap="round"/><path d="M8 21H5m38 0h-3" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>
+        </div>
+        <div><div class="eyebrow">دفتر نت‌یار مهاجر</div><h1>کمک‌یار مهاجر</h1></div>
+      </div>
       <p>ثبت خدمات، پیگیری پرونده‌ها و مدیریت اعتبار؛ ساده، امن و همیشه در دسترس.</p>
+      <div id="feeNote" class="fee-note">پرداخت امن با ریالت و کارت‌به‌کارت</div>
       <div class="wallet">
         <div><small>اعتبار حساب شما</small><strong id="balance">— تومان</strong></div>
         <button class="secondary" id="walletButton">افزایش اعتبار</button>
