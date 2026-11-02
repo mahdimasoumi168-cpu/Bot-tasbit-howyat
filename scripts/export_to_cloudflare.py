@@ -245,7 +245,9 @@ def main():
     if os.environ.get("MIGRATION_DRY_RUN", "1") == "1":
         STATE["phase"] = "dry_run_passed"
         log("DRY_RUN_PASSED no business data was uploaded")
-        return
+        run_health_server()
+        while True:
+            time.sleep(3600)
 
     STATE["phase"] = "importing"
     table_counts = {}
