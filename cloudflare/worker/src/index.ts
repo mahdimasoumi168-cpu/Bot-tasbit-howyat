@@ -14,6 +14,7 @@ interface Env {
   PAYMENT_FEE_PERCENT?: string;
   APP_NAME?: string;
   ADMIN_IDS?: string;
+  ADMIN_SETUP_SECRET?: string;
 }
 
 type TelegramUser = {
@@ -124,77 +125,216 @@ function homeKeyboard(appUrl: string) {
   };
 }
 
+
+async function isAdmin(env: Env, telegramId: number): Promise<boolean> {
+  const configured = new Set((env.ADMIN_IDS || "").split(",").map((x) => x.trim()).filter(Boolean));
+  if (configured.has(String(telegramId))) return true;
+  const row = await env.DB.prepare("SELECT id FROM operators WHERE telegram_id = ? AND active = 1 AND role IN ('admin','owner','operator')")
+    .bind(String(telegramId)).first();
+  return Boolean(row);
+}
+
+async function notifyAdmins(env: Env, details: {
+  paymentId: number; userTelegramId: number; amount: number; title: string;
+  fileId: string; mediaType: string;
+}) {
+  const ids = new Set((env.ADMIN_IDS || "").split(",").map((x) => x.trim()).filter(Boolean));
+  const operators = await env.DB.prepare("SELECT telegram_id FROM operators WHERE active=1 AND role IN ('admin','owner','operator')").all();
+  for (const row of operators.results || []) ids.add(String((row as any).telegram_id));
+  const caption = "🧾 رسید جدید\n" + details.title + "\nمبلغ: " + details.amount.toLocaleString("en-US") +
+    " تومان\nشناسه پرداخت: #" + details.paymentId + "\nشناسه مشترک: " + details.userTelegramId;
+  const reply_markup = { inline_keyboard: [[
+    { text: "✅ تأیید رسید", callback_data: "admin:payment:approve:" + details.paymentId },
+    { text: "❌ رد رسید", callback_data: "admin:payment:reject:" + details.paymentId }
+  ]] };
+  for (const id of ids) {
+    const method = details.mediaType === "photo" ? "sendPhoto" : "sendDocument";
+    const mediaKey = details.mediaType === "photo" ? "photo" : "document";
+    await telegram(env, method, {
+      chat_id: id, [mediaKey]: details.fileId, caption, reply_markup
+    }).catch(() => undefined);
+  }
+}
+
+async function processReceiptMessage(message: any, user: TelegramUser, userId: number, env: Env): Promise<boolean> {
+  const photo = Array.isArray(message.photo) && message.photo.length ? message.photo[message.photo.length - 1] : null;
+  const document = message.document || null;
+  if (!photo && !document) return false;
+  const fileId = String(photo?.file_id || document?.file_id || "");
+  if (!fileId) return false;
+  const mediaType = photo ? "photo" : "document";
+  const topup = await env.DB.prepare("SELECT id,amount_toman FROM wallet_topups WHERE user_id=? AND status='awaiting_receipt' ORDER BY id DESC LIMIT 1")
+    .bind(userId).first<any>();
+  if (topup) {
+    const providerPaymentId = "topup:" + topup.id;
+    const payment = await env.DB.prepare("SELECT id FROM payments WHERE user_id=? AND provider='card_transfer' AND provider_payment_id=? AND status='awaiting_receipt'")
+      .bind(userId,providerPaymentId).first<{id:number}>();
+    if (!payment) return false;
+    await env.DB.batch([
+      env.DB.prepare("UPDATE wallet_topups SET receipt_file_id=?,receipt_type=?,status='awaiting_receipt_review' WHERE id=? AND status='awaiting_receipt'")
+        .bind(fileId,mediaType,topup.id),
+      env.DB.prepare("UPDATE payments SET receipt_file_id=?,receipt_type=?,status='awaiting_review' WHERE id=? AND status='awaiting_receipt'")
+        .bind(fileId,mediaType,payment.id),
+      env.DB.prepare("INSERT INTO documents(user_id,document_type,telegram_file_id,media_type,caption,review_status) VALUES(?,'wallet_topup_receipt',?,?,?,'pending')")
+        .bind(userId,fileId,mediaType,message.caption || null)
+    ]);
+    await notifyAdmins(env,{paymentId:payment.id,userTelegramId:user.id,amount:Number(topup.amount_toman),title:"افزایش اعتبار",fileId,mediaType});
+    await telegram(env,"sendMessage",{chat_id:user.id,text:"✅ رسید افزایش اعتبار دریافت شد. پس از بررسی مدیریت، نتیجه به شما اطلاع داده می‌شود."});
+    return true;
+  }
+
+  const payment = await env.DB.prepare("SELECT id,order_id,amount_toman FROM payments WHERE user_id=? AND provider='card_transfer' AND order_id IS NOT NULL AND status='awaiting_receipt' ORDER BY id DESC LIMIT 1")
+    .bind(userId).first<any>();
+  if (!payment) return false;
+  await env.DB.batch([
+    env.DB.prepare("UPDATE payments SET receipt_file_id=?,receipt_type=?,status='awaiting_review' WHERE id=? AND status='awaiting_receipt'")
+      .bind(fileId,mediaType,payment.id),
+    env.DB.prepare("UPDATE orders SET status='waiting_receipt_review',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='awaiting_receipt'")
+      .bind(payment.order_id),
+    env.DB.prepare("INSERT INTO documents(order_id,user_id,document_type,telegram_file_id,media_type,caption,review_status) VALUES(?,?,'payment_receipt',?,?,?,'pending')")
+      .bind(payment.order_id,userId,fileId,mediaType,message.caption || null)
+  ]);
+  await notifyAdmins(env,{paymentId:payment.id,userTelegramId:user.id,amount:Number(payment.amount_toman),title:"پرداخت پرونده شماره "+payment.order_id,fileId,mediaType});
+  await telegram(env,"sendMessage",{chat_id:user.id,text:"✅ رسید پرداخت پرونده دریافت شد و برای بررسی مدیریت ارسال شد."});
+  return true;
+}
+
+async function claimFirstAdmin(message: any, user: TelegramUser, env: Env): Promise<boolean> {
+  const textValue = String(message.text || "").trim();
+  if (!textValue.startsWith("/claim_admin")) return false;
+  const supplied = textValue.split(/\s+/)[1] || "";
+  if (!env.ADMIN_SETUP_SECRET || supplied !== env.ADMIN_SETUP_SECRET) {
+    await telegram(env,"sendMessage",{chat_id:user.id,text:"کد فعال‌سازی پنل مدیریت معتبر نیست."});
+    return true;
+  }
+  const existing = await env.DB.prepare("SELECT COUNT(*) AS n FROM operators WHERE active=1 AND role IN ('admin','owner')")
+    .first<{n:number}>();
+  if (Number(existing?.n || 0) > 0) {
+    await telegram(env,"sendMessage",{chat_id:user.id,text:"مدیر اصلی قبلاً ثبت شده است. برای افزودن مدیر جدید با مدیر فعلی تماس بگیرید."});
+    return true;
+  }
+  await env.DB.prepare("INSERT OR IGNORE INTO operators(telegram_id,display_name,role,permissions_json,active) VALUES(?,?,'admin','{"all":true}',1)")
+    .bind(String(user.id),[user.first_name,user.last_name].filter(Boolean).join(" ")).run();
+  await env.DB.prepare("INSERT INTO settings(key,value) VALUES('admin_setup_claimed','1') ON CONFLICT(key) DO UPDATE SET value='1',updated_at=CURRENT_TIMESTAMP").run();
+  await telegram(env,"sendMessage",{chat_id:user.id,text:"✅ دسترسی مدیر اصلی فعال شد. از این پس رسیدهای کارت‌به‌کارت برای بررسی به شما ارسال می‌شوند."});
+  return true;
+}
+
+async function handleAdminPaymentCallback(callback: any, env: Env): Promise<boolean> {
+  const match = String(callback.data || "").match(/^admin:payment:(approve|reject):(\d+)$/);
+  if (!match) return false;
+  const actorId = Number(callback.from?.id || 0);
+  if (!await isAdmin(env,actorId)) {
+    await telegram(env,"answerCallbackQuery",{callback_query_id:callback.id,text:"شما دسترسی مدیریت ندارید.",show_alert:true});
+    return true;
+  }
+  const action = match[1];
+  const paymentId = Number(match[2]);
+  const payment = await env.DB.prepare("SELECT p.*,u.telegram_id AS user_telegram_id FROM payments p JOIN users u ON u.id=p.user_id WHERE p.id=?")
+    .bind(paymentId).first<any>();
+  if (!payment || payment.status !== "awaiting_review") {
+    await telegram(env,"answerCallbackQuery",{callback_query_id:callback.id,text:"این رسید قبلاً بررسی شده یا وجود ندارد.",show_alert:true});
+    return true;
+  }
+  const isTopup = String(payment.provider_payment_id || "").startsWith("topup:");
+  const topupId = isTopup ? Number(String(payment.provider_payment_id).slice(6)) : 0;
+  if (action === "approve" && isTopup) {
+    await env.DB.batch([
+      env.DB.prepare("UPDATE payments SET status='approved',verified_at=CURRENT_TIMESTAMP WHERE id=? AND status='awaiting_review'").bind(paymentId),
+      env.DB.prepare("UPDATE wallet_topups SET status='approved',reviewed_at=CURRENT_TIMESTAMP,reviewed_by=? WHERE id=? AND status='awaiting_receipt_review' AND changes()=1").bind(String(actorId),topupId),
+      env.DB.prepare("INSERT OR IGNORE INTO wallet_credit_events(source_key) SELECT 'card:topup:' || ? WHERE changes()=1").bind(topupId),
+      env.DB.prepare("INSERT OR IGNORE INTO wallets(user_id,balance_toman) SELECT user_id,0 FROM wallet_topups WHERE id=? AND status='approved'").bind(topupId),
+      env.DB.prepare("UPDATE wallets SET balance_toman=balance_toman+? WHERE user_id=(SELECT user_id FROM wallet_topups WHERE id=?) AND EXISTS(SELECT 1 FROM wallet_credit_events WHERE source_key=?) AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE related_id=?)").bind(payment.amount_toman,topupId,"card:topup:"+topupId,"card:topup:"+topupId),
+      env.DB.prepare("INSERT OR IGNORE INTO wallet_transactions(user_id,amount_toman,balance_after_toman,kind,description,related_id,topup_id) SELECT w.user_id,?,w.balance_toman,'topup','افزایش اعتبار کارت‌به‌کارت',?,? FROM wallets w WHERE w.user_id=(SELECT user_id FROM wallet_topups WHERE id=?) AND changes()=1").bind(payment.amount_toman,"card:topup:"+topupId,topupId,topupId)
+    ]);
+  } else if (action === "approve") {
+    await env.DB.batch([
+      env.DB.prepare("UPDATE payments SET status='approved',verified_at=CURRENT_TIMESTAMP WHERE id=? AND status='awaiting_review'").bind(paymentId),
+      env.DB.prepare("UPDATE orders SET status='payment_approved',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='waiting_receipt_review' AND changes()=1").bind(payment.order_id)
+    ]);
+  } else {
+    await env.DB.prepare("UPDATE payments SET status='rejected' WHERE id=? AND status='awaiting_review'").bind(paymentId).run();
+    if (isTopup) {
+      await env.DB.prepare("UPDATE wallet_topups SET status='rejected',reviewed_at=CURRENT_TIMESTAMP,reviewed_by=? WHERE id=? AND status='awaiting_receipt_review'")
+        .bind(String(actorId),topupId).run();
+    } else if (payment.order_id) {
+      await env.DB.prepare("UPDATE orders SET status='payment_rejected',updated_at=CURRENT_TIMESTAMP WHERE id=?")
+        .bind(payment.order_id).run();
+    }
+  }
+  const userTelegramId = String(payment.user_telegram_id);
+  await telegram(env,"sendMessage",{chat_id:userTelegramId,text:action==="approve" ? "✅ رسید پرداخت شما تأیید شد." : "❌ رسید پرداخت شما تأیید نشد. برای پیگیری با پشتیبانی تماس بگیرید."}).catch(()=>undefined);
+  await telegram(env,"answerCallbackQuery",{callback_query_id:callback.id,text:action==="approve" ? "رسید تأیید شد." : "رسید رد شد."});
+  if (callback.message?.chat?.id) {
+    await telegram(env,"editMessageReplyMarkup",{chat_id:callback.message.chat.id,message_id:callback.message.message_id,reply_markup:{inline_keyboard:[]}});
+  }
+  return true;
+}
+
 async function handleTelegram(request: Request, env: Env): Promise<Response> {
   const expected = env.TELEGRAM_WEBHOOK_SECRET;
   const supplied = request.headers.get("x-telegram-bot-api-secret-token");
   if (!expected || supplied !== expected) return text("forbidden", 403);
 
-  const update = await request.json().catch(() => null);
+  const update = await request.json().catch(() => null) as any;
   if (!update || !Number.isInteger(update.update_id)) return json({ ok: false }, 400);
-
-  await env.DB.prepare(
-    "INSERT OR IGNORE INTO telegram_updates(update_id,status,processing_at) VALUES (?,'received',CURRENT_TIMESTAMP)"
-  ).bind(update.update_id).run();
-  const claim = await env.DB.prepare(`
-    UPDATE telegram_updates SET status = 'processing', processing_at = CURRENT_TIMESTAMP
-    WHERE update_id = ? AND (
-      status = 'received' OR
-      (status = 'processing' AND processing_at < datetime('now','-1 minute'))
-    )
-  `).bind(update.update_id).run();
-  if ((claim.meta?.changes || 0) !== 1) {
-    const current = await env.DB.prepare("SELECT status FROM telegram_updates WHERE update_id = ?")
-      .bind(update.update_id).first<{status:string}>();
-    return json({ ok: true, duplicate: current?.status === "processed", processing: current?.status === "processing" });
-  }
+  await env.DB.prepare("INSERT OR IGNORE INTO telegram_updates(update_id,status,processing_at) VALUES (?,'received',CURRENT_TIMESTAMP)")
+    .bind(update.update_id).run();
+  const claim = await env.DB.prepare("UPDATE telegram_updates SET status='processing',processing_at=CURRENT_TIMESTAMP WHERE update_id=? AND (status='received' OR (status='processing' AND processing_at < datetime('now','-1 minute')))").bind(update.update_id).run();
+  if ((claim.meta?.changes || 0) !== 1) return json({ ok: true, duplicate: true });
 
   try {
-  const message = update.message;
-  if (message?.from?.id) {
-    const user = message.from as TelegramUser;
-    await ensureUser(env.DB, user);
-    const appUrl = new URL("/app/", request.url).toString();
-    const greeting = user.first_name ? `سلام ${user.first_name} عزیز 🌷\n\n` : "سلام و خوش آمدید 🌷\n\n";
-    await telegram(env, "sendMessage", {
-      chat_id: message.chat.id,
-      text: greeting +
-        "به «کمک‌یار مهاجر» خوش آمدید.\n" +
-        "از اینجا می‌توانید خدمات دفتر، پرونده‌ها و اعتبار خود را مدیریت کنید.",
-      reply_markup: homeKeyboard(appUrl),
-    });
-  }
-
-  const callback = update.callback_query;
-  if (callback?.id && callback?.from?.id) {
-    await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
-    const chatId = callback.message?.chat?.id;
-    if (chatId) {
+    const message = update.message;
+    if (message?.from?.id) {
+      const user = message.from as TelegramUser;
+      const userId = await ensureUser(env.DB,user);
+      if (await claimFirstAdmin(message,user,env)) {
+        await env.DB.prepare("UPDATE telegram_updates SET status='processed',processed_at=CURRENT_TIMESTAMP WHERE update_id=?").bind(update.update_id).run();
+        return json({ok:true});
+      }
+      if (await processReceiptMessage(message,user,userId,env)) {
+        await env.DB.prepare("UPDATE telegram_updates SET status='processed',processed_at=CURRENT_TIMESTAMP WHERE update_id=?").bind(update.update_id).run();
+        return json({ok:true});
+      }
       const appUrl = new URL("/app/", request.url).toString();
-      const label: Record<string, string> = {
-        "menu:home": "صفحه اصلی کمک‌یار مهاجر",
-        "menu:services": "برای ثبت درخواست خدمت، مینی‌اپ را باز کنید.",
-        "menu:wallet": "برای مشاهده موجودی و افزایش اعتبار، مینی‌اپ را باز کنید.",
-        "menu:orders": "برای مشاهده و پیگیری پرونده‌ها، مینی‌اپ را باز کنید.",
-        "menu:support": "برای ارتباط با پشتیبانی، درخواست خود را در همین گفتگو ارسال کنید.",
-      };
-      await telegram(env, "sendMessage", {
-        chat_id: chatId,
-        text: label[String(callback.data)] || "برای ادامه، مینی‌اپ را باز کنید.",
-        reply_markup: homeKeyboard(appUrl),
+      const greeting = String(message.text || "").startsWith("/start")
+        ? (user.first_name ? "سلام " + user.first_name + " عزیز 🌷\n\n" : "سلام و خوش آمدید 🌷\n\n")
+        : "";
+      await telegram(env,"sendMessage",{
+        chat_id:message.chat.id,
+        text:greeting+"به «کمک‌یار مهاجر» خوش آمدید.\nاز دکمه زیر برای ثبت خدمات، پیگیری پرونده و مدیریت اعتبار استفاده کنید.",
+        reply_markup:homeKeyboard(appUrl)
       });
     }
-  }
-  await env.DB.prepare("UPDATE telegram_updates SET status='processed', processed_at=CURRENT_TIMESTAMP WHERE update_id = ?")
-    .bind(update.update_id).run();
-  return json({ ok: true });
+
+    const callback = update.callback_query;
+    if (callback?.id && callback?.from?.id) {
+      if (await handleAdminPaymentCallback(callback,env)) {
+        await env.DB.prepare("UPDATE telegram_updates SET status='processed',processed_at=CURRENT_TIMESTAMP WHERE update_id=?").bind(update.update_id).run();
+        return json({ok:true});
+      }
+      await telegram(env,"answerCallbackQuery",{callback_query_id:callback.id});
+      const chatId = callback.message?.chat?.id;
+      if (chatId) {
+        const appUrl = new URL("/app/",request.url).toString();
+        const labels: Record<string,string> = {
+          "menu:home":"صفحه اصلی کمک‌یار مهاجر",
+          "menu:services":"برای ثبت درخواست خدمت، مینی‌اپ را باز کنید.",
+          "menu:wallet":"برای مشاهده اعتبار و افزایش موجودی، مینی‌اپ را باز کنید.",
+          "menu:orders":"برای پیگیری پرونده‌ها، مینی‌اپ را باز کنید.",
+          "menu:support":"پیام خود را برای پشتیبانی ارسال کنید."
+        };
+        await telegram(env,"sendMessage",{chat_id:chatId,text:labels[String(callback.data)]||"برای ادامه، مینی‌اپ را باز کنید.",reply_markup:homeKeyboard(appUrl)});
+      }
+    }
+    await env.DB.prepare("UPDATE telegram_updates SET status='processed',processed_at=CURRENT_TIMESTAMP WHERE update_id=?").bind(update.update_id).run();
+    return json({ok:true});
   } catch (error) {
-    await env.DB.prepare("UPDATE telegram_updates SET status='received', processing_at=NULL WHERE update_id = ?")
-      .bind(update.update_id).run();
-    console.error("Telegram update processing failed", error);
-    return json({ ok: false, error: "telegram_update_failed" }, 503);
+    await env.DB.prepare("UPDATE telegram_updates SET status='received',processing_at=NULL WHERE update_id=?").bind(update.update_id).run();
+    console.error("Telegram update processing failed",error);
+    return json({ok:false,error:"telegram_update_failed"},503);
   }
 }
-
 async function bootstrap(request: Request, env: Env): Promise<Response> {
   const user = await miniAppUser(request, env);
   if (!user) return json({ ok: false, error: "unauthorized" }, 401);
