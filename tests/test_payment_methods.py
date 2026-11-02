@@ -26,3 +26,15 @@ def test_wallet_topup_menu_offers_only_rialit_and_card():
         "wallet:topup:card",
         "flow:cancel",
     }
+
+
+
+def test_wallet_topup_hides_rialit_when_amount_is_out_of_range():
+    menu = wallet_topup_choice_menu(rialit_available=False)
+    callbacks = {
+        button.callback_data
+        for row in menu.inline_keyboard
+        for button in row
+        if button.callback_data
+    }
+    assert callbacks == {"wallet:topup:card", "flow:cancel"}
