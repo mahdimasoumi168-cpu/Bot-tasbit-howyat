@@ -83,11 +83,12 @@
     const root = $("sheetRoot");
     root.className = "backdrop";
     const serviceFields = fields[service.code] || fields.other_service;
-    root.innerHTML = `<section class="sheet"><h2>${escapeHtml(service.name)}</h2><div class="muted">مبلغ پایه: ${money(service.price_toman)}</div><div id="rule" class="notice">پیش از ثبت، مدارک و اطلاعات را دقیق و مطابق مدرک وارد کنید. ثبت درخواست به معنی تضمین نتیجه نهایی نیست.</div><form id="orderForm">${serviceFields.map(([name,label,type,opts]) => {
+    const rulesText = service.rules_text || "پیش از ثبت، مدارک و اطلاعات را دقیق و مطابق مدرک وارد کنید. ثبت درخواست به معنی تضمین نتیجه نهایی نیست.";
+    root.innerHTML = `<section class="sheet"><h2>${escapeHtml(service.name)}</h2><div class="muted">مبلغ پایه: ${money(service.price_toman)}</div><div id="rule" class="notice">${escapeHtml(rulesText)}</div><form id="orderForm">${serviceFields.map(([name,label,type,opts]) => {
       if (type === "select") return `<label class="field"><span>${label}</span><select name="${name}" required>${opts.split("|").map(v=>`<option value="${v}">${v}</option>`).join("")}</select></label>`;
       if (type === "textarea") return `<label class="field"><span>${label}</span><textarea name="${name}" rows="3"></textarea></label>`;
       return `<label class="field"><span>${label}</span><input name="${name}" type="${type}" ${name==="student_count"?"min='1'":""} required></label>`;
-    }).join("")}<div class="actions"><button class="primary" type="submit">ثبت و ادامه</button><button class="secondary" type="button" id="closeSheet">بازگشت</button></div></form><div id="formError" class="notice error hidden"></div></section>`;
+    }).join("")}<label class="field"><span><input name="rules_accepted" type="checkbox" required style="width:auto;margin-left:8px"> قوانین این خدمت را خواندم و می‌پذیرم.</span></label><div class="actions"><button class="primary" type="submit">ثبت و ادامه</button><button class="secondary" type="button" id="closeSheet">بازگشت</button></div></form><div id="formError" class="notice error hidden"></div></section>`;
     $("closeSheet").onclick = closeSheet;
     $("orderForm").onsubmit = submitOrder;
     root.addEventListener("click", (e) => { if (e.target === root) closeSheet(); }, { once: true });
@@ -96,10 +97,17 @@
   async function submitOrder(event) {
     event.preventDefault();
     const formData = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const rulesAccepted = formData.rules_accepted === "on";
+    delete formData.rules_accepted;
+    if (!rulesAccepted) {
+      $("formError").textContent = "برای ادامه باید قوانین خدمت را بپذیرید.";
+      $("formError").classList.remove("hidden");
+      return;
+    }
     const button = event.currentTarget.querySelector("button[type=submit]");
     button.disabled = true; button.textContent = "در حال ثبت…";
     try {
-      const result = await api("/api/miniapp/orders", { method:"POST", body:JSON.stringify({ service_code:state.selected.code, form_data:formData }) });
+      const result = await api("/api/miniapp/orders", { method:"POST", body:JSON.stringify({ service_code:state.selected.code, form_data:formData, rules_accepted:true }) });
       await showPayment(result);
     } catch (error) {
       $("formError").textContent = error.message;
@@ -123,9 +131,29 @@
       } finally { b.disabled = false; b.textContent = "🔐 درگاه پرداخت رمز پویا"; }
     };
     $("cardPay").onclick = () => {
-      $("paymentResult").innerHTML = '<div class="notice">برای کارت‌به‌کارت، اطلاعات کارت را از ربات دریافت کنید و رسید را در همان گفت‌وگو ارسال کنید. پرونده پس از تأیید رسید وارد صف بررسی می‌شود.</div>';
-      tg?.close?.();
+      const settings = state.data?.settings || {};
+      const number = settings.card_number || "";
+      const holder = settings.card_holder || "";
+      const bank = settings.card_bank || "";
+      if (number) {
+        $("paymentResult").innerHTML = '<div class="notice">مبلغ کارت‌به‌کارت: <strong>' + money(amount) + '</strong><br>شماره کارت: <strong>' + escapeHtml(number) + '</strong><br>به نام: <strong>' + escapeHtml(holder || "—") + '</strong><br>بانک: ' + escapeHtml(bank || "—") + '<br>پس از واریز، تصویر رسید را در گفتگوی ربات ارسال کنید.</div><button class="secondary" id="copyCard">کپی شماره کارت</button>';
+        $("copyCard").onclick = async () => { try { await navigator.clipboard.writeText(number); $("copyCard").textContent = "کپی شد"; } catch { $("copyCard").textContent = number; } };
+      } else {
+        $("paymentResult").innerHTML = '<div class="notice error">اطلاعات کارت دفتر هنوز در تنظیمات مدیریت ثبت نشده است. لطفاً از مدیریت دفتر پیگیری کنید.</div>';
+      }
     };
+  }
+  function renderLegacy(legacy) {
+    const topups = legacy?.wallet_topups || [];
+    const payments = legacy?.rialit_payments || [];
+    if (!topups.length && !payments.length) return;
+    const rows = [];
+    topups.forEach(x => rows.push({label:"افزایش اعتبار",amount:x.amount_toman,status:x.status,date:x.created_at}));
+    payments.forEach(x => rows.push({label:"پرداخت ریالت",amount:x.amount_toman,status:x.status,date:x.created_at}));
+    const panel = document.createElement("section");
+    panel.className = "panel";
+    panel.innerHTML = "<h3>سوابق قبلی حساب</h3>" + rows.map(x => "<div class=\"order\"><div><strong>" + escapeHtml(x.label) + "</strong><div class=\"muted\">" + escapeHtml(x.date || "") + "</div></div><div style=\"text-align:left\"><strong>" + money(x.amount) + "</strong><div class=\"muted\">" + escapeHtml(x.status === "paid" || x.status === "approved" ? "پرداخت تأیید شده" : x.status === "payment_link_failed" ? "ساخت لینک ناموفق" : x.status) + "</div></div></div>").join("");
+    document.querySelector(".shell").appendChild(panel);
   }
   async function boot() {
     try {
@@ -134,6 +162,7 @@
       $("balance").textContent = money(data.wallet.balance_toman);
       renderServices(data.services || []);
       renderOrders(data.orders || []);
+      renderLegacy(data.legacy);
       $("walletButton").onclick = () => {
         $("orders").insertAdjacentHTML("afterbegin", '<div class="notice">برای افزایش اعتبار، از گزینه «اعتبار من» در ربات استفاده کنید.</div>');
       };
