@@ -247,6 +247,14 @@ CREATE TABLE IF NOT EXISTS fsm_states (
   state TEXT,
   data TEXT NOT NULL DEFAULT '{}'
 );
+CREATE TABLE IF NOT EXISTS rialit_webhook_events (
+  event_id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  payment_token TEXT,
+  received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  processed_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS wallet_credit_events (
   payment_id INTEGER PRIMARY KEY,
   credited_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
