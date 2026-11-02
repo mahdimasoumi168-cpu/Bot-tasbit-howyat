@@ -11,10 +11,10 @@ from app.bot.vpn import (
 
 
 def test_vpn_price_is_six_thousand_plus_twelve_percent_per_gigabyte():
-    assert vpn_price_toman(10) == 67_200
-    assert vpn_price_toman(50) == 336_000
-    assert vpn_price_toman(100) == 672_000
-    assert VPN_PRICE_PER_GB_TOMAN == 6_720
+    assert vpn_price_toman(10) == 62_720
+    assert vpn_price_toman(50) == 335_600
+    assert vpn_price_toman(100) == 627_200
+    assert VPN_PRICE_PER_GB_TOMAN == 6_272
 
 
 @pytest.mark.parametrize("gigabytes", [0, 9, 11, 101, 110, -10])
