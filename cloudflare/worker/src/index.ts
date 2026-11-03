@@ -670,7 +670,7 @@ async function createCardPayment(request: Request, env: Env): Promise<Response> 
 }
 
 
-const VPN_BASE_PRICE_PER_GB_TOMAN = 5_600;
+const VPN_BASE_PRICE_PER_GB_TOMAN = 6_000;
 function gozarbanRoot(env: Env): string {
   const root = (env.GOZARBAN_API_ROOT || "https://gozarban.com").replace(/\/$/, "");
   if (!root.startsWith("https://")) throw new Error("gozarban_invalid_api_root");
