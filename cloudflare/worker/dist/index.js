@@ -878,7 +878,7 @@ async function createCardPayment(request, env) {
   await telegram(env, "sendMessage", { chat_id: user.id, text: "\u0628\u0631\u0627\u06CC \u067E\u0631\u062F\u0627\u062E\u062A \u067E\u0631\u0648\u0646\u062F\u0647\u060C \u0645\u0628\u0644\u063A \u0631\u0627 \u0628\u0647 \u06A9\u0627\u0631\u062A \u062F\u0641\u062A\u0631 \u0648\u0627\u0631\u06CC\u0632 \u06A9\u0646\u06CC\u062F \u0648 \u062A\u0635\u0648\u06CC\u0631 \u0631\u0633\u06CC\u062F \u0631\u0627 \u0647\u0645\u06CC\u0646\u200C\u062C\u0627 \u0627\u0631\u0633\u0627\u0644 \u06A9\u0646\u06CC\u062F." }).catch(() => void 0);
   return json({ ok: true, amount_toman: amount, settings: Object.fromEntries((settings.results || []).map((x) => [x.key, x.value])) });
 }
-var VPN_BASE_PRICE_PER_GB_TOMAN = 6000;
+var VPN_BASE_PRICE_PER_GB_TOMAN = 6e3;
 function gozarbanRoot(env) {
   const root = (env.GOZARBAN_API_ROOT || "https://gozarban.com").replace(/\/$/, "");
   if (!root.startsWith("https://")) throw new Error("gozarban_invalid_api_root");
