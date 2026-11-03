@@ -100,12 +100,12 @@
   function openVpnForm() {
     const root = $("sheetRoot");
     root.className = "backdrop";
-    root.innerHTML = '<section class="sheet"><h2>🔐 خرید فیلترشکن</h2><p class="muted">قیمت پایه هر گیگ: ۵٬۶۰۰ تومان. کارمزد ریالت: ۱۲٪ از مبلغ پایه.</p><label class="field"><span>مدت اشتراک</span><select id="vpnMonths"><option value="1">۱ ماه</option><option value="2">۲ ماه</option><option value="3">۳ ماه</option><option value="4">۴ ماه</option></select></label><label class="field"><span>حجم اشتراک</span><select id="vpnGb"></select></label><div id="vpnPrice" class="notice"></div><div class="actions"><button class="secondary" id="vpnCheck">بررسی اتصال API فیلترشکن</button><button class="primary" id="vpnPay">ادامه و دریافت لینک پرداخت</button><button class="secondary" id="vpnClose">بازگشت</button></div><div id="vpnResult"></div></section>';
+    root.innerHTML = '<section class="sheet"><h2>🔐 خرید فیلترشکن</h2><p class="muted">قیمت پایه هر گیگ: ۶٬۰۰۰ تومان. کارمزد ریالت: ۱۲٪ از مبلغ پایه.</p><label class="field"><span>مدت اشتراک</span><select id="vpnMonths"><option value="1">۱ ماه</option><option value="2">۲ ماه</option><option value="3">۳ ماه</option><option value="4">۴ ماه</option></select></label><label class="field"><span>حجم اشتراک</span><select id="vpnGb"></select></label><div id="vpnPrice" class="notice"></div><div class="actions"><button class="secondary" id="vpnCheck">بررسی اتصال API فیلترشکن</button><button class="primary" id="vpnPay">ادامه و دریافت لینک پرداخت</button><button class="secondary" id="vpnClose">بازگشت</button></div><div id="vpnResult"></div></section>';
     const gb = $("vpnGb");
     for (let n=10;n<=100;n+=10) { const option=document.createElement("option"); option.value=String(n); option.textContent=new Intl.NumberFormat("fa-IR").format(n)+" گیگابایت"; gb.appendChild(option); }
     const updatePrice = () => {
-      const base = Number(gb.value || 10) * 5600;
-      const fee = Math.round(base * 0.12);
+      const base = Number(gb.value || 10) * 6000;
+      const fee = Math.ceil(base * 12 / 100);
       $("vpnPrice").textContent = "مبلغ پایه: " + money(base) + " | کارمزد ۱۲٪: " + money(fee) + " | مبلغ تقریبی پرداخت: " + money(base+fee);
     };
     gb.addEventListener("change",updatePrice);
