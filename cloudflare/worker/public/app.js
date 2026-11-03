@@ -93,7 +93,7 @@
     });
     const vpn = document.createElement("article");
     vpn.className = "service vpn-service";
-    vpn.innerHTML = '<div class="symbol">🔐</div><h3>خرید فیلترشکن</h3><p>قیمت پایه هر گیگ ۵٬۶۰۰ تومان؛ کارمزد درگاه ریالت ۱۲٪ جداگانه محاسبه می‌شود.</p><button type="button">انتخاب حجم و مدت</button>';
+    vpn.innerHTML = '<div class="symbol">🔐</div><h3>خرید فیلترشکن</h3><p>قیمت پایه هر گیگ ۶٬۰۰۰ تومان؛ کارمزد درگاه ریالت ۱۲٪ جداگانه محاسبه می‌شود.</p><button type="button">انتخاب حجم و مدت</button>';
     vpn.querySelector("button").addEventListener("click", openVpnForm);
     $("services").appendChild(vpn);
   }
